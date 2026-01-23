@@ -32,11 +32,16 @@ def init_db():
             end_time REAL,
             allowed_app_ids TEXT,
             allowed_titles TEXT,
-            excluded INTEGER DEFAULT 0
+            excluded INTEGER DEFAULT 0,
+            done INTEGER DEFAULT 0
         )
     """)
     try:
         cur.execute("ALTER TABLE focus_tasks ADD COLUMN excluded INTEGER DEFAULT 0")
+    except Exception:
+        pass
+    try:
+        cur.execute("ALTER TABLE focus_tasks ADD COLUMN done INTEGER DEFAULT 0")
     except Exception:
         pass
     conn.commit()
@@ -81,6 +86,7 @@ class Handler(BaseHTTPRequestHandler):
                 allowed_app_ids = data.get("allowed_app_ids", [])
                 allowed_titles = data.get("allowed_titles", [])
                 excluded = 1 if data.get("exclude", False) else 0
+                done = 1 if data.get("done", False) else 0
                 conn = sqlite3.connect(DB_PATH)
                 cur = conn.cursor()
                 cur.execute("SELECT COUNT(*) FROM focus_tasks")
@@ -92,8 +98,8 @@ class Handler(BaseHTTPRequestHandler):
                     return
                 cur.execute("""
                     INSERT INTO focus_tasks
-                    (category, task, start_time, end_time, allowed_app_ids, allowed_titles, excluded)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    (category, task, start_time, end_time, allowed_app_ids, allowed_titles, excluded, done)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
                     data.get("category", ""),
                     data.get("task", ""),
@@ -102,6 +108,7 @@ class Handler(BaseHTTPRequestHandler):
                     json.dumps(allowed_app_ids),
                     json.dumps(allowed_titles),
                     excluded,
+                    done,
                 ))
                 conn.commit()
                 conn.close()
@@ -124,32 +131,33 @@ class Handler(BaseHTTPRequestHandler):
                     self.end_headers()
                     self.wfile.write(b"task not found")
                     return
+                row_dict = dict(row)
 
                 if "category" in data:
                     category = data.get("category", "")
                 else:
-                    category = row["category"]
+                    category = row_dict.get("category", "")
 
                 if "task" in data:
                     task_name = data.get("task", "")
                 else:
-                    task_name = row["task"]
+                    task_name = row_dict.get("task", "")
 
                 if "start_time" in data:
                     start_time = float(data.get("start_time", 0.0))
                 else:
-                    start_time = float(row["start_time"] or 0.0)
+                    start_time = float(row_dict.get("start_time") or 0.0)
 
                 if "end_time" in data:
                     end_time = float(data.get("end_time", 0.0))
                 else:
-                    end_time = float(row["end_time"] or 0.0)
+                    end_time = float(row_dict.get("end_time") or 0.0)
 
                 if "allowed_app_ids" in data:
                     allowed_app_ids = data.get("allowed_app_ids", [])
                 else:
                     try:
-                        allowed_app_ids = json.loads(row["allowed_app_ids"] or "[]")
+                        allowed_app_ids = json.loads(row_dict.get("allowed_app_ids") or "[]")
                     except Exception:
                         allowed_app_ids = []
 
@@ -157,18 +165,23 @@ class Handler(BaseHTTPRequestHandler):
                     allowed_titles = data.get("allowed_titles", [])
                 else:
                     try:
-                        allowed_titles = json.loads(row["allowed_titles"] or "[]")
+                        allowed_titles = json.loads(row_dict.get("allowed_titles") or "[]")
                     except Exception:
                         allowed_titles = []
 
                 if "exclude" in data:
                     excluded = 1 if data.get("exclude", False) else 0
                 else:
-                    excluded = int(row.get("excluded") or 0)
+                    excluded = int(row_dict.get("excluded") or 0)
+
+                if "done" in data:
+                    done = 1 if data.get("done", False) else 0
+                else:
+                    done = int(row_dict.get("done") or 0)
 
                 cur.execute("""
                     UPDATE focus_tasks
-                    SET category = ?, task = ?, start_time = ?, end_time = ?, allowed_app_ids = ?, allowed_titles = ?, excluded = ?
+                    SET category = ?, task = ?, start_time = ?, end_time = ?, allowed_app_ids = ?, allowed_titles = ?, excluded = ?, done = ?
                     WHERE id = ?
                 """, (
                     category,
@@ -178,6 +191,7 @@ class Handler(BaseHTTPRequestHandler):
                     json.dumps(allowed_app_ids),
                     json.dumps(allowed_titles),
                     excluded,
+                    done,
                     task_id,
                 ))
                 conn.commit()
@@ -246,6 +260,7 @@ class Handler(BaseHTTPRequestHandler):
                 except Exception:
                     d["allowed_titles"] = []
                 d["excluded"] = bool(d.get("excluded", 0))
+                d["done"] = bool(d.get("done", 0))
                 rows.append(d)
             conn.close()
 

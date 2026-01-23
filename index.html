@@ -49,7 +49,7 @@
 <h2 class="text-slate-900 dark:text-white text-lg font-bold leading-tight tracking-[-0.015em]">Focus Timeline</h2>
 </div>
 </header>
-<main class="max-w-6xl mx-auto px-4 lg:px-6 py-4 h-[calc(100vh-56px)] overflow-hidden">
+<main class="w-full px-4 lg:px-6 py-4 overflow-hidden">
 <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 h-full">
 <div class="flex flex-col gap-4 h-full">
 <section class="rounded-lg border border-slate-200 dark:border-[#3b3b54] bg-white/70 dark:bg-slate-900/40 p-4 shadow-sm">
@@ -122,16 +122,6 @@
 <div>
 <label class="block text-sm font-medium text-slate-700 dark:text-slate-300" for="task-category">Category (optional)</label>
 <input class="mt-1 w-full rounded-lg border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white" id="task-category" type="text" placeholder="Writing" />
-</div>
-<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-<div>
-<label class="block text-sm font-medium text-slate-700 dark:text-slate-300" for="task-start">Start time</label>
-<input class="mt-1 w-full rounded-lg border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white" id="task-start" type="datetime-local" />
-</div>
-<div>
-<label class="block text-sm font-medium text-slate-700 dark:text-slate-300" for="task-duration">Duration (minutes)</label>
-<input class="mt-1 w-full rounded-lg border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white" id="task-duration" type="number" min="1" value="60" />
-</div>
 </div>
 <div>
 <label class="block text-sm font-medium text-slate-700 dark:text-slate-300" for="task-app-ids">Allowed app IDs (comma-separated)</label>
@@ -271,20 +261,12 @@ function eventMatchesTask(appId, title, task) {
 
 function isInActiveTask(appId, title, tasks) {
     if (!Array.isArray(tasks) || tasks.length === 0) return null;
-    const now = Date.now() / 1000;
-    const active = tasks.filter(t => now >= t.start_time && now <= t.end_time && !t.excluded);
+    const active = tasks.filter(t => !t.excluded && !t.done);
     if (!active.length) return null;
     for (const t of active) {
         if (eventMatchesTask(appId, title, t)) return true;
     }
     return false;
-}
-
-function eventOverlapsTask(event, task) {
-    const start = Number(event.start_time) || 0;
-    const end = Number(event.end_time) || 0;
-    if (!start || !end) return false;
-    return start < task.end_time && end > task.start_time;
 }
 
 function computeFocusScore(events, tasks) {
@@ -298,7 +280,6 @@ function computeFocusScore(events, tasks) {
 
         let matched = false;
         for (const t of taskList) {
-            if (!eventOverlapsTask(e, t)) continue;
             if (eventMatchesTask(e.app_id, e.title, t)) {
                 matched = true;
                 break;
@@ -338,7 +319,22 @@ function renderFocusScore(events, tasks) {
     }
 }
 
-function renderTasks(tasks, current) {
+function computeTaskPerformance(task, events) {
+    let total = 0;
+    let correct = 0;
+    for (const e of events) {
+        const duration = Number(e.duration) || 0;
+        if (duration <= 0) continue;
+        total += duration;
+        if (eventMatchesTask(e.app_id, e.title, task)) {
+            correct += duration;
+        }
+    }
+    const ratio = total > 0 ? correct / total : 0;
+    return { total, correct, ratio };
+}
+
+function renderTasks(tasks, current, events) {
     const container = document.getElementById("timeline-list");
     if (!container) return;
     container.innerHTML = "";
@@ -372,17 +368,20 @@ function renderTasks(tasks, current) {
     const maxTasks = 3;
     const visibleTasks = activeTasks.slice(0, maxTasks);
     for (const t of visibleTasks) {
-        const status = now >= t.end_time
-            ? "Completed"
-            : now >= t.start_time
-                ? "On-Going"
-                : "Scheduled";
+        const status = t.done ? "Done" : "On-Going";
 
         let badgeClass = "text-slate-400";
         let badgeText = status;
 
-        if (status === "Completed") {
-            badgeClass = "bg-primary/10 text-primary";
+        if (t.done) {
+            const perf = computeTaskPerformance(t, events);
+            if (perf.ratio >= 0.8) {
+                badgeClass = "bg-green-500/10 text-green-500";
+                badgeText = "Success";
+            } else {
+                badgeClass = "bg-red-500/10 text-red-500";
+                badgeText = "Failed";
+            }
         } else if (status === "On-Going") {
             const ok = matchesAllowed(current, t);
             if (ok === true) {
@@ -397,7 +396,6 @@ function renderTasks(tasks, current) {
             }
         }
 
-        const timeRange = `${fmtTime(t.start_time)} - ${fmtTime(t.end_time)}`;
         const item = document.createElement("div");
         item.className = "grid grid-cols-[40px_1fr] gap-x-6 relative";
         item.innerHTML = `
@@ -410,10 +408,11 @@ function renderTasks(tasks, current) {
                 <div class="flex justify-between items-start">
                     <div>
                         <p class="text-slate-900 dark:text-white text-lg font-semibold leading-normal">${escapeHtml(t.task || "(task)")}</p>
-                        <p class="text-slate-500 dark:text-[#9d9db9] text-sm font-medium">${escapeHtml(timeRange)} · ${escapeHtml(t.category || "")}</p>
+                        <p class="text-slate-500 dark:text-[#9d9db9] text-sm font-medium">${escapeHtml(t.category || "")}</p>
                     </div>
                     <div class="flex items-center gap-2">
                         <span class="${badgeClass} text-[10px] font-bold px-2 py-1 rounded uppercase">${badgeText}</span>
+                        <button class="rounded-md px-2 py-1 text-[10px] font-bold bg-slate-900 text-white dark:bg-white dark:text-slate-900" data-done-toggle="1" data-task-id="${t.id}" data-next="${t.done ? "false" : "true"}">${t.done ? "Reopen" : "Done"}</button>
                         <button class="rounded-md px-2 py-1 text-[10px] font-bold bg-slate-900 text-white dark:bg-white dark:text-slate-900" data-exclude-toggle="1" data-task-id="${t.id}" data-next="true">Exclude</button>
                     </div>
                 </div>
@@ -436,7 +435,7 @@ async function loadTasks() {
     const tasks = await res.json();
     if (!Array.isArray(tasks)) return [];
     return tasks
-        .map(t => ({ ...t, excluded: !!t.excluded }))
+    .map(t => ({ ...t, excluded: !!t.excluded, done: !!t.done }))
         .sort((a, b) => (a.start_time || 0) - (b.start_time || 0));
 }
 
@@ -473,8 +472,6 @@ function getTaskFormElements() {
     return {
         name: document.getElementById("task-name"),
         category: document.getElementById("task-category"),
-        start: document.getElementById("task-start"),
-        duration: document.getElementById("task-duration"),
         appIds: document.getElementById("task-app-ids"),
         titleKeys: document.getElementById("task-title-keys"),
         exclude: document.getElementById("task-exclude"),
@@ -486,32 +483,17 @@ function openTaskModal() {
     if (!modal) return;
     modal.classList.remove("hidden");
     modal.classList.add("flex");
-    const { name, category, start, duration, appIds, titleKeys, exclude } = getTaskFormElements();
+    const { name, category, appIds, titleKeys, exclude } = getTaskFormElements();
     const existing = lastTasks[0];
     if (existing) {
         if (name) name.value = existing.task || "";
         if (category) category.value = existing.category || "";
-        if (start) {
-            const d = new Date((existing.start_time || Date.now() / 1000) * 1000);
-            const local = new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
-            start.value = local;
-        }
-        if (duration) {
-            const sec = Math.max(0, Number(existing.end_time) - Number(existing.start_time));
-            duration.value = String(Math.max(1, Math.round(sec / 60) || 60));
-        }
         if (appIds) appIds.value = (existing.allowed_app_ids || []).join(", ");
         if (titleKeys) titleKeys.value = (existing.allowed_titles || []).join(", ");
         if (exclude) exclude.checked = !!existing.excluded;
     } else {
-        if (start) {
-            const now = new Date();
-            const local = new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
-            start.value = local;
-        }
         if (name) name.value = "";
         if (category) category.value = "";
-        if (duration) duration.value = "60";
         if (appIds) appIds.value = "";
         if (titleKeys) titleKeys.value = "";
         if (exclude) exclude.checked = false;
@@ -528,19 +510,14 @@ function closeTaskModal() {
 
 async function submitTaskForm(event) {
     event.preventDefault();
-    const { name, category, start, duration, appIds, titleKeys, exclude } = getTaskFormElements();
+    const { name, category, appIds, titleKeys, exclude } = getTaskFormElements();
     if (!name || !name.value.trim()) return;
-
-    const now = new Date();
-    const startDate = parseLocalDateTime(start?.value || "", now);
-    const durationMin = Math.max(1, parseInt(duration?.value || "60", 10) || 60);
-    const endDate = new Date(startDate.getTime() + durationMin * 60000);
 
     const payload = {
         task: name.value.trim(),
         category: category?.value.trim() || "",
-        start_time: startDate.getTime() / 1000,
-        end_time: endDate.getTime() / 1000,
+        start_time: 0,
+        end_time: 0,
         allowed_app_ids: normalizeListInput(appIds?.value || ""),
         allowed_titles: normalizeListInput(titleKeys?.value || ""),
         exclude: !!exclude?.checked,
@@ -793,7 +770,7 @@ async function refreshAll() {
         ]);
         lastEvents = events;
         lastTasks = tasks;
-        renderTasks(tasks, current);
+        renderTasks(tasks, current, events);
         renderLiveGroups(events, tasks);
         renderFocusScore(events, tasks);
         const addButton = document.getElementById("open-task-modal");
@@ -828,6 +805,22 @@ document.getElementById("timeline-list")?.addEventListener("click", async (event
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ id: taskId, exclude: next }),
+        });
+        if (!res.ok) {
+            const text = await res.text();
+            alert("Failed to update task: " + text);
+            return;
+        }
+        await refreshAll();
+    }
+    if (target?.dataset?.doneToggle) {
+        const taskId = Number(target.dataset.taskId || 0);
+        const next = target.dataset.next === "true";
+        if (!taskId) return;
+        const res = await fetch("/tasks/update", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ id: taskId, done: next }),
         });
         if (!res.ok) {
             const text = await res.text();
