@@ -5,9 +5,9 @@ import time
 import os
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DB_PATH = os.path.join(BASE_DIR, "focus.db")
-HOST = "127.0.0.1"
-PORT = 8079
+DB_PATH = os.environ.get("NIRI_DB_PATH", os.path.join(BASE_DIR, "focus.db"))
+HOST = os.environ.get("NIRI_HOST", "127.0.0.1")
+PORT = int(os.environ.get("NIRI_PORT", "8079"))
 
 def init_db():
     conn = sqlite3.connect(DB_PATH)

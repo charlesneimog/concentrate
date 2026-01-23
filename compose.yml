@@ -1,0 +1,12 @@
+services:
+  niri-time:
+    build: .
+    ports:
+      - "8079:8079"
+    environment:
+      NIRI_HOST: 0.0.0.0
+      NIRI_PORT: 8079
+      NIRI_DB_PATH: /data/focus.db
+    volumes:
+      - ./data:/data
+    restart: unless-stopped
