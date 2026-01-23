@@ -1,0 +1,872 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Focus Timeline Dashboard</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@100..900&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "primary": "#1313ec",
+                        "background-light": "#f6f6f8",
+                        "background-dark": "#101022",
+                    },
+                    fontFamily: {
+                        "display": ["Inter"]
+                    },
+                    borderRadius: { "DEFAULT": "0.25rem", "lg": "0.5rem", "xl": "0.75rem", "full": "9999px" },
+                },
+            },
+        }
+    </script>
+<style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        .progress-ring-circle {
+            transition: stroke-dashoffset 0.35s;
+            transform: rotate(-90deg);
+            transform-origin: 50% 50%;
+        }
+    </style>
+</head>
+<body class="bg-white dark:bg-slate-900 text-slate-900 dark:text-white min-h-screen overflow-hidden">
+<!-- Top Navigation Bar -->
+<header class="flex items-center justify-between whitespace-nowrap border-b border-solid border-slate-200 dark:border-[#282839] px-4 lg:px-6 py-2 bg-white dark:bg-slate-900/90">
+<div class="flex items-center gap-4">
+<div class="size-6 text-primary">
+<svg fill="none" viewbox="0 0 48 48" xmlns="http://www.w3.org/2000/svg">
+<path clip-rule="evenodd" d="M12.0799 24L4 19.2479L9.95537 8.75216L18.04 13.4961L18.0446 4H29.9554L29.96 13.4961L38.0446 8.75216L44 19.2479L35.92 24L44 28.7521L38.0446 39.2479L29.96 34.5039L29.9554 44H18.0446L18.04 34.5039L9.95537 39.2479L4 28.7521L12.0799 24Z" fill="currentColor" fill-rule="evenodd"></path>
+</svg>
+</div>
+<h2 class="text-slate-900 dark:text-white text-lg font-bold leading-tight tracking-[-0.015em]">Focus Timeline</h2>
+</div>
+</header>
+<main class="max-w-6xl mx-auto px-4 lg:px-6 py-4 h-[calc(100vh-56px)] overflow-hidden">
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-4 h-full">
+<div class="flex flex-col gap-4 h-full">
+<section class="rounded-lg border border-slate-200 dark:border-[#3b3b54] bg-white/70 dark:bg-slate-900/40 p-4 shadow-sm">
+<div class="flex items-center justify-between gap-3">
+<div>
+<p class="text-primary font-bold text-[10px] tracking-widest uppercase">Recording</p>
+<h1 class="text-slate-900 dark:text-white text-lg font-bold">Focus Control</h1>
+<p id="recording-status" class="text-slate-500 dark:text-slate-400 text-xs">Stopped</p>
+</div>
+<button id="record-toggle" class="inline-flex items-center justify-center rounded-md px-3 py-2 bg-primary text-white text-xs font-bold hover:opacity-90 transition">Start</button>
+</div>
+<div class="mt-3 rounded-md border border-slate-200 dark:border-slate-800 bg-white/80 dark:bg-slate-900/50 p-3">
+<div class="flex items-center justify-between gap-3">
+<div>
+<p class="text-slate-500 dark:text-slate-400 text-[10px] uppercase tracking-widest">Focus Score</p>
+<p id="focus-score" class="text-xl font-bold text-slate-900 dark:text-white">0%</p>
+</div>
+<div class="flex items-center gap-2">
+<div class="text-[10px] text-slate-500 dark:text-slate-400">In: <span id="in-task-time" class="font-semibold text-slate-900 dark:text-white">0m</span></div>
+<div class="text-[10px] text-slate-500 dark:text-slate-400">Out: <span id="off-task-time" class="font-semibold text-slate-900 dark:text-white">0m</span></div>
+</div>
+</div>
+<div class="mt-2 h-1.5 w-full rounded-full bg-slate-200 dark:bg-slate-800 overflow-hidden">
+<div id="focus-bar" class="h-full rounded-full bg-red-500" style="width: 0%"></div>
+</div>
+</div>
+<div class="mt-3 rounded-md border border-slate-200 dark:border-slate-800 bg-white/80 dark:bg-slate-900/50 px-3 py-2">
+<p class="text-slate-500 dark:text-slate-400 text-[10px] uppercase tracking-widest">Current Activity</p>
+<p id="current-activity" class="text-xs text-slate-700 dark:text-slate-200 truncate">Idle</p>
+</div>
+</section>
+
+<section class="rounded-lg border border-slate-200 dark:border-[#3b3b54] bg-white/70 dark:bg-slate-900/40 p-4 shadow-sm flex-1 overflow-hidden">
+<div class="flex items-center justify-between gap-3 mb-3">
+<div>
+<p class="text-primary font-bold text-[10px] tracking-widest uppercase">Plan</p>
+<h2 class="text-slate-900 dark:text-white text-base font-bold">Tasks</h2>
+</div>
+<button id="open-task-modal" class="inline-flex items-center justify-center rounded-md px-3 py-2 bg-slate-900 text-white dark:bg-white dark:text-slate-900 text-xs font-bold">Add</button>
+</div>
+<div class="relative pl-3 space-y-0" id="timeline-list"></div>
+</section>
+</div>
+
+<section class="rounded-lg border border-slate-200 dark:border-[#3b3b54] bg-white/70 dark:bg-slate-900/40 p-4 shadow-sm flex flex-col h-full overflow-hidden">
+<div class="flex items-center justify-between gap-3 mb-3">
+<div>
+<p class="text-primary font-bold text-[10px] tracking-widest uppercase">Live</p>
+<h2 class="text-slate-900 dark:text-white text-base font-bold">Now</h2>
+</div>
+</div>
+<div id="live-groups" class="space-y-3 overflow-hidden"></div>
+</section>
+</div>
+</main>
+
+<div id="task-modal" class="fixed inset-0 z-50 hidden items-center justify-center bg-slate-900/60 p-4">
+<div class="w-full max-w-lg rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-6 shadow-xl">
+<div class="flex items-center justify-between mb-4">
+<h3 class="text-lg font-bold text-slate-900 dark:text-white">Add Task</h3>
+<button id="close-task-modal" class="text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white">
+<span class="material-symbols-outlined">close</span>
+</button>
+</div>
+<form id="task-form" class="space-y-4">
+<div>
+<label class="block text-sm font-medium text-slate-700 dark:text-slate-300" for="task-name">Task name</label>
+<input class="mt-1 w-full rounded-lg border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white" id="task-name" required type="text" placeholder="Compose" />
+</div>
+<div>
+<label class="block text-sm font-medium text-slate-700 dark:text-slate-300" for="task-category">Category (optional)</label>
+<input class="mt-1 w-full rounded-lg border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white" id="task-category" type="text" placeholder="Writing" />
+</div>
+<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+<div>
+<label class="block text-sm font-medium text-slate-700 dark:text-slate-300" for="task-start">Start time</label>
+<input class="mt-1 w-full rounded-lg border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white" id="task-start" type="datetime-local" />
+</div>
+<div>
+<label class="block text-sm font-medium text-slate-700 dark:text-slate-300" for="task-duration">Duration (minutes)</label>
+<input class="mt-1 w-full rounded-lg border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white" id="task-duration" type="number" min="1" value="60" />
+</div>
+</div>
+<div>
+<label class="block text-sm font-medium text-slate-700 dark:text-slate-300" for="task-app-ids">Allowed app IDs (comma-separated)</label>
+<input class="mt-1 w-full rounded-lg border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white" id="task-app-ids" type="text" placeholder="code, firefox" />
+</div>
+<div>
+<label class="block text-sm font-medium text-slate-700 dark:text-slate-300" for="task-title-keys">Allowed title keywords (comma-separated)</label>
+<input class="mt-1 w-full rounded-lg border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white" id="task-title-keys" type="text" placeholder="compose, draft" />
+</div>
+<label class="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300">
+<input id="task-exclude" type="checkbox" class="rounded border-slate-300 dark:border-slate-700" />
+Exclude this task from focus
+</label>
+<div class="flex items-center justify-end gap-3 pt-2">
+<button id="cancel-task" type="button" class="rounded-lg px-4 py-2 text-sm font-bold text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white">Cancel</button>
+<button type="submit" class="rounded-lg px-4 py-2 text-sm font-bold bg-primary text-white hover:opacity-90">Save Task</button>
+</div>
+</form>
+</div>
+</div>
+
+<div id="link-modal" class="fixed inset-0 z-50 hidden items-center justify-center bg-slate-900/60 p-4">
+<div class="w-full max-w-lg rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-6 shadow-xl">
+<div class="flex items-center justify-between mb-4">
+<h3 class="text-lg font-bold text-slate-900 dark:text-white">Add to Task</h3>
+<button id="close-link-modal" class="text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white">
+<span class="material-symbols-outlined">close</span>
+</button>
+</div>
+<form id="link-form" class="space-y-4">
+<div>
+<label class="block text-sm font-medium text-slate-700 dark:text-slate-300" for="link-app">App ID</label>
+<input class="mt-1 w-full rounded-lg border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white" id="link-app" type="text" readonly />
+</div>
+<div>
+<label class="block text-sm font-medium text-slate-700 dark:text-slate-300" for="link-title">Title</label>
+<input class="mt-1 w-full rounded-lg border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white" id="link-title" type="text" readonly />
+</div>
+<div>
+<label class="block text-sm font-medium text-slate-700 dark:text-slate-300" for="link-task">Choose task</label>
+<select class="mt-1 w-full rounded-lg border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white" id="link-task" required></select>
+</div>
+<div>
+<label class="block text-sm font-medium text-slate-700 dark:text-slate-300" for="link-category">Change category (optional)</label>
+<input class="mt-1 w-full rounded-lg border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white" id="link-category" type="text" placeholder="Writing" />
+</div>
+<div class="space-y-2">
+<label class="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300">
+<input id="link-add-both" type="checkbox" class="rounded border-slate-300 dark:border-slate-700" checked />
+Add app ID + title keyword
+</label>
+<label class="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300">
+<input id="link-exclude" type="checkbox" class="rounded border-slate-300 dark:border-slate-700" />
+Exclude this task
+</label>
+</div>
+<div class="flex items-center justify-end gap-3 pt-2">
+<button id="cancel-link" type="button" class="rounded-lg px-4 py-2 text-sm font-bold text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white">Cancel</button>
+<button type="submit" class="rounded-lg px-4 py-2 text-sm font-bold bg-primary text-white hover:opacity-90">Save</button>
+</div>
+</form>
+</div>
+</div>
+<script>
+function fmtTime(ts) {
+    if (!ts) return "";
+    return new Date(ts * 1000).toLocaleTimeString();
+}
+
+function fmtDuration(sec) {
+    if (!isFinite(sec) || sec <= 0) return "0m";
+    const m = Math.floor(sec / 60);
+    const h = Math.floor(m / 60);
+    const mm = m % 60;
+    return h > 0 ? `${h}h ${mm}m` : `${mm}m`;
+}
+
+function escapeHtml(s) {
+    return String(s)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/\"/g, "&quot;")
+        .replace(/'/g, "&#39;");
+}
+
+
+function parseLocalDateTime(input, fallbackDate) {
+    if (!input) return fallbackDate;
+    const trimmed = input.trim();
+    if (!trimmed) return fallbackDate;
+
+    const now = fallbackDate;
+    if (/^\d{2}:\d{2}$/.test(trimmed)) {
+        const [hh, mm] = trimmed.split(":").map(Number);
+        const d = new Date(now);
+        d.setHours(hh, mm, 0, 0);
+        return d;
+    }
+
+    const normalized = trimmed.replace(" ", "T");
+    const d = new Date(normalized);
+    if (!isNaN(d.getTime())) return d;
+    return fallbackDate;
+}
+
+function normalizeListInput(input) {
+    if (!input) return [];
+    return input
+        .split(",")
+        .map(s => s.trim())
+        .filter(Boolean);
+}
+
+function matchesAllowed(current, task) {
+    if (!current) return null;
+    const app = (current.app_id || "").toLowerCase();
+    const title = (current.title || "").toLowerCase();
+
+    const allowedApps = Array.isArray(task.allowed_app_ids) ? task.allowed_app_ids : [];
+    const allowedTitles = Array.isArray(task.allowed_titles) ? task.allowed_titles : [];
+
+    const appOk = allowedApps.length === 0 || allowedApps.some(a => app === String(a).toLowerCase());
+    const titleOk = allowedTitles.length === 0 || allowedTitles.some(t => title.includes(String(t).toLowerCase()));
+    return appOk && titleOk;
+}
+
+function eventMatchesTask(appId, title, task) {
+    const app = (appId || "").toLowerCase();
+    const ttl = (title || "").toLowerCase();
+    const allowedApps = Array.isArray(task.allowed_app_ids) ? task.allowed_app_ids : [];
+    const allowedTitles = Array.isArray(task.allowed_titles) ? task.allowed_titles : [];
+    const appOk = allowedApps.length === 0 || allowedApps.some(a => app === String(a).toLowerCase());
+    const titleOk = allowedTitles.length === 0 || allowedTitles.some(t => ttl.includes(String(t).toLowerCase()));
+    return appOk && titleOk;
+}
+
+function isInActiveTask(appId, title, tasks) {
+    if (!Array.isArray(tasks) || tasks.length === 0) return null;
+    const now = Date.now() / 1000;
+    const active = tasks.filter(t => now >= t.start_time && now <= t.end_time && !t.excluded);
+    if (!active.length) return null;
+    for (const t of active) {
+        if (eventMatchesTask(appId, title, t)) return true;
+    }
+    return false;
+}
+
+function eventOverlapsTask(event, task) {
+    const start = Number(event.start_time) || 0;
+    const end = Number(event.end_time) || 0;
+    if (!start || !end) return false;
+    return start < task.end_time && end > task.start_time;
+}
+
+function computeFocusScore(events, tasks) {
+    let inTask = 0;
+    let offTask = 0;
+    const taskList = Array.isArray(tasks) ? tasks.filter(t => !t.excluded) : [];
+
+    for (const e of events) {
+        const duration = Number(e.duration) || 0;
+        if (duration <= 0) continue;
+
+        let matched = false;
+        for (const t of taskList) {
+            if (!eventOverlapsTask(e, t)) continue;
+            if (eventMatchesTask(e.app_id, e.title, t)) {
+                matched = true;
+                break;
+            }
+        }
+
+        if (matched) inTask += duration;
+        else offTask += duration;
+    }
+
+    const total = inTask + offTask;
+    const score = total > 0 ? Math.round((inTask / total) * 100) : 0;
+    return { inTask, offTask, score };
+}
+
+function renderFocusScore(events, tasks) {
+    const { inTask, offTask, score } = computeFocusScore(events, tasks);
+    const scoreEl = document.getElementById("focus-score");
+    const inEl = document.getElementById("in-task-time");
+    const offEl = document.getElementById("off-task-time");
+    const bar = document.getElementById("focus-bar");
+
+    if (scoreEl) scoreEl.textContent = `${score}%`;
+    if (inEl) inEl.textContent = fmtDuration(inTask);
+    if (offEl) offEl.textContent = fmtDuration(offTask);
+
+    if (bar) {
+        bar.style.width = `${score}%`;
+        bar.classList.remove("bg-red-500", "bg-yellow-500", "bg-green-500");
+        if (score < 50) {
+            bar.classList.add("bg-red-500");
+        } else if (score < 80) {
+            bar.classList.add("bg-yellow-500");
+        } else {
+            bar.classList.add("bg-green-500");
+        }
+    }
+}
+
+function renderTasks(tasks, current) {
+    const container = document.getElementById("timeline-list");
+    if (!container) return;
+    container.innerHTML = "";
+
+    if (!tasks.length) {
+        const empty = document.createElement("div");
+        empty.className = "text-slate-400 text-sm px-2 py-4";
+        empty.textContent = "No planned tasks yet.";
+        container.appendChild(empty);
+        return;
+    }
+
+    const excludedTasks = tasks.filter(t => t.excluded);
+    const activeTasks = tasks.filter(t => !t.excluded);
+    if (!activeTasks.length && excludedTasks.length) {
+        const notice = document.createElement("div");
+        notice.className = "flex items-center justify-between text-slate-400 text-xs px-2 py-3";
+        notice.innerHTML = `
+            <span>Task excluded</span>
+            <button class="rounded-md px-2 py-1 text-[10px] font-bold bg-slate-900 text-white dark:bg-white dark:text-slate-900" data-exclude-toggle="1" data-task-id="${excludedTasks[0].id}" data-next="false">Include</button>
+        `;
+        container.appendChild(notice);
+        return;
+    }
+
+    const line = document.createElement("div");
+    line.className = "absolute left-[27px] top-6 bottom-6 w-[1px] bg-slate-200 dark:bg-[#3b3b54]";
+    container.appendChild(line);
+
+    const now = Date.now() / 1000;
+    const maxTasks = 3;
+    const visibleTasks = activeTasks.slice(0, maxTasks);
+    for (const t of visibleTasks) {
+        const status = now >= t.end_time
+            ? "Completed"
+            : now >= t.start_time
+                ? "On-Going"
+                : "Scheduled";
+
+        let badgeClass = "text-slate-400";
+        let badgeText = status;
+
+        if (status === "Completed") {
+            badgeClass = "bg-primary/10 text-primary";
+        } else if (status === "On-Going") {
+            const ok = matchesAllowed(current, t);
+            if (ok === true) {
+                badgeClass = "bg-green-500/10 text-green-500";
+                badgeText = "On-Track";
+            } else if (ok === false) {
+                badgeClass = "bg-red-500/10 text-red-500";
+                badgeText = "Off-Track";
+            } else {
+                badgeClass = "bg-purple-500/10 text-purple-500";
+                badgeText = "On-Going";
+            }
+        }
+
+        const timeRange = `${fmtTime(t.start_time)} - ${fmtTime(t.end_time)}`;
+        const item = document.createElement("div");
+        item.className = "grid grid-cols-[40px_1fr] gap-x-6 relative";
+        item.innerHTML = `
+            <div class="flex flex-col items-center pt-5">
+                <div class="z-10 bg-white dark:bg-background-dark p-1 rounded-full text-primary">
+                    <span class="material-symbols-outlined text-[24px]">task</span>
+                </div>
+            </div>
+            <div class="flex flex-col py-4 px-5 rounded-xl bg-white dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800 shadow-sm mb-4">
+                <div class="flex justify-between items-start">
+                    <div>
+                        <p class="text-slate-900 dark:text-white text-lg font-semibold leading-normal">${escapeHtml(t.task || "(task)")}</p>
+                        <p class="text-slate-500 dark:text-[#9d9db9] text-sm font-medium">${escapeHtml(timeRange)} · ${escapeHtml(t.category || "")}</p>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <span class="${badgeClass} text-[10px] font-bold px-2 py-1 rounded uppercase">${badgeText}</span>
+                        <button class="rounded-md px-2 py-1 text-[10px] font-bold bg-slate-900 text-white dark:bg-white dark:text-slate-900" data-exclude-toggle="1" data-task-id="${t.id}" data-next="true">Exclude</button>
+                    </div>
+                </div>
+            </div>
+        `;
+        container.appendChild(item);
+    }
+
+    if (activeTasks.length > maxTasks) {
+        const more = document.createElement("div");
+        more.className = "text-slate-400 text-[10px] px-2 pb-2";
+        more.textContent = `+${activeTasks.length - maxTasks} more tasks`;
+        container.appendChild(more);
+    }
+}
+
+async function loadTasks() {
+    const res = await fetch("/tasks", { cache: "no-store" });
+    if (!res.ok) return [];
+    const tasks = await res.json();
+    if (!Array.isArray(tasks)) return [];
+    return tasks
+        .map(t => ({ ...t, excluded: !!t.excluded }))
+        .sort((a, b) => (a.start_time || 0) - (b.start_time || 0));
+}
+
+async function loadCurrent() {
+    const res = await fetch("/current", { cache: "no-store" });
+    if (!res.ok) return null;
+    const cur = await res.json();
+    return Object.keys(cur || {}).length ? cur : null;
+}
+
+function renderCurrentActivity(current) {
+    const el = document.getElementById("current-activity");
+    if (!el) return;
+    if (!current) {
+        el.textContent = "Idle";
+        return;
+    }
+    const app = current.app_id || "(unknown)";
+    const title = current.title || "(untitled)";
+    el.textContent = `${app} — ${title}`;
+}
+
+async function loadEvents() {
+    const res = await fetch("/events", { cache: "no-store" });
+    if (!res.ok) {
+        throw new Error(`HTTP ${res.status}`);
+    }
+    const events = await res.json();
+    if (!Array.isArray(events)) return [];
+    return events.sort((a, b) => (a.start_time || 0) - (b.start_time || 0));
+}
+
+function getTaskFormElements() {
+    return {
+        name: document.getElementById("task-name"),
+        category: document.getElementById("task-category"),
+        start: document.getElementById("task-start"),
+        duration: document.getElementById("task-duration"),
+        appIds: document.getElementById("task-app-ids"),
+        titleKeys: document.getElementById("task-title-keys"),
+        exclude: document.getElementById("task-exclude"),
+    };
+}
+
+function openTaskModal() {
+    const modal = document.getElementById("task-modal");
+    if (!modal) return;
+    modal.classList.remove("hidden");
+    modal.classList.add("flex");
+    const { name, category, start, duration, appIds, titleKeys, exclude } = getTaskFormElements();
+    const existing = lastTasks[0];
+    if (existing) {
+        if (name) name.value = existing.task || "";
+        if (category) category.value = existing.category || "";
+        if (start) {
+            const d = new Date((existing.start_time || Date.now() / 1000) * 1000);
+            const local = new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+            start.value = local;
+        }
+        if (duration) {
+            const sec = Math.max(0, Number(existing.end_time) - Number(existing.start_time));
+            duration.value = String(Math.max(1, Math.round(sec / 60) || 60));
+        }
+        if (appIds) appIds.value = (existing.allowed_app_ids || []).join(", ");
+        if (titleKeys) titleKeys.value = (existing.allowed_titles || []).join(", ");
+        if (exclude) exclude.checked = !!existing.excluded;
+    } else {
+        if (start) {
+            const now = new Date();
+            const local = new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+            start.value = local;
+        }
+        if (name) name.value = "";
+        if (category) category.value = "";
+        if (duration) duration.value = "60";
+        if (appIds) appIds.value = "";
+        if (titleKeys) titleKeys.value = "";
+        if (exclude) exclude.checked = false;
+    }
+    name?.focus();
+}
+
+function closeTaskModal() {
+    const modal = document.getElementById("task-modal");
+    if (!modal) return;
+    modal.classList.add("hidden");
+    modal.classList.remove("flex");
+}
+
+async function submitTaskForm(event) {
+    event.preventDefault();
+    const { name, category, start, duration, appIds, titleKeys, exclude } = getTaskFormElements();
+    if (!name || !name.value.trim()) return;
+
+    const now = new Date();
+    const startDate = parseLocalDateTime(start?.value || "", now);
+    const durationMin = Math.max(1, parseInt(duration?.value || "60", 10) || 60);
+    const endDate = new Date(startDate.getTime() + durationMin * 60000);
+
+    const payload = {
+        task: name.value.trim(),
+        category: category?.value.trim() || "",
+        start_time: startDate.getTime() / 1000,
+        end_time: endDate.getTime() / 1000,
+        allowed_app_ids: normalizeListInput(appIds?.value || ""),
+        allowed_titles: normalizeListInput(titleKeys?.value || ""),
+        exclude: !!exclude?.checked,
+    };
+
+    let res;
+    if (lastTasks.length > 0) {
+        res = await fetch("/tasks/update", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ ...payload, id: lastTasks[0].id }),
+        });
+    } else {
+        res = await fetch("/tasks", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+        });
+    }
+
+    if (!res.ok) {
+        const text = await res.text();
+        alert("Failed to add task: " + text);
+        return;
+    }
+
+    closeTaskModal();
+    await refreshAll();
+}
+
+let isRecording = false;
+let refreshTimer = null;
+let lastTasks = [];
+let lastEvents = [];
+let linkSelection = { app: "", title: "" };
+
+function setRecording(next) {
+    isRecording = next;
+    const button = document.getElementById("record-toggle");
+    const status = document.getElementById("recording-status");
+    if (button) {
+        button.textContent = isRecording ? "Stop Recording" : "Start Recording";
+        button.classList.toggle("bg-red-500", isRecording);
+        button.classList.toggle("bg-primary", !isRecording);
+    }
+    if (status) {
+        status.textContent = isRecording ? "Recording (auto-refresh on)" : "Stopped";
+    }
+    if (refreshTimer) {
+        clearInterval(refreshTimer);
+        refreshTimer = null;
+    }
+    if (isRecording) {
+        refreshAll();
+        refreshTimer = setInterval(refreshAll, 10000);
+    }
+}
+
+function openLinkModal(appId, title) {
+    const modal = document.getElementById("link-modal");
+    if (!modal) return;
+    linkSelection = { app: appId || "", title: title || "" };
+    const appInput = document.getElementById("link-app");
+    const titleInput = document.getElementById("link-title");
+    const categoryInput = document.getElementById("link-category");
+    const addBoth = document.getElementById("link-add-both");
+    const excludeInput = document.getElementById("link-exclude");
+    if (appInput) appInput.value = linkSelection.app;
+    if (titleInput) titleInput.value = linkSelection.title;
+    if (categoryInput) categoryInput.value = "";
+    if (addBoth) addBoth.checked = true;
+
+    const select = document.getElementById("link-task");
+    if (select) {
+        select.innerHTML = "";
+        if (!lastTasks.length) {
+            const opt = document.createElement("option");
+            opt.value = "";
+            opt.textContent = "No tasks yet";
+            select.appendChild(opt);
+            select.disabled = true;
+        } else {
+            select.disabled = false;
+            lastTasks.forEach(t => {
+                const opt = document.createElement("option");
+                opt.value = String(t.id);
+                opt.textContent = `${t.task || "(task)"}`;
+                select.appendChild(opt);
+            });
+        }
+    }
+
+    if (excludeInput) {
+        const selectedTask = lastTasks[0];
+        excludeInput.checked = !!selectedTask?.excluded;
+    }
+
+    modal.classList.remove("hidden");
+    modal.classList.add("flex");
+}
+
+function closeLinkModal() {
+    const modal = document.getElementById("link-modal");
+    if (!modal) return;
+    modal.classList.add("hidden");
+    modal.classList.remove("flex");
+}
+
+async function submitLinkForm(event) {
+    event.preventDefault();
+    const select = document.getElementById("link-task");
+    const category = document.getElementById("link-category");
+    const addBoth = document.getElementById("link-add-both");
+    const excludeInput = document.getElementById("link-exclude");
+
+    if (!select || select.disabled || !select.value) return;
+    const taskId = Number(select.value);
+    const task = lastTasks.find(t => Number(t.id) === taskId);
+    if (!task) return;
+
+    const nextApps = Array.isArray(task.allowed_app_ids) ? [...task.allowed_app_ids] : [];
+    const nextTitles = Array.isArray(task.allowed_titles) ? [...task.allowed_titles] : [];
+    if (addBoth?.checked) {
+        if (linkSelection.app && !nextApps.some(a => String(a).toLowerCase() === linkSelection.app.toLowerCase())) {
+            nextApps.push(linkSelection.app);
+        }
+        if (linkSelection.title && !nextTitles.some(t => String(t).toLowerCase() === linkSelection.title.toLowerCase())) {
+            nextTitles.push(linkSelection.title);
+        }
+    }
+
+    const payload = {
+        id: taskId,
+        category: category?.value.trim() || undefined,
+        allowed_app_ids: nextApps,
+        allowed_titles: nextTitles,
+        exclude: !!excludeInput?.checked,
+    };
+
+    const res = await fetch("/tasks/update", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+    });
+
+    if (!res.ok) {
+        const text = await res.text();
+        alert("Failed to update task: " + text);
+        return;
+    }
+
+    closeLinkModal();
+    await refreshAll();
+}
+
+function renderLiveGroups(events, tasks) {
+    const container = document.getElementById("live-groups");
+    if (!container) return;
+    container.innerHTML = "";
+
+    if (!events.length) {
+        const empty = document.createElement("div");
+        empty.className = "text-slate-400 text-sm";
+        empty.textContent = "No activity yet.";
+        container.appendChild(empty);
+        return;
+    }
+
+    const groups = new Map();
+    for (const e of events) {
+        const app = e.app_id || "(unknown)";
+        const title = e.title || "(untitled)";
+        if (!groups.has(app)) groups.set(app, new Map());
+        const titleMap = groups.get(app);
+        const cur = titleMap.get(title) || { duration: 0, lastEnd: 0 };
+        cur.duration += Number(e.duration) || 0;
+        cur.lastEnd = Math.max(cur.lastEnd, Number(e.end_time) || 0);
+        titleMap.set(title, cur);
+    }
+
+    const appEntries = Array.from(groups.entries()).map(([app, titles]) => {
+        const total = Array.from(titles.values()).reduce((sum, t) => sum + t.duration, 0);
+        return { app, titles, total };
+    }).sort((a, b) => b.total - a.total);
+
+    const maxApps = 3;
+    const visibleApps = appEntries.slice(0, maxApps);
+
+    for (const group of visibleApps) {
+        const card = document.createElement("div");
+        card.className = "rounded-lg border border-slate-200 dark:border-slate-800 p-4 bg-white dark:bg-slate-900/30";
+
+        const header = document.createElement("div");
+        header.className = "flex items-center justify-between mb-2";
+        header.innerHTML = `
+            <div class="text-slate-900 dark:text-white font-semibold">${escapeHtml(group.app)}</div>
+            <div class="text-slate-500 dark:text-slate-400 text-xs">${escapeHtml(fmtDuration(group.total))}</div>
+        `;
+        card.appendChild(header);
+
+        const list = document.createElement("div");
+        list.className = "space-y-2";
+
+        const titleEntries = Array.from(group.titles.entries()).sort((a, b) => b[1].duration - a[1].duration);
+        const maxTitles = 3;
+        const visibleTitles = titleEntries.slice(0, maxTitles);
+        for (const [title, info] of visibleTitles) {
+            const inTask = isInActiveTask(group.app, title, tasks);
+            let badgeClass = "bg-slate-500/10 text-slate-500";
+            let badgeText = "No Task";
+            if (inTask === true) {
+                badgeClass = "bg-green-500/10 text-green-500";
+                badgeText = "In Task";
+            } else if (inTask === false) {
+                badgeClass = "bg-red-500/10 text-red-500";
+                badgeText = "Off Task";
+            }
+
+            const row = document.createElement("div");
+            row.className = "flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 rounded-md px-2 py-1.5 bg-slate-50 dark:bg-slate-900/60 max-w-[520px]";
+            row.innerHTML = `
+                <div class="text-slate-700 dark:text-slate-200 text-sm">${escapeHtml(title)}</div>
+                <div class="flex items-center gap-3">
+                    <div class="text-slate-500 dark:text-slate-400 text-xs">${escapeHtml(fmtDuration(info.duration))}</div>
+                    <span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold ${badgeClass} uppercase tracking-tight">${badgeText}</span>
+                    <button class="rounded-md px-2 py-1 text-[10px] font-bold bg-slate-900 text-white dark:bg-white dark:text-slate-900" data-link-task="1" data-app="${escapeHtml(group.app)}" data-title="${escapeHtml(title)}">Add to Task</button>
+                </div>
+            `;
+            list.appendChild(row);
+        }
+
+        card.appendChild(list);
+        container.appendChild(card);
+    }
+
+    if (appEntries.length > maxApps) {
+        const more = document.createElement("div");
+        more.className = "text-slate-400 text-[10px]";
+        more.textContent = `+${appEntries.length - maxApps} more apps`;
+        container.appendChild(more);
+    }
+}
+
+async function refreshAll() {
+    try {
+        const [events, tasks, current] = await Promise.all([
+            loadEvents(),
+            loadTasks(),
+            loadCurrent(),
+        ]);
+        lastEvents = events;
+        lastTasks = tasks;
+        renderTasks(tasks, current);
+        renderLiveGroups(events, tasks);
+        renderFocusScore(events, tasks);
+        const addButton = document.getElementById("open-task-modal");
+        if (addButton) {
+            addButton.textContent = tasks.length ? "Edit" : "Add";
+        }
+        renderCurrentActivity(current);
+    } catch (err) {
+        console.error("Failed to load data", err);
+    }
+}
+
+document.getElementById("record-toggle")?.addEventListener("click", () => {
+    setRecording(!isRecording);
+});
+
+document.getElementById("open-task-modal")?.addEventListener("click", openTaskModal);
+document.getElementById("close-task-modal")?.addEventListener("click", closeTaskModal);
+document.getElementById("cancel-task")?.addEventListener("click", closeTaskModal);
+document.getElementById("task-form")?.addEventListener("submit", submitTaskForm);
+document.getElementById("task-modal")?.addEventListener("click", (event) => {
+    if (event.target?.id === "task-modal") closeTaskModal();
+});
+
+document.getElementById("timeline-list")?.addEventListener("click", async (event) => {
+    const target = event.target;
+    if (target?.dataset?.excludeToggle) {
+        const taskId = Number(target.dataset.taskId || 0);
+        const next = target.dataset.next === "true";
+        if (!taskId) return;
+        const res = await fetch("/tasks/update", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ id: taskId, exclude: next }),
+        });
+        if (!res.ok) {
+            const text = await res.text();
+            alert("Failed to update task: " + text);
+            return;
+        }
+        await refreshAll();
+    }
+});
+
+document.getElementById("close-link-modal")?.addEventListener("click", closeLinkModal);
+document.getElementById("cancel-link")?.addEventListener("click", closeLinkModal);
+document.getElementById("link-form")?.addEventListener("submit", submitLinkForm);
+document.getElementById("link-modal")?.addEventListener("click", (event) => {
+    if (event.target?.id === "link-modal") closeLinkModal();
+});
+
+document.getElementById("link-task")?.addEventListener("change", (event) => {
+    const select = event.target;
+    const excludeInput = document.getElementById("link-exclude");
+    const taskId = Number(select?.value || 0);
+    const task = lastTasks.find(t => Number(t.id) === taskId);
+    if (excludeInput) excludeInput.checked = !!task?.excluded;
+});
+
+document.getElementById("live-groups")?.addEventListener("click", (event) => {
+    const target = event.target;
+    if (target?.dataset?.linkTask) {
+        const appId = target.dataset.app || "";
+        const title = target.dataset.title || "";
+        openLinkModal(appId, title);
+    }
+});
+
+document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") closeTaskModal();
+    if (event.key === "Escape") closeLinkModal();
+});
+
+refreshAll();
+</script>
+</body></html>
