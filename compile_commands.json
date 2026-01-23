@@ -1,0 +1,8 @@
+[
+{
+  "directory": "/home/neimog/Documents/Git/niri-time/build",
+  "command": "/usr/bin/c++ -DCPPHTTPLIB_BROTLI_SUPPORT -DCPPHTTPLIB_OPENSSL_SUPPORT -DCPPHTTPLIB_USE_NON_BLOCKING_GETADDRINFO -DCPPHTTPLIB_ZLIB_SUPPORT -DCPPHTTPLIB_ZSTD_SUPPORT -isystem /home/neimog/Documents/Git/niri-time/build/_deps/cpp-httplib-src -isystem /home/neimog/.config/miniconda3.dir/include -isystem /home/neimog/Documents/Git/niri-time/build/_deps/json-src/include -std=c++17 -o CMakeFiles/niriuse.dir/niriuse.cpp.o -c /home/neimog/Documents/Git/niri-time/niriuse.cpp",
+  "file": "/home/neimog/Documents/Git/niri-time/niriuse.cpp",
+  "output": "CMakeFiles/niriuse.dir/niriuse.cpp.o"
+}
+]
