@@ -1,3 +1,12 @@
 build
 __pycache__
 focus.db
+.cache/clangd/index
+compile_commands.json
+out.folded
+out.perf
+out.perfclear
+perf.data
+perf.data.old
+perf.svg
+top50.folded

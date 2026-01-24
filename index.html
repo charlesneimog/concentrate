@@ -1,739 +1,658 @@
-<!DOCTYPE html>
-<html lang="en"><head>
-<meta charset="utf-8"/>
-<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
-<title>Focus Dashboard - Tasks Light View</title>
-<link href="https://fonts.googleapis.com" rel="preconnect"/>
-<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&amp;display=swap" rel="stylesheet"/>
-<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
-<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
-<script id="tailwind-config">
-        tailwind.config = {
-            theme: {
-                extend: {
-                    colors: {
-                        "primary": "#2563EB", // Bright professional blue
-                        "primary-hover": "#1d4ed8",
-                        "background-main": "#ffffff",
-                        "background-sidebar": "#f8f9fa",
-                        "surface-card": "#ffffff",
-                        "text-main": "#1f2937", // Charcoal gray
-                        "text-muted": "#6b7280",
-                        "border-subtle": "#e5e7eb",
-                        "border-focus": "#2563EB",
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8" />
+        <meta content="width=device-width, initial-scale=1.0" name="viewport" />
+        <title>Focus Dashboard - Tasks Light View</title>
+        <link href="https://fonts.googleapis.com" rel="preconnect" />
+        <link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect" />
+        <link
+            href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&amp;display=swap"
+            rel="stylesheet"
+        />
+        <link
+            href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap"
+            rel="stylesheet"
+        />
+        <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+        <script id="tailwind-config">
+            tailwind.config = {
+                theme: {
+                    extend: {
+                        colors: {
+                            primary: "#2563EB", // Bright professional blue
+                            "primary-hover": "#1d4ed8",
+                            "background-main": "#ffffff",
+                            "background-sidebar": "#f8f9fa",
+                            "surface-card": "#ffffff",
+                            "text-main": "#1f2937", // Charcoal gray
+                            "text-muted": "#6b7280",
+                            "border-subtle": "#e5e7eb",
+                            "border-focus": "#2563EB",
+                        },
+                        fontFamily: {
+                            display: ["Inter", "sans-serif"],
+                        },
+                        boxShadow: {
+                            subtle: "0 1px 3px 0 rgba(0, 0, 0, 0.05), 0 1px 2px -1px rgba(0, 0, 0, 0.05)",
+                        },
+                        borderRadius: { DEFAULT: "0.25rem", lg: "0.5rem", xl: "0.75rem", full: "9999px" },
                     },
-                    fontFamily: {
-                        "display": ["Inter", "sans-serif"]
-                    },
-                    boxShadow: {
-                        "subtle": "0 1px 3px 0 rgba(0, 0, 0, 0.05), 0 1px 2px -1px rgba(0, 0, 0, 0.05)"
-                    },
-                    borderRadius: {"DEFAULT": "0.25rem", "lg": "0.5rem", "xl": "0.75rem", "full": "9999px"},
                 },
-            },
-        }
-    </script>
-</head>
-<body class="font-display bg-background-main text-text-main antialiased overflow-hidden h-screen flex">
-<aside class="w-64 border-r border-border-subtle flex-shrink-0 flex flex-col bg-background-sidebar z-20 hidden md:flex">
-<div class="p-6 flex items-center gap-3">
-<div class="h-8 w-8 rounded-lg bg-primary flex items-center justify-center shadow-sm">
-<span class="material-symbols-outlined text-white" style="font-size: 20px;">bolt</span>
-</div>
-<h1 class="text-lg font-bold tracking-tight text-text-main">FocusFlow</h1>
-</div>
-<nav class="flex-1 px-4 space-y-1 overflow-y-auto">
-<a class="flex items-center gap-3 px-3 py-2.5 rounded-lg bg-primary/10 text-primary group font-semibold" href="#">
-<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">dashboard</span>
-<span class="text-sm">Tasks View</span>
-</a>
-<a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-text-muted hover:bg-white hover:text-text-main hover:shadow-subtle group transition-all" href="#">
-<span class="material-symbols-outlined">calendar_month</span>
-<span class="text-sm font-medium">Calendar</span>
-</a>
-<a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-text-muted hover:bg-white hover:text-text-main hover:shadow-subtle group transition-all" href="#">
-<span class="material-symbols-outlined">folder_open</span>
-<span class="text-sm font-medium">Projects</span>
-</a>
-<a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-text-muted hover:bg-white hover:text-text-main hover:shadow-subtle group transition-all" href="#">
-<span class="material-symbols-outlined">bar_chart</span>
-<span class="text-sm font-medium">Analytics</span>
-</a>
-<div class="pt-4 mt-4 border-t border-border-subtle">
-<p class="px-3 text-xs font-semibold text-text-muted uppercase tracking-wider mb-2">Favorites</p>
-<a class="flex items-center gap-3 px-3 py-2 rounded-lg text-text-muted hover:bg-white hover:text-text-main hover:shadow-subtle transition-all" href="#">
-<span class="w-2 h-2 rounded-full bg-purple-500"></span>
-<span class="text-sm font-medium">Product Launch</span>
-</a>
-<a class="flex items-center gap-3 px-3 py-2 rounded-lg text-text-muted hover:bg-white hover:text-text-main hover:shadow-subtle transition-all" href="#">
-<span class="w-2 h-2 rounded-full bg-orange-500"></span>
-<span class="text-sm font-medium">Q3 Marketing</span>
-</a>
-</div>
-</nav>
-<div class="p-4 border-t border-border-subtle bg-background-sidebar">
-<a class="flex items-center gap-3 p-2 rounded-lg hover:bg-white hover:shadow-subtle transition-all" href="#">
-<div class="h-9 w-9 rounded-full bg-cover bg-center ring-2 ring-white" data-alt="User profile picture" style='background-image: url("https://lh3.googleusercontent.com/aida-public/AB6AXuDMa23jIFcf1R-PKbRI84AWWXlaBJ3vWBJFVYcve3g7ckMYOYbyvDoQyRNejDAE3gJ-8H-k6hFRc8Ow8WdHgUIisuNW8dAV-_UGprE0gQRFRsQIUpbdm4eGzQqXsh7mOQr1sDcn-J717FZhbnZ0NYm2QTe52expkw5GqdktzMV7Inqmy7EHt1S_ho11OdPq_1c_4PDTimr_q4vrvvkBErj9H0XR5ULG5tr2PeDZ3bpp_0R6BO_VTnDdnxY0rU9-Fx0Kse8yXGUPg9k");'></div>
-<div class="flex flex-col min-w-0">
-<p class="text-sm font-medium text-text-main truncate">Alex Morgan</p>
-<p class="text-xs text-text-muted truncate">Pro Plan</p>
-</div>
-</a>
-</div>
-</aside>
-<main class="flex-1 flex flex-col min-w-0 overflow-y-auto bg-background-main relative">
-<header class="pt-8 pb-6 px-8 flex flex-col gap-6">
-<div class="flex justify-between items-end">
-<div>
-<h2 class="text-3xl font-bold text-text-main tracking-tight">Focus Session</h2>
-<div class="flex items-center gap-2 mt-2">
-<span class="relative flex h-2.5 w-2.5">
-<span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-<span class="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
-</span>
-<p id="current-status" class="text-sm text-text-muted">Ready to focus</p>
-</div>
-</div>
-<div class="hidden sm:block">
-<button class="flex items-center justify-center p-2 text-gray-400 hover:text-primary transition-colors bg-gray-50 rounded-full">
-<span class="material-symbols-outlined">settings</span>
-</button>
-</div>
-</div>
-<div class="bg-white rounded-xl p-6 shadow-subtle border border-border-subtle flex flex-col sm:flex-row items-center justify-between gap-8">
-<div class="flex gap-4 items-center">
-<div class="flex flex-col items-center gap-1">
-<div id="timer-hrs" class="flex h-16 w-16 items-center justify-center rounded-lg bg-gray-50 text-text-main text-3xl font-bold font-mono tracking-tighter border border-gray-100">
-                            00
-                        </div>
-<span class="text-xs font-medium text-text-muted">HRS</span>
-</div>
-<span class="text-2xl font-bold text-gray-300 -mt-5">:</span>
-<div class="flex flex-col items-center gap-1">
-<div id="timer-min" class="flex h-16 w-16 items-center justify-center rounded-lg bg-gray-50 text-text-main text-3xl font-bold font-mono tracking-tighter border border-gray-100">
-                            25
-                        </div>
-<span class="text-xs font-medium text-text-muted">MIN</span>
-</div>
-<span class="text-2xl font-bold text-gray-300 -mt-5">:</span>
-<div class="flex flex-col items-center gap-1">
-<div id="timer-sec" class="flex h-16 w-16 items-center justify-center rounded-lg bg-gray-50 text-text-main text-3xl font-bold font-mono tracking-tighter border border-gray-100">
-                            00
-                        </div>
-<span class="text-xs font-medium text-text-muted">SEC</span>
-</div>
-</div>
-<div class="h-12 w-px bg-gray-200 hidden sm:block"></div>
-<div class="flex items-center gap-4 w-full sm:w-auto">
-<button id="record-toggle" class="flex-1 sm:flex-none flex cursor-pointer items-center justify-center rounded-lg h-12 px-8 bg-primary hover:bg-primary-hover transition-colors text-white gap-2 text-base font-bold shadow-lg shadow-blue-500/20 active:scale-95">
-<span class="material-symbols-outlined">play_arrow</span>
-<span>Start Focus</span>
-</button>
-<button class="h-12 w-12 flex items-center justify-center rounded-lg border border-border-subtle text-text-muted hover:bg-gray-50 hover:text-text-main transition-colors bg-white">
-<span class="material-symbols-outlined">tune</span>
-</button>
-</div>
-</div>
-</header>
-<section class="px-8 pb-12 flex-1 flex flex-col gap-6">
-<div class="bg-white rounded-xl p-2 shadow-subtle border border-border-subtle flex flex-col sm:flex-row items-center gap-2">
-<div class="flex-1 w-full flex items-center px-3 gap-3">
-<span class="material-symbols-outlined text-gray-400">add_circle</span>
-<input id="task-name" class="w-full bg-transparent border-none text-text-main placeholder:text-gray-400 focus:ring-0 h-10 text-base" placeholder="What do you need to get done?" type="text"/>
-</div>
-<div class="flex w-full sm:w-auto gap-2 px-2 pb-2 sm:pb-0">
-<div class="relative group w-1/2 sm:w-32">
-<input id="task-category" list="category-suggestions" class="w-full bg-gray-50 border border-transparent focus:bg-white focus:border-border-subtle rounded-md text-sm px-3 h-10 text-text-main focus:ring-1 focus:ring-primary focus:border-primary transition-all placeholder:text-gray-400" placeholder="Category" type="text"/>
-<datalist id="category-suggestions"></datalist>
-</div>
-<div class="w-1/2 sm:w-24">
-<input id="task-duration" class="w-full bg-gray-50 border border-transparent focus:bg-white focus:border-border-subtle rounded-md text-sm px-3 h-10 text-text-main focus:ring-1 focus:ring-primary focus:border-primary text-center transition-all placeholder:text-gray-400" placeholder="25m" type="text"/>
-</div>
-<button id="task-submit" class="h-10 w-10 flex items-center justify-center bg-gray-100 rounded-md text-gray-600 hover:bg-primary hover:text-white transition-colors">
-<span class="material-symbols-outlined text-[20px]">subdirectory_arrow_left</span>
-</button>
-</div>
-</div>
-<div id="tasks-container" class="flex flex-col gap-6">
-<div class="flex flex-col gap-2">
-<h3 class="text-xs font-semibold uppercase tracking-wider text-gray-500 pl-1 mb-1">Work Projects</h3>
-<div class="group flex items-center justify-between p-3 bg-white border border-border-subtle rounded-lg hover:border-primary/50 hover:shadow-md transition-all shadow-sm">
-<div class="flex items-center gap-3 flex-1">
-<button class="h-5 w-5 rounded border border-gray-300 hover:border-primary flex items-center justify-center text-transparent hover:text-primary transition-all bg-white">
-<span class="material-symbols-outlined text-[16px]">check</span>
-</button>
-<span class="text-sm font-medium text-gray-800 group-hover:text-primary transition-colors">Prepare Q3 Financial Report</span>
-<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-purple-100 text-purple-700 border border-purple-200">FINANCE</span>
-</div>
-<div class="flex items-center gap-4">
-<span class="text-xs font-mono text-gray-500 bg-gray-50 border border-gray-100 px-2 py-1 rounded">45m</span>
-<span class="material-symbols-outlined text-gray-300 cursor-grab opacity-0 group-hover:opacity-100 transition-opacity hover:text-gray-500">drag_indicator</span>
-</div>
-</div>
-<div class="group flex items-center justify-between p-3 bg-white border border-border-subtle rounded-lg hover:border-primary/50 hover:shadow-md transition-all shadow-sm">
-<div class="flex items-center gap-3 flex-1">
-<button class="h-5 w-5 rounded border border-gray-300 hover:border-primary flex items-center justify-center text-transparent hover:text-primary transition-all bg-white">
-<span class="material-symbols-outlined text-[16px]">check</span>
-</button>
-<span class="text-sm font-medium text-gray-800 group-hover:text-primary transition-colors">Review Marketing Copy</span>
-<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-orange-100 text-orange-700 border border-orange-200">MARKETING</span>
-</div>
-<div class="flex items-center gap-4">
-<span class="text-xs font-mono text-gray-500 bg-gray-50 border border-gray-100 px-2 py-1 rounded">20m</span>
-<span class="material-symbols-outlined text-gray-300 cursor-grab opacity-0 group-hover:opacity-100 transition-opacity hover:text-gray-500">drag_indicator</span>
-</div>
-</div>
-</div>
-<div class="flex flex-col gap-2">
-<h3 class="text-xs font-semibold uppercase tracking-wider text-gray-500 pl-1 mb-1">Personal</h3>
-<div class="group flex items-center justify-between p-3 bg-gray-50 border border-border-subtle rounded-lg opacity-75 hover:opacity-100 transition-all">
-<div class="flex items-center gap-3 flex-1">
-<button class="h-5 w-5 rounded bg-primary border border-primary flex items-center justify-center text-white transition-all shadow-sm">
-<span class="material-symbols-outlined text-[16px] font-bold">check</span>
-</button>
-<span class="text-sm font-medium text-gray-400 line-through">Book dentist appointment</span>
-<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-700 border border-emerald-200">HEALTH</span>
-</div>
-<div class="flex items-center gap-4">
-<span class="text-xs font-mono text-gray-400">10m</span>
-<span class="material-symbols-outlined text-gray-300 cursor-grab opacity-0 group-hover:opacity-100 transition-opacity">drag_indicator</span>
-</div>
-</div>
-</div>
-<div class="flex flex-col gap-2 animate-pulse mt-4">
-<h3 class="text-xs font-semibold uppercase tracking-wider text-gray-400 pl-1 mb-1">Syncing from Calendar...</h3>
-<div class="h-14 w-full bg-gray-100 rounded-lg border border-gray-50"></div>
-<div class="h-14 w-full bg-gray-100 rounded-lg border border-gray-50 opacity-60"></div>
-</div>
-</div>
-</section>
-</main>
-<aside class="w-80 bg-background-sidebar border-l border-border-subtle hidden lg:flex flex-col overflow-y-auto">
-<div class="p-6">
-<h3 class="text-base font-semibold text-text-main mb-6">Session Stats</h3>
-<div class="relative flex items-center justify-center mb-8">
-<div id="stats-pie" class="w-48 h-48 rounded-full shadow-inner" style="background: conic-gradient(
-                        #2563EB 0% 55%, 
-                        #A855F7 55% 80%, 
-                        #F97316 80% 95%, 
-                        #94a3b8 95% 100%
-                     );">
-</div>
-<div class="absolute w-32 h-32 bg-background-sidebar rounded-full flex flex-col items-center justify-center shadow-sm">
-<span id="stats-total" class="text-3xl font-bold text-text-main">3h 45m</span>
-<span class="text-xs text-text-muted">Total Focus</span>
-</div>
-</div>
-<div id="stats-legend" class="space-y-3 mb-8 bg-white p-4 rounded-xl border border-border-subtle shadow-subtle">
-<div class="flex items-center justify-between text-sm">
-<div class="flex items-center gap-2">
-<span class="w-3 h-3 rounded-full bg-primary shadow-sm"></span>
-<span class="text-gray-600">Deep Work</span>
-</div>
-<span class="font-medium text-gray-900">55%</span>
-</div>
-<div class="flex items-center justify-between text-sm">
-<div class="flex items-center gap-2">
-<span class="w-3 h-3 rounded-full bg-purple-500 shadow-sm"></span>
-<span class="text-gray-600">Meetings</span>
-</div>
-<span class="font-medium text-gray-900">25%</span>
-</div>
-<div class="flex items-center justify-between text-sm">
-<div class="flex items-center gap-2">
-<span class="w-3 h-3 rounded-full bg-orange-500 shadow-sm"></span>
-<span class="text-gray-600">Marketing</span>
-</div>
-<span class="font-medium text-gray-900">15%</span>
-</div>
-<div class="flex items-center justify-between text-sm">
-<div class="flex items-center gap-2">
-<span class="w-3 h-3 rounded-full bg-slate-400 shadow-sm"></span>
-<span class="text-gray-600">Others</span>
-</div>
-<span class="font-medium text-gray-900">&lt; 5%</span>
-</div>
-</div>
-<div class="grid grid-cols-2 gap-3">
-<div class="p-4 bg-white rounded-lg border border-border-subtle shadow-subtle">
-<p class="text-xs text-text-muted mb-1 font-medium uppercase tracking-wide">Sessions</p>
-<p id="stats-sessions" class="text-2xl font-bold text-text-main">4</p>
-</div>
-<div class="p-4 bg-white rounded-lg border border-border-subtle shadow-subtle">
-<p class="text-xs text-text-muted mb-1 font-medium uppercase tracking-wide">Streak</p>
-<p id="stats-streak" class="text-2xl font-bold text-text-main">12 <span class="text-xs font-normal text-gray-400">days</span></p>
-</div>
-</div>
-<div class="mt-6 p-5 rounded-xl bg-gradient-to-br from-primary to-blue-600 text-white relative overflow-hidden shadow-lg shadow-blue-200">
-<div class="relative z-10">
-<h4 class="font-bold text-sm mb-1">Daily Goal</h4>
-<p class="text-xs text-blue-100 mb-4 font-medium">You're almost there! 45m left to reach your 4.5h goal.</p>
-<div class="w-full bg-black/20 rounded-full h-2">
-<div class="bg-white h-2 rounded-full shadow-sm" style="width: 82%"></div>
-</div>
-</div>
-<span class="material-symbols-outlined absolute -right-3 -bottom-5 text-9xl text-white opacity-10 pointer-events-none transform rotate-12">emoji_events</span>
-</div>
-</div>
-</aside>
-
-<script>
-function escapeHtml(str) {
-    return String(str || "").replace(/[&<>'"]/g, (c) => ({
-        "&": "&amp;",
-        "<": "&lt;",
-        ">": "&gt;",
-        "'": "&#39;",
-        '"': "&quot;",
-    }[c]));
-}
-
-function fmtDuration(sec) {
-    if (!isFinite(sec) || sec <= 0) return "0m";
-    const m = Math.floor(sec / 60);
-    const h = Math.floor(m / 60);
-    const mm = m % 60;
-    return h > 0 ? `${h}h ${mm}m` : `${mm}m`;
-}
-
-function normalizeListInput(value) {
-    return value.split(",").map(s => s.trim()).filter(Boolean);
-}
-
-async function loadTasks() {
-    const res = await fetch("/tasks", { cache: "no-store" });
-    if (!res.ok) return [];
-    const tasks = await res.json();
-    if (!Array.isArray(tasks)) return [];
-    return tasks.map(t => ({ ...t, excluded: !!t.excluded, done: !!t.done }));
-}
-
-async function loadCurrent() {
-    const res = await fetch("/current", { cache: "no-store" });
-    if (!res.ok) return null;
-    const cur = await res.json();
-    return Object.keys(cur || {}).length ? cur : null;
-}
-
-async function loadEvents() {
-    const res = await fetch("/events", { cache: "no-store" });
-    if (!res.ok) return [];
-    const events = await res.json();
-    if (!Array.isArray(events)) return [];
-    return events;
-}
-
-async function loadCategories() {
-    const res = await fetch("/categories", { cache: "no-store" });
-    if (!res.ok) return [];
-    const categories = await res.json();
-    if (!Array.isArray(categories)) return [];
-    return categories.filter(c => c && c.category);
-}
-
-async function loadHistory() {
-    const res = await fetch("/history", { cache: "no-store" });
-    if (!res.ok) return [];
-    const history = await res.json();
-    if (!Array.isArray(history)) return [];
-    return history;
-}
-
-function updateCategorySuggestions(categories) {
-    const list = document.getElementById("category-suggestions");
-    if (!list) return;
-    list.innerHTML = "";
-    categories.forEach(c => {
-        const option = document.createElement("option");
-        option.value = c.category;
-        list.appendChild(option);
-    });
-}
-
-function renderTasks(tasks) {
-    const container = document.getElementById("tasks-container");
-    if (!container) return;
-    container.innerHTML = "";
-
-    if (!tasks.length) {
-        const empty = document.createElement("div");
-        empty.className = "text-sm text-gray-400";
-        empty.textContent = "No tasks yet.";
-        container.appendChild(empty);
-        return;
-    }
-
-    const grouped = new Map();
-    tasks.forEach(t => {
-        const key = (t.category || "General").trim() || "General";
-        if (!grouped.has(key)) grouped.set(key, []);
-        grouped.get(key).push(t);
-    });
-
-    for (const [category, items] of grouped.entries()) {
-        const section = document.createElement("div");
-        section.className = "flex flex-col gap-2";
-        section.innerHTML = `
-            <h3 class="text-xs font-semibold uppercase tracking-wider text-gray-500 pl-1 mb-1">${escapeHtml(category)}</h3>
-        `;
-
-        items.forEach(task => {
-            const done = !!task.done;
-            const row = document.createElement("div");
-            row.className = `task-row group flex items-center justify-between p-3 border border-border-subtle rounded-lg transition-all shadow-sm ${done ? "bg-gray-50 opacity-75" : "bg-white hover:border-primary/50 hover:shadow-md"}`;
-            row.dataset.taskId = String(task.id);
-            const duration = fmtDuration(0);
-            row.innerHTML = `
-                <div class="flex items-center gap-3 flex-1">
-                    <button class="h-5 w-5 rounded ${done ? "bg-primary border border-primary text-white" : "border border-gray-300 text-transparent hover:text-primary"} flex items-center justify-center transition-all" data-task-toggle="1" data-task-id="${task.id}" data-next="${done ? "false" : "true"}">
-                        <span class="material-symbols-outlined text-[16px]">check</span>
-                    </button>
-                    <span class="text-sm font-medium ${done ? "text-gray-400 line-through" : "text-gray-800 group-hover:text-primary"}">${escapeHtml(task.task || "(task)")}</span>
-                    <span class="px-2 py-0.5 rounded text-[10px] font-bold bg-gray-100 text-gray-700 border border-gray-200">${escapeHtml((task.category || "").toUpperCase())}</span>
-                </div>
-                <div class="flex items-center gap-4">
-                    <span class="text-xs font-mono text-gray-500 bg-gray-50 border border-gray-100 px-2 py-1 rounded">${escapeHtml(duration)}</span>
-                    <span class="material-symbols-outlined text-gray-300 cursor-grab opacity-0 group-hover:opacity-100 transition-opacity hover:text-gray-500">drag_indicator</span>
-                </div>
-            `;
-            section.appendChild(row);
-        });
-
-        container.appendChild(section);
-    }
-}
-
-function renderCurrentStatus(current) {
-    const status = document.getElementById("current-status");
-    if (!status) return;
-    if (!current) {
-        status.textContent = "Idle";
-        return;
-    }
-    const app = current.app_id || "(unknown)";
-    const title = current.title || "(untitled)";
-    status.textContent = `${app} — ${title}`;
-}
-
-function renderStats(history, events, tasks) {
-    const pie = document.getElementById("stats-pie");
-    const legend = document.getElementById("stats-legend");
-    const totalEl = document.getElementById("stats-total");
-    const sessionsEl = document.getElementById("stats-sessions");
-    const streakEl = document.getElementById("stats-streak");
-    if (!pie || !legend || !totalEl || !sessionsEl) return;
-
-    const totals = new Map();
-    history.forEach(item => {
-        const key = item.category || item.app_id || "Others";
-        const prev = totals.get(key) || 0;
-        totals.set(key, prev + (Number(item.total_duration) || 0));
-    });
-
-    const rawEntries = Array.from(totals.entries()).filter(([, v]) => v > 0);
-    const total = rawEntries.reduce((sum, [, v]) => sum + v, 0);
-    totalEl.textContent = fmtDuration(total);
-    const completed = Array.isArray(tasks) ? tasks.filter(t => t.done).length : 0;
-    sessionsEl.textContent = String(completed);
-
-    if (streakEl) {
-        const goalSeconds = Math.round(4.5 * 3600);
-        const byDay = new Map();
-        events.forEach(e => {
-            const ts = Number(e.end_time || e.start_time || 0);
-            if (!ts) return;
-            const day = new Date(ts * 1000).toISOString().slice(0, 10);
-            const prev = byDay.get(day) || 0;
-            byDay.set(day, prev + (Number(e.duration) || 0));
-        });
-        const days = Array.from(byDay.keys()).sort();
-        let streak = 0;
-        for (let i = days.length - 1; i >= 0; i -= 1) {
-            const day = days[i];
-            const totalDay = byDay.get(day) || 0;
-            if (totalDay >= goalSeconds) {
-                streak += 1;
-            } else {
-                break;
+            };
+        </script>
+        <style>
+            .heatmap-cell {
+                width: 0.875rem;
+                height: 0.875rem;
+                border-radius: 0.125rem;
             }
-        }
-        streakEl.innerHTML = `${streak} <span class="text-xs font-normal text-gray-400">days</span>`;
-    }
-
-    legend.innerHTML = "";
-    if (!rawEntries.length || total <= 0) {
-        pie.style.background = "conic-gradient(#94a3b8 0% 100%)";
-        legend.innerHTML = `
-            <div class="flex items-center justify-between text-sm">
-                <div class="flex items-center gap-2">
-                    <span class="w-3 h-3 rounded-full bg-slate-400 shadow-sm"></span>
-                    <span class="text-gray-600">No data</span>
+            .heatmap-low {
+                background-color: #eff6ff;
+            }
+            .heatmap-mid {
+                background-color: #bfdbfe;
+            }
+            .heatmap-high {
+                background-color: #2563eb;
+            }
+            .heatmap-empty {
+                background-color: #f3f4f6;
+            }
+        </style>
+    </head>
+    <body class="font-display bg-background-main text-text-main antialiased overflow-hidden h-screen flex">
+        <aside
+            class="w-64 border-r border-border-subtle flex-shrink-0 flex flex-col bg-background-sidebar z-20 hidden md:flex"
+        >
+            <div class="p-6 flex items-center gap-3">
+                <div class="h-8 w-8 rounded-lg bg-primary flex items-center justify-center shadow-sm">
+                    <span class="material-symbols-outlined text-white" style="font-size: 20px">bolt</span>
                 </div>
-                <span class="font-medium text-gray-900">100%</span>
+                <h1 class="text-lg font-bold tracking-tight text-text-main">FocusService</h1>
             </div>
-        `;
-        return;
-    }
-
-    const filtered = [];
-    let othersTotal = 0;
-    rawEntries.forEach(([label, value]) => {
-        if (total > 0 && (value / total) < 0.05) {
-            othersTotal += value;
-        } else {
-            filtered.push([label, value]);
-        }
-    });
-    if (othersTotal > 0) {
-        filtered.push(["Others", othersTotal]);
-    }
-
-    const colors = [
-        "#2563EB", "#A855F7", "#F97316", "#10b981", "#f59e0b",
-        "#06b6d4", "#ef4444", "#3b82f6", "#94a3b8",
-    ];
-
-    let offset = 0;
-    const slices = filtered.map(([label, value], idx) => {
-        const percent = (value / total) * 100;
-        const color = colors[idx % colors.length];
-        const slice = `${color} ${offset}% ${offset + percent}%`;
-        offset += percent;
-        const row = document.createElement("div");
-        row.className = "flex items-center justify-between text-sm";
-        row.innerHTML = `
-            <div class="flex items-center gap-2">
-                <span class="w-3 h-3 rounded-full" style="background:${color}"></span>
-                <span class="text-gray-600">${escapeHtml(label)}</span>
+            <nav class="flex-1 px-4 space-y-1 overflow-y-auto">
+                <a
+                    class="nav-link flex items-center gap-3 px-3 py-2.5 rounded-lg group transition-all"
+                    href="#"
+                    data-view="tasks"
+                >
+                    <span class="material-symbols-outlined" style="font-variation-settings: &quot;FILL&quot; 1"
+                        >dashboard</span
+                    >
+                    <span class="text-sm">Tasks View</span>
+                </a>
+                
+                <a
+                    class="nav-link flex items-center gap-3 px-3 py-2.5 rounded-lg group transition-all"
+                    href="#"
+                    data-view="history"
+                >
+                    <span class="material-symbols-outlined">history</span>
+                    <span class="text-sm font-medium">History</span>
+                </a>
+                <div class="pt-4 mt-4 border-t border-border-subtle">
+                    <p class="px-3 text-xs font-semibold text-text-muted uppercase tracking-wider mb-2">Favorites</p>
+                    <a
+                        class="flex items-center gap-3 px-3 py-2 rounded-lg text-text-muted hover:bg-white hover:text-text-main hover:shadow-subtle transition-all"
+                        href="#"
+                    >
+                        <span class="w-2 h-2 rounded-full bg-indigo-500"></span>
+                        <span class="text-sm font-medium">Compose</span>
+                    </a>
+                    <a
+                        class="flex items-center gap-3 px-3 py-2 rounded-lg text-text-muted hover:bg-white hover:text-text-main hover:shadow-subtle transition-all"
+                        href="#"
+                    >
+                        <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
+                        <span class="text-sm font-medium">Write</span>
+                    </a>
+                    <a
+                        class="flex items-center gap-3 px-3 py-2 rounded-lg text-text-muted hover:bg-white hover:text-text-main hover:shadow-subtle transition-all"
+                        href="#"
+                    >
+                        <span class="w-2 h-2 rounded-full bg-blue-500"></span>
+                        <span class="text-sm font-medium">Code</span>
+                    </a>
+                    <a
+                        class="flex items-center gap-3 px-3 py-2 rounded-lg text-text-muted hover:bg-white hover:text-text-main hover:shadow-subtle transition-all"
+                        href="#"
+                    >
+                        <span class="w-2 h-2 rounded-full bg-amber-500"></span>
+                        <span class="text-sm font-medium">Read</span>
+                    </a>
+                </div>
+            </nav>
+            <div class="p-4 border-t border-border-subtle bg-background-sidebar">
+                <a
+                    class="flex items-center gap-3 p-2 rounded-lg hover:bg-white hover:shadow-subtle transition-all"
+                    href="#"
+                >
+                    <div class="flex flex-col min-w-0">
+                        <p class="text-sm font-medium text-text-main truncate">Charles K. Neimog</p>
+                    </div>
+                </a>
             </div>
-            <span class="font-medium text-gray-900">${Math.round(percent)}%</span>
-        `;
-        legend.appendChild(row);
-        return slice;
-    });
+        </aside>
+        <main class="flex-1 flex flex-col min-w-0 overflow-y-auto bg-background-main relative">
+            <div id="view-tasks" class="flex flex-col min-w-0">
+            <header class="pt-8 pb-6 px-8 flex flex-col gap-6">
+                <div class="flex justify-between items-end">
+                    <div>
+                        <h2 class="text-3xl font-bold text-text-main tracking-tight">Focus Session</h2>
+                        <div class="flex items-center gap-2 mt-2">
+                            <span id="activity-indicator-active" class="relative flex h-2.5 w-2.5 hidden">
+                                <span
+                                    class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"
+                                ></span>
+                                <span class="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
+                            </span>
+                            <span id="activity-indicator-idle" class="relative flex h-2.5 w-2.5">
+                                <span class="relative inline-flex rounded-full h-2.5 w-2.5 bg-red-500"></span>
+                            </span>
+                            <p id="current-status" class="text-sm text-text-muted">Ready to focus</p>
+                        </div>
+                        <p id="current-task" class="text-xs text-text-muted mt-2">Current task: None</p>
+                        <div id="focus-warning" class="hidden mt-2 text-xs font-semibold text-rose-600">
+                            Not focused: current app is not allowed for this task.
+                        </div>
+                    </div>
+                    <div class="hidden sm:flex items-center gap-2">
+                        <button
+                            id="anytype-refresh-open"
+                            class="flex items-center justify-center p-2 text-gray-400 hover:text-primary transition-colors bg-gray-50 rounded-full"
+                            title="Update Anytype"
+                        >
+                            <span class="material-symbols-outlined">sync</span>
+                        </button>
+                        <button
+                            id="anytype-config-open"
+                            data-anytype-config="open"
+                            class="flex items-center justify-center p-2 text-gray-400 hover:text-primary transition-colors bg-gray-50 rounded-full"
+                            title="Anytype settings"
+                        >
+                            <span class="material-symbols-outlined">settings</span>
+                        </button>
+                    </div>
+                </div>
+                <div
+                    class="bg-white rounded-xl p-6 shadow-subtle border border-border-subtle flex flex-col sm:flex-row items-center justify-between gap-8"
+                >
+                    <div class="flex gap-4 items-center">
+                        <div class="flex flex-col items-center gap-1">
+                            <div
+                                id="timer-hrs"
+                                class="flex h-16 w-16 items-center justify-center rounded-lg bg-gray-50 text-text-main text-3xl font-bold font-mono tracking-tighter border border-gray-100"
+                            >
+                                00
+                            </div>
+                            <span class="text-xs font-medium text-text-muted">HRS</span>
+                        </div>
+                        <span class="text-2xl font-bold text-gray-300 -mt-5">:</span>
+                        <div class="flex flex-col items-center gap-1">
+                            <div
+                                id="timer-min"
+                                class="flex h-16 w-16 items-center justify-center rounded-lg bg-gray-50 text-text-main text-3xl font-bold font-mono tracking-tighter border border-gray-100"
+                            >
+                                25
+                            </div>
+                            <span class="text-xs font-medium text-text-muted">MIN</span>
+                        </div>
+                        <span class="text-2xl font-bold text-gray-300 -mt-5">:</span>
+                        <div class="flex flex-col items-center gap-1">
+                            <div
+                                id="timer-sec"
+                                class="flex h-16 w-16 items-center justify-center rounded-lg bg-gray-50 text-text-main text-3xl font-bold font-mono tracking-tighter border border-gray-100"
+                            >
+                                00
+                            </div>
+                            <span class="text-xs font-medium text-text-muted">SEC</span>
+                        </div>
+                    </div>
+                    <div class="h-12 w-px bg-gray-200 hidden sm:block"></div>
+                    <div class="flex items-center gap-4 w-full sm:w-auto">
+                        <button
+                            id="record-toggle"
+                            class="flex-1 sm:flex-none flex cursor-pointer items-center justify-center rounded-lg h-12 px-8 bg-primary hover:bg-primary-hover transition-colors text-white gap-2 text-base font-bold shadow-lg shadow-blue-500/20 active:scale-95"
+                        >
+                            <span class="material-symbols-outlined">play_arrow</span>
+                            <span>Start Focus</span>
+                        </button>
+                        <button
+                            class="h-12 w-12 flex items-center justify-center rounded-lg border border-border-subtle text-text-muted hover:bg-gray-50 hover:text-text-main transition-colors bg-white"
+                        >
+                            <span class="material-symbols-outlined">tune</span>
+                        </button>
+                    </div>
+                </div>
+            </header>
+            <section class="px-8 pb-12 flex-1 flex flex-col gap-6">
+                
+                <div id="tasks-container" class="flex flex-col gap-6">
+                    <div class="flex flex-col gap-2">
+                        <h3 class="text-xs font-semibold uppercase tracking-wider text-gray-500 pl-1 mb-1">
+                            Work Projects
+                        </h3>
+                        <div
+                            class="group flex items-center justify-between p-3 bg-white border border-border-subtle rounded-lg hover:border-primary/50 hover:shadow-md transition-all shadow-sm"
+                        >
+                            <div class="flex items-center gap-3 flex-1">
+                                <button
+                                    class="h-5 w-5 rounded border border-gray-300 hover:border-primary flex items-center justify-center text-transparent hover:text-primary transition-all bg-white"
+                                >
+                                    <span class="material-symbols-outlined text-[16px]">check</span>
+                                </button>
+                                <span
+                                    class="text-sm font-medium text-gray-800 group-hover:text-primary transition-colors"
+                                    >Prepare Q3 Financial Report</span
+                                >
+                                <span
+                                    class="px-2 py-0.5 rounded text-[10px] font-bold bg-purple-100 text-purple-700 border border-purple-200"
+                                    >FINANCE</span
+                                >
+                            </div>
+                            <div class="flex items-center gap-4">
+                                <span
+                                    class="text-xs font-mono text-gray-500 bg-gray-50 border border-gray-100 px-2 py-1 rounded"
+                                    >45m</span
+                                >
+                                <span
+                                    class="material-symbols-outlined text-gray-300 cursor-grab opacity-0 group-hover:opacity-100 transition-opacity hover:text-gray-500"
+                                    >drag_indicator</span
+                                >
+                            </div>
+                        </div>
+                        <div
+                            class="group flex items-center justify-between p-3 bg-white border border-border-subtle rounded-lg hover:border-primary/50 hover:shadow-md transition-all shadow-sm"
+                        >
+                            <div class="flex items-center gap-3 flex-1">
+                                <button
+                                    class="h-5 w-5 rounded border border-gray-300 hover:border-primary flex items-center justify-center text-transparent hover:text-primary transition-all bg-white"
+                                >
+                                    <span class="material-symbols-outlined text-[16px]">check</span>
+                                </button>
+                                <span
+                                    class="text-sm font-medium text-gray-800 group-hover:text-primary transition-colors"
+                                    >Review Marketing Copy</span
+                                >
+                                <span
+                                    class="px-2 py-0.5 rounded text-[10px] font-bold bg-orange-100 text-orange-700 border border-orange-200"
+                                    >MARKETING</span
+                                >
+                            </div>
+                            <div class="flex items-center gap-4">
+                                <span
+                                    class="text-xs font-mono text-gray-500 bg-gray-50 border border-gray-100 px-2 py-1 rounded"
+                                    >20m</span
+                                >
+                                <span
+                                    class="material-symbols-outlined text-gray-300 cursor-grab opacity-0 group-hover:opacity-100 transition-opacity hover:text-gray-500"
+                                    >drag_indicator</span
+                                >
+                            </div>
+                        </div>
+                    </div>
+                    <div class="flex flex-col gap-2">
+                        <h3 class="text-xs font-semibold uppercase tracking-wider text-gray-500 pl-1 mb-1">Personal</h3>
+                        <div
+                            class="group flex items-center justify-between p-3 bg-gray-50 border border-border-subtle rounded-lg opacity-75 hover:opacity-100 transition-all"
+                        >
+                            <div class="flex items-center gap-3 flex-1">
+                                <button
+                                    class="h-5 w-5 rounded bg-primary border border-primary flex items-center justify-center text-white transition-all shadow-sm"
+                                >
+                                    <span class="material-symbols-outlined text-[16px] font-bold">check</span>
+                                </button>
+                                <span class="text-sm font-medium text-gray-400 line-through"
+                                    >Book dentist appointment</span
+                                >
+                                <span
+                                    class="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-700 border border-emerald-200"
+                                    >HEALTH</span
+                                >
+                            </div>
+                            <div class="flex items-center gap-4">
+                                <span class="text-xs font-mono text-gray-400">10m</span>
+                                <span
+                                    class="material-symbols-outlined text-gray-300 cursor-grab opacity-0 group-hover:opacity-100 transition-opacity"
+                                    >drag_indicator</span
+                                >
+                            </div>
+                        </div>
+                    </div>
+                    <div class="flex flex-col gap-2 animate-pulse mt-4">
+                        <h3 class="text-xs font-semibold uppercase tracking-wider text-gray-400 pl-1 mb-1">
+                            Syncing from Calendar...
+                        </h3>
+                        <div class="h-14 w-full bg-gray-100 rounded-lg border border-gray-50"></div>
+                        <div class="h-14 w-full bg-gray-100 rounded-lg border border-gray-50 opacity-60"></div>
+                    </div>
+                </div>
+            </section>
+            </div>
+            <div id="view-history" class="flex flex-col min-w-0 hidden">
+                <header class="pt-8 pb-6 px-8 flex flex-col gap-6">
+                    <div class="flex justify-between items-end">
+                        <div>
+                            <h2 class="text-3xl font-bold text-text-main tracking-tight">Focus History</h2>
+                            <p class="text-sm text-text-muted mt-1">Review your past performance and sessions</p>
+                        </div>
+                        <div class="flex gap-2">
+                            <button
+                                id="history-export"
+                                class="flex items-center gap-2 px-4 py-2 bg-white border border-border-subtle rounded-lg text-sm font-medium text-text-main hover:bg-gray-50 transition-colors shadow-subtle"
+                                type="button"
+                            >
+                                <span class="material-symbols-outlined text-lg">download</span>
+                                Export
+                            </button>
+                        </div>
+                    </div>
+                    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                        <div class="bg-white p-5 rounded-xl border border-border-subtle shadow-subtle flex flex-col gap-1">
+                            <span class="text-xs font-semibold text-text-muted uppercase tracking-wider">Weekly Total</span>
+                            <div class="flex items-end gap-2">
+                                <span id="history-weekly-total" class="text-2xl font-bold text-text-main">0m</span>
+                                <span id="history-weekly-note" class="text-xs text-text-muted pb-1">Last 7 days</span>
+                            </div>
+                        </div>
+                        <div class="bg-white p-5 rounded-xl border border-border-subtle shadow-subtle flex flex-col gap-1">
+                            <span class="text-xs font-semibold text-text-muted uppercase tracking-wider">Average Session</span>
+                            <div class="flex items-end gap-2">
+                                <span id="history-avg-session" class="text-2xl font-bold text-text-main">0m</span>
+                                <span class="text-xs text-text-muted pb-1">Per session</span>
+                            </div>
+                        </div>
+                        <div class="bg-white p-5 rounded-xl border border-border-subtle shadow-subtle flex flex-col gap-1 sm:col-span-2 lg:col-span-1">
+                            <span class="text-xs font-semibold text-text-muted uppercase tracking-wider">Tasks Completed</span>
+                            <div class="flex items-end gap-2">
+                                <span id="history-tasks-completed" class="text-2xl font-bold text-text-main">0</span>
+                                <span id="history-tasks-today" class="text-xs text-text-muted pb-1">0 today</span>
+                            </div>
+                        </div>
+                    </div>
+                </header>
+                <section class="px-8 pb-12 flex flex-col gap-4">
+                    <div class="flex items-center justify-between mb-2">
+                        <h3 class="text-sm font-semibold text-text-muted uppercase tracking-wider">Chronological History</h3>
+                        <div class="flex items-center gap-2">
+                            <button id="history-filter-month" class="text-xs font-medium text-primary hover:underline" type="button">This Month</button>
+                            <span class="text-gray-300">|</span>
+                            <button id="history-filter-all" class="text-xs font-medium text-text-muted hover:text-text-main" type="button">All Time</button>
+                        </div>
+                    </div>
+                    <div id="history-list" class="space-y-4"></div>
+                </section>
+            </div>
+        </main>
+        <aside id="tasks-aside" class="w-80 bg-background-sidebar border-l border-border-subtle hidden lg:flex flex-col overflow-y-auto">
+            <div class="p-6">
+                <h3 class="text-base font-semibold text-text-main mb-6">Session Stats</h3>
+                <div class="relative flex items-center justify-center mb-8">
+                    <div
+                        id="stats-pie"
+                        class="w-48 h-48 rounded-full shadow-inner"
+                        style="
+                            background: conic-gradient(
+                                #2563eb 0% 55%,
+                                #a855f7 55% 80%,
+                                #f97316 80% 95%,
+                                #94a3b8 95% 100%
+                            );
+                        "
+                    ></div>
+                    <div
+                        class="absolute w-32 h-32 bg-background-sidebar rounded-full flex flex-col items-center justify-center shadow-sm"
+                    >
+                        <span id="stats-total" class="text-3xl font-bold text-text-main">3h 45m</span>
+                        <span class="text-xs text-text-muted">Total of Use</span>
+                    </div>
+                </div>
+                <div
+                    id="stats-legend"
+                    class="space-y-3 mb-8 bg-white p-4 rounded-xl border border-border-subtle shadow-subtle"
+                >
+                    <div class="flex items-center justify-between text-sm">
+                        <div class="flex items-center gap-2">
+                            <span class="w-3 h-3 rounded-full bg-primary shadow-sm"></span>
+                            <span class="text-gray-600">Deep Work</span>
+                        </div>
+                        <span class="font-medium text-gray-900">55%</span>
+                    </div>
+                    <div class="flex items-center justify-between text-sm">
+                        <div class="flex items-center gap-2">
+                            <span class="w-3 h-3 rounded-full bg-purple-500 shadow-sm"></span>
+                            <span class="text-gray-600">Meetings</span>
+                        </div>
+                        <span class="font-medium text-gray-900">25%</span>
+                    </div>
+                    <div class="flex items-center justify-between text-sm">
+                        <div class="flex items-center gap-2">
+                            <span class="w-3 h-3 rounded-full bg-orange-500 shadow-sm"></span>
+                            <span class="text-gray-600">Marketing</span>
+                        </div>
+                        <span class="font-medium text-gray-900">15%</span>
+                    </div>
+                    <div class="flex items-center justify-between text-sm">
+                        <div class="flex items-center gap-2">
+                            <span class="w-3 h-3 rounded-full bg-slate-400 shadow-sm"></span>
+                            <span class="text-gray-600">Others</span>
+                        </div>
+                        <span class="font-medium text-gray-900">&lt; 5%</span>
+                    </div>
+                </div>
+                <div class="grid grid-cols-2 gap-3">
+                    <div class="p-4 bg-white rounded-lg border border-border-subtle shadow-subtle">
+                        <p class="text-xs text-text-muted mb-1 font-medium uppercase tracking-wide">Sessions</p>
+                        <p id="stats-sessions" class="text-2xl font-bold text-text-main">4</p>
+                    </div>
+                    <div class="p-4 bg-white rounded-lg border border-border-subtle shadow-subtle">
+                        <p class="text-xs text-text-muted mb-1 font-medium uppercase tracking-wide">Streak</p>
+                        <p id="stats-streak" class="text-2xl font-bold text-text-main">
+                            12 <span class="text-xs font-normal text-gray-400">days</span>
+                        </p>
+                    </div>
+                </div>
+                <div
+                    class="mt-6 p-5 rounded-xl bg-gradient-to-br from-primary to-blue-600 text-white relative overflow-hidden shadow-lg shadow-blue-200"
+                >
+                    <div class="relative z-10">
+                        <h4 class="font-bold text-sm mb-1">Daily Goal</h4>
+                        <p class="text-xs text-blue-100 mb-4 font-medium">
+                            You're almost there! 45m left to reach your 4.5h goal.
+                        </p>
+                        <div class="w-full bg-black/20 rounded-full h-2">
+                            <div class="bg-white h-2 rounded-full shadow-sm" style="width: 82%"></div>
+                        </div>
+                    </div>
+                    <span
+                        class="material-symbols-outlined absolute -right-3 -bottom-5 text-9xl text-white opacity-10 pointer-events-none transform rotate-12"
+                        >emoji_events</span
+                    >
+                </div>
+            </div>
+        </aside>
+        <aside id="history-aside" class="w-80 bg-background-sidebar border-l border-border-subtle hidden lg:flex flex-col overflow-y-auto">
+            <div class="p-6">
+                <h3 class="text-base font-semibold text-text-main mb-6">Historical Stats</h3>
+                <div class="relative flex items-center justify-center mb-8">
+                    <div
+                        id="history-pie"
+                        class="w-48 h-48 rounded-full"
+                        style="background: conic-gradient(#94a3b8 0% 100%)"
+                    ></div>
+                    <div
+                        class="absolute w-32 h-32 bg-background-sidebar rounded-full flex flex-col items-center justify-center shadow-sm"
+                    >
+                        <span id="history-month-label" class="text-xl font-bold text-text-main">This Month</span>
+                        <span class="text-xs text-text-muted">Active Month</span>
+                    </div>
+                </div>
+                <div
+                    id="history-legend"
+                    class="space-y-3 mb-8 bg-white p-4 rounded-xl border border-border-subtle shadow-subtle"
+                ></div>
+                <div class="p-5 bg-white rounded-xl border border-border-subtle shadow-subtle mb-6">
+                    <h4 class="text-xs font-bold text-text-muted uppercase tracking-widest mb-4">Consistency Map</h4>
+                    <div id="history-heatmap" class="flex flex-wrap gap-1"></div>
+                    <div class="flex justify-between mt-3">
+                        <span id="history-heatmap-start" class="text-[10px] text-text-muted">Start</span>
+                        <span id="history-heatmap-end" class="text-[10px] text-text-muted">Today</span>
+                    </div>
+                </div>
+                <div
+                    class="p-5 rounded-xl bg-gradient-to-br from-primary to-blue-600 text-white relative overflow-hidden shadow-lg shadow-blue-200"
+                >
+                    <div class="relative z-10">
+                        <h4 class="font-bold text-sm mb-1">Monthly Goal</h4>
+                        <p id="history-goal-text" class="text-xs text-blue-100 mb-4 font-medium">
+                            0h focused this month.
+                        </p>
+                        <div class="w-full bg-black/20 rounded-full h-2">
+                            <div id="history-goal-progress" class="bg-white h-2 rounded-full shadow-sm" style="width: 0%"></div>
+                        </div>
+                    </div>
+                    <span
+                        class="material-symbols-outlined absolute -right-3 -bottom-5 text-9xl text-white opacity-10 pointer-events-none transform rotate-12"
+                        >trending_up</span
+                    >
+                </div>
+            </div>
+        </aside>
 
-    pie.style.background = `conic-gradient(${slices.join(", ")})`;
-}
+        <div
+            id="duration-modal"
+            class="fixed inset-0 z-50 hidden items-center justify-center bg-black/40 backdrop-blur-sm"
+            role="dialog"
+            aria-modal="true"
+            aria-hidden="true"
+        >
+            <div class="w-full max-w-md rounded-2xl bg-white shadow-xl border border-border-subtle">
+                <div class="flex items-center justify-between px-6 py-4 border-b border-border-subtle">
+                    <div>
+                        <h3 class="text-lg font-semibold text-text-main">Set Focus Duration</h3>
+                        <p class="text-xs text-text-muted">Use formats like 25m, 1h, or 90s</p>
+                    </div>
+                    <button id="duration-modal-close" class="text-text-muted hover:text-text-main" type="button">
+                        <span class="material-symbols-outlined text-[20px]">close</span>
+                    </button>
+                </div>
+                <div class="px-6 py-5 space-y-4">
+                    <label class="block text-sm font-medium text-text-main" for="duration-modal-input">Duration</label>
+                    <input
+                        id="duration-modal-input"
+                        class="w-full bg-gray-50 border border-transparent focus:bg-white focus:border-border-subtle rounded-md text-base px-3 h-11 text-text-main focus:ring-1 focus:ring-primary focus:border-primary transition-all placeholder:text-gray-400"
+                        placeholder="25m"
+                        type="text"
+                        autocomplete="off"
+                    />
+                    <div class="flex items-center gap-2">
+                        <button
+                            class="duration-preset px-3 py-1.5 rounded-full text-xs font-semibold bg-gray-100 text-gray-600 hover:bg-primary hover:text-white transition-colors"
+                            type="button"
+                            data-value="25m"
+                        >
+                            25m
+                        </button>
+                        <button
+                            class="duration-preset px-3 py-1.5 rounded-full text-xs font-semibold bg-gray-100 text-gray-600 hover:bg-primary hover:text-white transition-colors"
+                            type="button"
+                            data-value="45m"
+                        >
+                            45m
+                        </button>
+                        <button
+                            class="duration-preset px-3 py-1.5 rounded-full text-xs font-semibold bg-gray-100 text-gray-600 hover:bg-primary hover:text-white transition-colors"
+                            type="button"
+                            data-value="1h"
+                        >
+                            1h
+                        </button>
+                    </div>
+                </div>
+                <div class="flex items-center justify-end gap-2 px-6 py-4 border-t border-border-subtle bg-gray-50 rounded-b-2xl">
+                    <button
+                        id="duration-modal-cancel"
+                        class="h-10 px-4 rounded-lg text-sm font-medium text-text-muted hover:text-text-main hover:bg-white transition-colors"
+                        type="button"
+                    >
+                        Cancel
+                    </button>
+                    <button
+                        id="duration-modal-save"
+                        class="h-10 px-5 rounded-lg text-sm font-semibold text-white bg-primary hover:bg-primary-hover transition-colors"
+                        type="button"
+                    >
+                        Save
+                    </button>
+                </div>
+            </div>
+        </div>
 
-async function refreshAll() {
-    try {
-        const [tasks, current, categories, history, events] = await Promise.all([
-            loadTasks(),
-            loadCurrent(),
-            loadCategories(),
-            loadHistory(),
-            loadEvents(),
-        ]);
-        renderTasks(tasks);
-        renderCurrentStatus(current);
-        updateCategorySuggestions(categories);
-        renderStats(history, events, tasks);
-    } catch (err) {
-        console.error("Failed to load data", err);
-    }
-}
+        <div
+            id="anytype-config-modal"
+            class="fixed inset-0 z-50 hidden items-center justify-center bg-black/40 backdrop-blur-sm"
+            role="dialog"
+            aria-modal="true"
+            aria-hidden="true"
+        >
+            <div class="w-full max-w-md rounded-2xl bg-white shadow-xl border border-border-subtle">
+                <div class="flex items-center justify-between px-6 py-4 border-b border-border-subtle">
+                    <div>
+                        <h3 class="text-lg font-semibold text-text-main">Anytype Settings</h3>
+                        <p class="text-xs text-text-muted">Store API credentials locally</p>
+                    </div>
+                    <button id="anytype-config-close" class="text-text-muted hover:text-text-main" type="button">
+                        <span class="material-symbols-outlined text-[20px]">close</span>
+                    </button>
+                </div>
+                <div class="px-6 py-5 space-y-4">
+                    <div class="space-y-1">
+                        <label class="block text-sm font-medium text-text-main" for="anytype-api-key">
+                            API Key
+                        </label>
+                        <input
+                            id="anytype-api-key"
+                            class="w-full bg-gray-50 border border-transparent focus:bg-white focus:border-border-subtle rounded-md text-base px-3 h-11 text-text-main focus:ring-1 focus:ring-primary focus:border-primary transition-all placeholder:text-gray-400"
+                            placeholder="Paste Anytype API token"
+                            type="password"
+                            autocomplete="off"
+                        />
+                    </div>
+                    <div class="space-y-1">
+                        <label class="block text-sm font-medium text-text-main" for="anytype-space-id">
+                            Space ID
+                        </label>
+                        <input
+                            id="anytype-space-id"
+                            class="w-full bg-gray-50 border border-transparent focus:bg-white focus:border-border-subtle rounded-md text-base px-3 h-11 text-text-main focus:ring-1 focus:ring-primary focus:border-primary transition-all placeholder:text-gray-400"
+                            placeholder="bafy..."
+                            type="text"
+                            autocomplete="off"
+                        />
+                    </div>
+                    <p id="anytype-config-status" class="text-xs text-text-muted"></p>
+                </div>
+                <div class="flex items-center justify-end gap-2 px-6 py-4 border-t border-border-subtle bg-gray-50 rounded-b-2xl">
+                    <button
+                        id="anytype-config-cancel"
+                        class="h-10 px-4 rounded-lg text-sm font-medium text-text-muted hover:text-text-main hover:bg-white transition-colors"
+                        type="button"
+                    >
+                        Cancel
+                    </button>
+                    <button
+                        id="anytype-config-save"
+                        class="h-10 px-5 rounded-lg text-sm font-semibold text-white bg-primary hover:bg-primary-hover transition-colors"
+                        type="button"
+                    >
+                        Save
+                    </button>
+                </div>
+            </div>
+        </div>
 
-async function submitTask() {
-    const name = document.getElementById("task-name");
-    const category = document.getElementById("task-category");
-    if (!name || !name.value.trim()) return;
+        <script src="app.js" defer></script>
+    </body>
+</html>
 
-    const payload = {
-        task: name.value.trim(),
-        category: category?.value.trim() || "",
-        start_time: 0,
-        end_time: 0,
-        allowed_app_ids: [],
-        allowed_titles: [],
-        exclude: false,
-    };
-
-    const tasks = await loadTasks();
-    let res;
-    if (tasks.length) {
-        res = await fetch("/tasks/update", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ ...payload, id: tasks[0].id }),
-        });
-    } else {
-        res = await fetch("/tasks", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(payload),
-        });
-    }
-
-    if (!res.ok) {
-        const text = await res.text();
-        alert("Failed to save task: " + text);
-        return;
-    }
-
-    name.value = "";
-    await refreshAll();
-}
-
-document.getElementById("task-submit")?.addEventListener("click", submitTask);
-document.getElementById("task-name")?.addEventListener("keydown", (e) => {
-    if (e.key === "Enter") submitTask();
-});
-
-document.getElementById("tasks-container")?.addEventListener("click", async (event) => {
-    const target = event.target?.closest("button[data-task-toggle]");
-    if (!target) return;
-    const taskId = Number(target.dataset.taskId || 0);
-    const next = target.dataset.next === "true";
-    if (!taskId) return;
-    const res = await fetch("/tasks/update", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: taskId, done: next }),
-    });
-    if (!res.ok) {
-        const text = await res.text();
-        alert("Failed to update task: " + text);
-        return;
-    }
-    await refreshAll();
-});
-
-document.getElementById("tasks-container")?.addEventListener("dblclick", async (event) => {
-    const row = event.target?.closest(".task-row");
-    if (!row) return;
-    const taskId = Number(row.dataset.taskId || 0);
-    if (!taskId) return;
-
-    const current = await loadCurrent();
-    const defaultApp = current?.app_id || "";
-    const defaultTitle = current?.title || "";
-
-    const appId = prompt("Allowed App ID (leave blank to keep):", defaultApp);
-    if (appId == null) return;
-    const title = prompt("Allowed Title keyword (leave blank to keep):", defaultTitle);
-    if (title == null) return;
-
-    const payload = { id: taskId };
-    if (appId.trim()) payload.allowed_app_ids = [appId.trim()];
-    if (title.trim()) payload.allowed_titles = [title.trim()];
-
-    const res = await fetch("/tasks/update", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-    });
-    if (!res.ok) {
-        const text = await res.text();
-        alert("Failed to update task: " + text);
-        return;
-    }
-    await refreshAll();
-});
-
-let timerRunning = false;
-let timerSeconds = 0;
-let timerInterval = null;
-
-function parseDurationInput(value) {
-    const v = String(value || "").trim().toLowerCase();
-    if (!v) return 0;
-    const match = v.match(/(\d+(?:\.\d+)?)([hms])?/);
-    if (!match) return 0;
-    const num = parseFloat(match[1]);
-    const unit = match[2] || "m";
-    if (unit === "h") return Math.round(num * 3600);
-    if (unit === "s") return Math.round(num);
-    return Math.round(num * 60);
-}
-
-function updateTimerDisplay(seconds) {
-    const hrs = document.getElementById("timer-hrs");
-    const min = document.getElementById("timer-min");
-    const sec = document.getElementById("timer-sec");
-    const h = Math.floor(seconds / 3600);
-    const m = Math.floor((seconds % 3600) / 60);
-    const s = Math.floor(seconds % 60);
-    if (hrs) hrs.textContent = String(h).padStart(2, "0");
-    if (min) min.textContent = String(m).padStart(2, "0");
-    if (sec) sec.textContent = String(s).padStart(2, "0");
-}
-
-function stopTimer() {
-    timerRunning = false;
-    if (timerInterval) {
-        clearInterval(timerInterval);
-        timerInterval = null;
-    }
-    const button = document.getElementById("record-toggle");
-    if (button) {
-        const icon = button.querySelector(".material-symbols-outlined");
-        const label = button.querySelector("span:not(.material-symbols-outlined)");
-        if (icon) icon.textContent = "play_arrow";
-        if (label) label.textContent = "Start Focus";
-    }
-}
-
-function startTimer(seconds) {
-    timerSeconds = Math.max(0, seconds);
-    updateTimerDisplay(timerSeconds);
-    stopTimer();
-    if (timerSeconds <= 0) return;
-    timerRunning = true;
-    const button = document.getElementById("record-toggle");
-    if (button) {
-        const icon = button.querySelector(".material-symbols-outlined");
-        const label = button.querySelector("span:not(.material-symbols-outlined)");
-        if (icon) icon.textContent = "pause";
-        if (label) label.textContent = "Pause";
-    }
-    timerInterval = setInterval(() => {
-        if (!timerRunning) return;
-        timerSeconds = Math.max(0, timerSeconds - 1);
-        updateTimerDisplay(timerSeconds);
-        if (timerSeconds <= 0) {
-            stopTimer();
-        }
-    }, 1000);
-}
-
-document.getElementById("record-toggle")?.addEventListener("click", () => {
-    const duration = document.getElementById("task-duration");
-    const status = document.getElementById("current-status");
-    if (!timerRunning) {
-        const seconds = parseDurationInput(duration?.value || "25m");
-        startTimer(seconds);
-        if (status) status.textContent = "Focus running";
-    } else {
-        stopTimer();
-        if (status) status.textContent = "Paused";
-    }
-    refreshAll();
-});
-
-document.getElementById("task-duration")?.addEventListener("input", (event) => {
-    if (timerRunning) return;
-    const seconds = parseDurationInput(event.target?.value || "25m");
-    updateTimerDisplay(seconds);
-});
-
-function promptForDuration() {
-    const input = document.getElementById("task-duration");
-    const current = input?.value || "25m";
-    const value = prompt("Set focus duration (e.g., 25m, 1h, 90s):", current);
-    if (value == null) return;
-    if (input) input.value = value;
-    if (!timerRunning) {
-        const seconds = parseDurationInput(value);
-        updateTimerDisplay(seconds);
-    }
-}
-
-document.getElementById("timer-hrs")?.addEventListener("click", promptForDuration);
-document.getElementById("timer-min")?.addEventListener("click", promptForDuration);
-document.getElementById("timer-sec")?.addEventListener("click", promptForDuration);
-
-refreshAll();
-setInterval(refreshAll, 2000);
-</script>
-</body></html>
