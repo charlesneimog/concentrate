@@ -82,9 +82,31 @@ let allowedApps = [];
 let allowedTitles = [];
 window.historyFilterMode = "month";
 let lastTasks = [];
+let lastAnytypeSpaces = [];
+let anytypeChallengeId = "";
 let currentTaskId = localStorage.getItem("currentTaskId") || null;
 let lastFocusWarningKey = "";
 let lastCurrentFocus = null;
+let currentDurationValue = "25m";
+
+async function updateServerFocusRules(task) {
+    try {
+        const payload = task
+            ? {
+                  allowed_app_ids: Array.isArray(task.allowed_app_ids) ? task.allowed_app_ids : [],
+                  allowed_titles: Array.isArray(task.allowed_titles) ? task.allowed_titles : [],
+                  task_title: task.title || "",
+              }
+            : { allowed_app_ids: [], allowed_titles: [], task_title: "" };
+        await fetch("/focus/rules", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+        });
+    } catch (err) {
+        console.warn("Failed to update focus rules", err);
+    }
+}
 
 function setCurrentTaskId(taskId) {
     currentTaskId = taskId ? String(taskId) : null;
@@ -96,6 +118,10 @@ function setCurrentTaskId(taskId) {
     renderTasks(lastTasks);
     renderCurrentTask(lastTasks);
     updateFocusWarning(null, lastTasks);
+    const task = Array.isArray(lastTasks)
+        ? lastTasks.find((t) => String(t.id) === String(currentTaskId))
+        : null;
+    updateServerFocusRules(task);
 }
 
 function updateCategorySuggestions(categories) {
@@ -343,6 +369,18 @@ function isFocusAllowed(current, task) {
     return titleMatch;
 }
 
+async function sendFocusNotification(summary, body) {
+    try {
+        await fetch("/notify", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ summary, body }),
+        });
+    } catch (err) {
+        console.warn("Failed to send focus notification", err);
+    }
+}
+
 function updateFocusWarning(current, tasks) {
     const warning = document.getElementById("focus-warning");
     if (!warning) return;
@@ -371,17 +409,63 @@ function updateFocusWarning(current, tasks) {
     const allowedTitleLabel = allowedTitles.length ? allowedTitles.join(", ") : "Any title";
     warning.textContent = `Not focused: ${appId} — ${title}. Allowed apps: ${allowedAppLabel}. Allowed titles: ${allowedTitleLabel}.`;
     const key = `${task.id}:${current.app_id || ""}:${current.title || ""}`;
+    /*
     if (key !== lastFocusWarningKey) {
         lastFocusWarningKey = key;
+        sendFocusNotification(
+            "Focus reminder",
+            `Not focused: ${appId} — ${title}. Stay focused on ${task.title || "task"}.`,
+        );
         if ("Notification" in window) {
             if (Notification.permission === "granted") {
                 new Notification("Not focused", {
                     body: `${appId} — ${title} is not allowed for: ${task.title || "task"}`,
                 });
+                console.log("Focus notification sent");
             } else if (Notification.permission === "default") {
                 Notification.requestPermission().then(() => {});
             }
         }
+    }
+        */
+}
+
+function getAnytypeWarningElement() {
+    let warning = document.getElementById("anytype-warning");
+    if (warning) return warning;
+
+    const focusWarning = document.getElementById("focus-warning");
+    const container = focusWarning?.parentElement;
+    if (!container) return null;
+
+    warning = document.createElement("div");
+    warning.id = "anytype-warning";
+    warning.className = "hidden mt-2 text-xs font-semibold text-amber-600";
+    warning.textContent = "";
+
+    if (focusWarning && focusWarning.nextSibling) {
+        container.insertBefore(warning, focusWarning.nextSibling);
+    } else {
+        container.appendChild(warning);
+    }
+
+    return warning;
+}
+
+function updateAnytypeWarning() {
+    const warning = getAnytypeWarningElement();
+    if (!warning) return;
+
+    const missing =
+        typeof anytypeError === "string" &&
+        /missing\s+anytype\s+api\s+key\s+or\s+space\s+id/i.test(anytypeError);
+
+    if (missing) {
+        warning.textContent = "Anytype API is not configured. Open settings to connect.";
+        warning.classList.remove("hidden");
+    } else {
+        warning.textContent = "";
+        warning.classList.add("hidden");
     }
 }
 
@@ -394,15 +478,29 @@ function renderStats(history, events, tasks) {
     if (!pie || !legend || !totalEl || !sessionsEl) return;
 
     const totals = new Map();
-    history.forEach((item) => {
+    const todayKey = toLocalDateKey(new Date());
+    (Array.isArray(events) ? events : []).forEach((item) => {
+        const ts = normalizeTimestamp(item?.end_time || item?.start_time || 0);
+        if (!ts) return;
+        const keyDate = toLocalDateKey(new Date(ts * 1000));
+        if (keyDate !== todayKey) return;
         const key = item.category || item.app_id || "Others";
         const prev = totals.get(key) || 0;
-        totals.set(key, prev + (Number(item.total_duration) || 0));
+        totals.set(key, prev + (Number(item.duration) || 0));
     });
 
     const rawEntries = Array.from(totals.entries()).filter(([, v]) => v > 0);
     const total = rawEntries.reduce((sum, [, v]) => sum + v, 0);
-    totalEl.textContent = fmtDuration(total);
+
+    const todayTotal = (Array.isArray(events) ? events : []).reduce((sum, event) => {
+        const ts = normalizeTimestamp(event?.end_time || event?.start_time || 0);
+        if (!ts) return sum;
+        const keyDate = toLocalDateKey(new Date(ts * 1000));
+        if (keyDate !== todayKey) return sum;
+        return sum + (Number(event?.duration) || 0);
+    }, 0);
+
+    totalEl.textContent = fmtDuration(todayTotal);
     const completed = Array.isArray(tasks) ? tasks.filter((t) => t.done).length : 0;
     sessionsEl.textContent = String(completed);
 
@@ -846,6 +944,8 @@ function setView(view) {
         link.classList.toggle("hover:text-text-main", !isActive);
         link.classList.toggle("hover:shadow-subtle", !isActive);
     });
+
+    refreshAll();
 }
 
 function isPageActive() {
@@ -866,6 +966,48 @@ async function refreshFocusOnly() {
 
 async function refreshAll() {
     try {
+        if (currentView === "history") {
+            const [tasks, current, categories, history, events] = await Promise.all([
+                loadTasks(),
+                loadCurrent(),
+                loadCategories(),
+                loadHistory(),
+                loadEvents(),
+            ]);
+
+            lastTasks = Array.isArray(tasks) ? tasks : [];
+            lastCurrentFocus = current;
+            renderTasks(tasks);
+            updateAnytypeWarning();
+            renderCurrentStatus(current);
+            renderCurrentTask(tasks);
+            updateFocusWarning(current, tasks);
+            updateCategorySuggestions(categories);
+            renderStats(history, events, tasks);
+            renderHistory(history, events, tasks);
+            return;
+        }
+
+        const [tasks, current, categories] = await Promise.all([
+            loadTasks(),
+            loadCurrent(),
+            loadCategories(),
+        ]);
+        lastTasks = Array.isArray(tasks) ? tasks : [];
+        lastCurrentFocus = current;
+        renderTasks(tasks);
+        updateAnytypeWarning();
+        renderCurrentStatus(current);
+        renderCurrentTask(tasks);
+        updateFocusWarning(current, tasks);
+        updateCategorySuggestions(categories);
+    } catch (err) {
+        console.error("Failed to load data", err);
+    }
+}
+
+async function refreshEverything() {
+    try {
         const [tasks, current, categories, history, events] = await Promise.all([
             loadTasks(),
             loadCurrent(),
@@ -873,9 +1015,11 @@ async function refreshAll() {
             loadHistory(),
             loadEvents(),
         ]);
+
         lastTasks = Array.isArray(tasks) ? tasks : [];
         lastCurrentFocus = current;
         renderTasks(tasks);
+        updateAnytypeWarning();
         renderCurrentStatus(current);
         renderCurrentTask(tasks);
         updateFocusWarning(current, tasks);
@@ -1031,24 +1175,36 @@ function ensureAudioContext() {
 function playTimerEndSound() {
     const ctx = ensureAudioContext();
     if (!ctx) return;
+
     const now = ctx.currentTime;
     const duration = 0.9;
+
     const oscillator = ctx.createOscillator();
     const gain = ctx.createGain();
+    const compressor = ctx.createDynamicsCompressor();
 
     oscillator.type = "sine";
     oscillator.frequency.setValueAtTime(880, now);
 
     gain.gain.setValueAtTime(0.0001, now);
-    gain.gain.exponentialRampToValueAtTime(0.3, now + 0.02);
+    gain.gain.exponentialRampToValueAtTime(1.2, now + 0.02); // push hotter
     gain.gain.exponentialRampToValueAtTime(0.0001, now + duration);
 
+    // Compressor settings = louder perceived sound
+    compressor.threshold.setValueAtTime(-24, now);
+    compressor.knee.setValueAtTime(30, now);
+    compressor.ratio.setValueAtTime(12, now);
+    compressor.attack.setValueAtTime(0.003, now);
+    compressor.release.setValueAtTime(0.25, now);
+
     oscillator.connect(gain);
-    gain.connect(ctx.destination);
+    gain.connect(compressor);
+    compressor.connect(ctx.destination);
 
     oscillator.start(now);
     oscillator.stop(now + duration);
 }
+
 
 function parseDurationInput(value) {
     const v = String(value || "")
@@ -1120,11 +1276,10 @@ function startTimer(seconds) {
 }
 
 document.getElementById("record-toggle")?.addEventListener("click", () => {
-    const duration = document.getElementById("task-duration");
     const status = document.getElementById("current-status");
     ensureAudioContext();
     if (!timerRunning) {
-        const seconds = parseDurationInput(duration?.value || "25m");
+        const seconds = parseDurationInput(currentDurationValue || "25m");
         startTimer(seconds);
         if (status) status.textContent = "Focus running";
     } else {
@@ -1200,7 +1355,9 @@ document.getElementById("allowed-title-input")?.addEventListener("keydown", (eve
 
 document.getElementById("task-duration")?.addEventListener("input", (event) => {
     if (timerRunning) return;
-    const seconds = parseDurationInput(event.target?.value || "25m");
+    const nextValue = event.target?.value || "25m";
+    currentDurationValue = nextValue || "25m";
+    const seconds = parseDurationInput(currentDurationValue);
     updateTimerDisplay(seconds);
 });
 
@@ -1247,8 +1404,7 @@ document.getElementById("history-export")?.addEventListener("click", async () =>
 function openDurationModal() {
     const modal = document.getElementById("duration-modal");
     const input = document.getElementById("duration-modal-input");
-    const current = document.getElementById("task-duration")?.value || "25m";
-    if (input) input.value = current;
+    if (input) input.value = currentDurationValue || "25m";
     if (modal) {
         modal.classList.remove("hidden");
         modal.classList.add("flex");
@@ -1268,11 +1424,10 @@ function closeDurationModal() {
 
 function saveDurationModal() {
     const input = document.getElementById("duration-modal-input");
-    const taskInput = document.getElementById("task-duration");
     const value = input?.value || "";
-    if (taskInput) taskInput.value = value;
+    currentDurationValue = value || "25m";
     if (!timerRunning) {
-        const seconds = parseDurationInput(value || "25m");
+        const seconds = parseDurationInput(currentDurationValue);
         updateTimerDisplay(seconds);
     }
     closeDurationModal();
@@ -1300,13 +1455,20 @@ document.getElementById("duration-modal-input")?.addEventListener("keydown", (ev
 function openAnytypeConfigModal() {
     const modal = document.getElementById("anytype-config-modal");
     const status = document.getElementById("anytype-config-status");
+    const saveButton = document.getElementById("anytype-config-save");
+    const apiKeyEl = document.getElementById("anytype-api-key");
+    const spaceIdEl = document.getElementById("anytype-space-id");
     if (status) status.textContent = "";
+    if (saveButton) {
+        const hasManualInputs = !!(apiKeyEl || spaceIdEl);
+        saveButton.classList.toggle("hidden", !hasManualInputs);
+    }
     if (modal) {
         modal.classList.remove("hidden");
         modal.classList.add("flex");
         modal.setAttribute("aria-hidden", "false");
     }
-    setTimeout(() => document.getElementById("anytype-api-key")?.focus(), 0);
+    setTimeout(() => document.getElementById("anytype-auth-code")?.focus(), 0);
 }
 
 function closeAnytypeConfigModal() {
@@ -1318,10 +1480,149 @@ function closeAnytypeConfigModal() {
     }
 }
 
+function setAnytypeStatus(message) {
+    const status = document.getElementById("anytype-config-status");
+    if (status) status.textContent = message || "";
+}
+
+function renderAnytypeSpaces(spaces) {
+    lastAnytypeSpaces = Array.isArray(spaces) ? spaces : [];
+    const select = document.getElementById("anytype-space-select");
+    if (!select) return;
+
+    select.innerHTML = "";
+    if (!lastAnytypeSpaces.length) {
+        const option = document.createElement("option");
+        option.value = "";
+        option.textContent = "No spaces available";
+        select.appendChild(option);
+        return;
+    }
+
+    lastAnytypeSpaces.forEach((space) => {
+        const option = document.createElement("option");
+        option.value = space.id || "";
+        option.textContent = space.name || space.id || "(space)";
+        select.appendChild(option);
+    });
+}
+
+async function createAnytypeChallenge() {
+    const appName = "FocusService";
+    if (!appName) {
+        setAnytypeStatus("App name is required.");
+        return;
+    }
+    setAnytypeStatus("Creating challenge…");
+    try {
+        const res = await fetch("/anytype/auth/challenges", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ app_name: appName }),
+        });
+        if (!res.ok) {
+            const text = await res.text();
+            setAnytypeStatus(text || "Failed to create challenge.");
+            return;
+        }
+        const data = await res.json();
+        anytypeChallengeId = data.challenge_id || "";
+        const challengeIdEl = document.getElementById("anytype-challenge-id");
+        if (challengeIdEl) challengeIdEl.value = anytypeChallengeId;
+        setAnytypeStatus("Challenge created. Enter the 4-digit code from Anytype.");
+    } catch (err) {
+        console.error("Failed to create Anytype challenge", err);
+        setAnytypeStatus("Failed to create challenge.");
+    }
+}
+
+async function createAnytypeApiKey() {
+    const challengeId = anytypeChallengeId || "";
+    const code = document.getElementById("anytype-auth-code")?.value.trim() || "";
+    if (!challengeId || !code) {
+        setAnytypeStatus("Challenge ID and code are required.");
+        return;
+    }
+    setAnytypeStatus("Creating API key…");
+    try {
+        const res = await fetch("/anytype/auth/api_keys", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ challenge_id: challengeId, code }),
+        });
+        if (!res.ok) {
+            const text = await res.text();
+            setAnytypeStatus(text || "Failed to create API key.");
+            return;
+        }
+        await res.json();
+        setAnytypeStatus("API key saved. Load spaces to continue.");
+        const authCodeEl = document.getElementById("anytype-auth-code");
+        if (authCodeEl) authCodeEl.value = "";
+        await loadAnytypeSpaces();
+        updateAnytypeWarning();
+    } catch (err) {
+        console.error("Failed to create Anytype API key", err);
+        setAnytypeStatus("Failed to create API key.");
+    }
+}
+
+async function loadAnytypeSpaces() {
+    setAnytypeStatus("Loading spaces…");
+    try {
+        const res = await fetch("/anytype/spaces", { cache: "no-store" });
+        if (!res.ok) {
+            const text = await res.text();
+            setAnytypeStatus(text || "Failed to load spaces.");
+            renderAnytypeSpaces([]);
+            return;
+        }
+        const data = await res.json();
+        const spaces = Array.isArray(data?.data) ? data.data : [];
+        renderAnytypeSpaces(spaces);
+        setAnytypeStatus(spaces.length ? "Spaces loaded." : "No spaces found.");
+    } catch (err) {
+        console.error("Failed to load Anytype spaces", err);
+        setAnytypeStatus("Failed to load spaces.");
+        renderAnytypeSpaces([]);
+    }
+}
+
+async function saveAnytypeSpace() {
+    const select = document.getElementById("anytype-space-select");
+    const spaceId = select?.value || "";
+    if (!spaceId) {
+        setAnytypeStatus("Select a space first.");
+        return;
+    }
+    setAnytypeStatus("Saving space…");
+    try {
+        const res = await fetch("/anytype/space", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ space_id: spaceId }),
+        });
+        if (!res.ok) {
+            const text = await res.text();
+            setAnytypeStatus(text || "Failed to save space.");
+            return;
+        }
+        setAnytypeStatus("Space saved. Syncing tasks…");
+        await refreshAll();
+    } catch (err) {
+        console.error("Failed to save Anytype space", err);
+        setAnytypeStatus("Failed to save space.");
+    }
+}
+
 async function saveAnytypeConfig() {
     const apiKeyEl = document.getElementById("anytype-api-key");
     const spaceIdEl = document.getElementById("anytype-space-id");
     const status = document.getElementById("anytype-config-status");
+    if (!apiKeyEl || !spaceIdEl) {
+        if (status) status.textContent = "Use the auth flow to generate a key and select a space.";
+        return;
+    }
     const api_key = apiKeyEl?.value.trim() || "";
     const space_id = spaceIdEl?.value.trim() || "";
     if (!api_key || !space_id) {
@@ -1342,6 +1643,7 @@ async function saveAnytypeConfig() {
         if (status) status.textContent = "Saved.";
         if (apiKeyEl) apiKeyEl.value = "";
         if (spaceIdEl) spaceIdEl.value = "";
+        updateAnytypeWarning();
         await refreshAll();
         closeAnytypeConfigModal();
     } catch (err) {
@@ -1378,6 +1680,10 @@ document.getElementById("anytype-config-close")?.addEventListener("click", close
 document.getElementById("anytype-config-cancel")?.addEventListener("click", closeAnytypeConfigModal);
 document.getElementById("anytype-refresh-open")?.addEventListener("click", refreshAnytypeCache);
 document.getElementById("anytype-config-save")?.addEventListener("click", saveAnytypeConfig);
+document.getElementById("anytype-auth-challenge")?.addEventListener("click", createAnytypeChallenge);
+document.getElementById("anytype-auth-create")?.addEventListener("click", createAnytypeApiKey);
+document.getElementById("anytype-spaces-refresh")?.addEventListener("click", loadAnytypeSpaces);
+document.getElementById("anytype-space-save")?.addEventListener("click", saveAnytypeSpace);
 
 document.getElementById("anytype-config-modal")?.addEventListener("click", (event) => {
     if (event.target?.id === "anytype-config-modal") closeAnytypeConfigModal();
@@ -1418,7 +1724,7 @@ document.getElementById("timer-min")?.addEventListener("click", openDurationModa
 document.getElementById("timer-sec")?.addEventListener("click", openDurationModal);
 
 setView("tasks");
-refreshAll();
+refreshEverything();
 let lastPageActive = isPageActive();
 setInterval(() => {
     const active = isPageActive();
@@ -1429,21 +1735,23 @@ setInterval(() => {
 
     if (!lastPageActive) {
         lastPageActive = true;
-        refreshAll();
+        if (currentView === "tasks") {
+            refreshAll();
+        }
         return;
     }
 
     if (currentView === "tasks") {
         refreshFocusOnly();
-    } else {
-        refreshAll();
     }
 }, 5000);
 
 window.addEventListener("focus", () => {
     if (!lastPageActive && isPageActive()) {
         lastPageActive = true;
-        refreshAll();
+        if (currentView === "tasks") {
+            refreshAll();
+        }
     }
 });
 
@@ -1451,7 +1759,9 @@ document.addEventListener("visibilitychange", () => {
     const active = isPageActive();
     if (active && !lastPageActive) {
         lastPageActive = true;
-        refreshAll();
+        if (currentView === "tasks") {
+            refreshAll();
+        }
     } else if (!active) {
         lastPageActive = false;
     }

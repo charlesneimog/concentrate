@@ -2,6 +2,8 @@
 
 #include "anytype_api.h"
 #include "common.h"
+#include "focus_rules.h"
+#include "notification.h"
 #include "secret_store.h"
 #include "sqlite_store.h"
 
@@ -11,13 +13,13 @@
 #include <fstream>
 #include <iostream>
 #include <cstdlib>
+#include <algorithm>
 #include <chrono>
-#include <condition_variable>
 #include <functional>
-#include <future>
-#include <queue>
+#include <memory>
 #include <thread>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 namespace {
@@ -28,133 +30,8 @@ struct StaticFile {
 
 using StaticFileMap = std::unordered_map<std::string, StaticFile>;
 
-struct HttpResult {
-    int status = 200;
-    std::string body;
-    std::string content_type = "text/plain";
-    std::vector<std::pair<std::string, std::string>> headers;
-};
-
-class ThreadPool {
-  public:
-    explicit ThreadPool(size_t thread_count) : stop_(false) {
-        if (thread_count == 0) {
-            thread_count = 2;
-        }
-                max_queue_ = thread_count * 64;
-        workers_.reserve(thread_count);
-        for (size_t i = 0; i < thread_count; ++i) {
-            workers_.emplace_back([this]() {
-                for (;;) {
-                    std::function<void()> task;
-                    {
-                        std::unique_lock<std::mutex> lock(mutex_);
-                        cv_.wait(lock, [this]() { return stop_ || !tasks_.empty(); });
-                        if (stop_ && tasks_.empty()) {
-                            return;
-                        }
-                        task = std::move(tasks_.front());
-                        tasks_.pop();
-                    }
-                    task();
-                }
-            });
-        }
-    }
-
-    ~ThreadPool() {
-        {
-            std::lock_guard<std::mutex> lock(mutex_);
-            stop_ = true;
-        }
-        cv_.notify_all();
-        for (auto &worker : workers_) {
-            if (worker.joinable()) {
-                worker.join();
-            }
-        }
-    }
-
-    template <class F>
-    auto submit(F &&f) -> std::future<decltype(f())> {
-        using R = decltype(f());
-        auto task = std::make_shared<std::packaged_task<R()>>(std::forward<F>(f));
-        std::future<R> result = task->get_future();
-        bool run_inline = false;
-        {
-            std::lock_guard<std::mutex> lock(mutex_);
-            if (tasks_.size() >= max_queue_) {
-                run_inline = true;
-            } else {
-                tasks_.emplace([task]() { (*task)(); });
-            }
-        }
-        if (run_inline) {
-            (*task)();
-        } else {
-            cv_.notify_one();
-        }
-        return result;
-    }
-
-  private:
-    std::vector<std::thread> workers_;
-    std::queue<std::function<void()>> tasks_;
-    std::mutex mutex_;
-    std::condition_variable cv_;
-    bool stop_;
-    size_t max_queue_ = 0;
-};
-
-class AnytypeRefreshWorker {
-  public:
-    explicit AnytypeRefreshWorker(std::chrono::seconds interval)
-        : interval_(interval), pending_(false), stop_(false), worker_([this]() { run(); }) {}
-
-    ~AnytypeRefreshWorker() {
-        {
-            std::lock_guard<std::mutex> lock(mutex_);
-            stop_ = true;
-        }
-        cv_.notify_all();
-        if (worker_.joinable()) {
-            worker_.join();
-        }
-    }
-
-    void request_refresh() {
-        {
-            std::lock_guard<std::mutex> lock(mutex_);
-            pending_ = true;
-        }
-        cv_.notify_all();
-    }
-
-  private:
-    void run() {
-        std::unique_lock<std::mutex> lock(mutex_);
-        while (!stop_) {
-            cv_.wait_for(lock, interval_, [this]() { return stop_ || pending_; });
-            if (stop_) {
-                break;
-            }
-            pending_ = false;
-            lock.unlock();
-            std::string refresh_error;
-            refresh_anytype_cache(&refresh_error);
-            lock.lock();
-        }
-    }
-
-    std::chrono::seconds interval_;
-    bool pending_;
-    bool stop_;
-    std::mutex mutex_;
-    std::condition_variable cv_;
-    std::thread worker_;
-};
-
-static std::filesystem::path resolve_static_path(const std::string &base_dir, const std::string &filename) {
+static std::filesystem::path resolve_static_path(const std::string &base_dir,
+                                                 const std::string &filename) {
     const char *env_path = std::getenv("NIRI_INDEX_PATH");
     std::vector<std::filesystem::path> candidates;
     if (env_path && *env_path) {
@@ -181,10 +58,8 @@ static std::filesystem::path resolve_static_path(const std::string &base_dir, co
     return target;
 }
 
-static bool load_static_file(StaticFileMap &files,
-                             const std::string &base_dir,
-                             const std::string &filename,
-                             const std::string &content_type) {
+static bool load_static_file(StaticFileMap &files, const std::string &base_dir,
+                             const std::string &filename, const std::string &content_type) {
     std::filesystem::path target = resolve_static_path(base_dir, filename);
     if (target.empty()) {
         return false;
@@ -200,10 +75,8 @@ static bool load_static_file(StaticFileMap &files,
     return true;
 }
 
-static void serve_file(const StaticFileMap &files,
-                       const std::string &filename,
-                       const char *content_type,
-                       httplib::Response &res) {
+static void serve_file(const StaticFileMap &files, const std::string &filename,
+                       const char *content_type, httplib::Response &res) {
     auto it = files.find(filename);
     if (it == files.end()) {
         res.status = 404;
@@ -217,257 +90,288 @@ static void serve_file(const StaticFileMap &files,
     res.set_content(body.data(), body.size(), ctype);
 }
 
-static void apply_result(httplib::Response &res, const HttpResult &result) {
-    for (const auto &header : result.headers) {
-        res.set_header(header.first.c_str(), header.second.c_str());
-    }
-    res.status = result.status;
-    res.set_content(result.body, result.content_type);
+static std::string &json_buffer() {
+    thread_local std::string buffer;
+    return buffer;
 }
-} // namespace
 
-void start_http_server(const std::string &base_dir,
-                       const std::string &db_path,
-                       std::mutex &current_mutex,
-                       json &current_focus) {
-    std::thread([&, base_dir, db_path]() {
-        httplib::Server server;
-        const size_t hw_threads = std::thread::hardware_concurrency();
-        const size_t pool_size = hw_threads > 2 ? hw_threads - 1 : 2;
-        ThreadPool pool(pool_size);
-        AnytypeRefreshWorker anytype_refresher(std::chrono::minutes(5));
-
-        StaticFileMap static_files;
-        load_static_file(static_files, base_dir, "index.html", "text/html");
-        load_static_file(static_files, base_dir, "app.js", "application/javascript");
-
-        server.Post("/tasks", [&](const httplib::Request &req, httplib::Response &res) {
-            std::string body = req.body;
-            auto fut = pool.submit([body = std::move(body), db_path]() {
-                HttpResult out;
-                try {
-                    json data = parse_json_or_throw(body);
-                    std::string error;
-                    if (!create_task(db_path, data, error)) {
-                        out.status = 400;
-                        out.body = error;
-                        return out;
-                    }
-                    out.status = 200;
-                    out.body = "ok";
-                } catch (const std::exception &e) {
-                    out.status = 400;
-                    out.body = e.what();
-                }
-                return out;
-            });
-            apply_result(res, fut.get());
+static void set_json_response(httplib::Response &res, const json &payload, int status = 200) {
+    auto &buffer = json_buffer();
+    buffer = payload.dump();
+    res.status = status;
+    res.set_content_provider(
+        buffer.size(),
+        "application/json",
+        [](size_t offset, size_t length, httplib::DataSink &sink) {
+            const auto &data = json_buffer();
+            if (offset >= data.size()) {
+                return false;
+            }
+            const size_t remaining = data.size() - offset;
+            const size_t to_write = std::min(length, remaining);
+            sink.write(data.data() + offset, to_write);
+            return true;
         });
+}
 
-        server.Post("/tasks/update", [&](const httplib::Request &req, httplib::Response &res) {
-            std::string body = req.body;
-            auto fut = pool.submit([body = std::move(body), db_path]() {
-                HttpResult out;
-                try {
-                    json data = parse_json_or_throw(body);
-                    std::string error;
-                    if (!update_task(db_path, data, error)) {
-                        out.status = error == "task not found" ? 404 : 400;
-                        out.body = error;
-                        return out;
-                    }
-                    out.status = 200;
-                    out.body = "ok";
-                } catch (const std::exception &e) {
-                    out.status = 400;
-                    out.body = e.what();
-                }
-                return out;
-            });
-            apply_result(res, fut.get());
-        });
+class ServerState {
+  public:
+    ServerState(std::string base_dir,
+                std::string db_path,
+                std::mutex &current_mutex,
+                json &current_focus)
+        : base_dir_(std::move(base_dir)),
+          db_path_(std::move(db_path)),
+          current_mutex_(current_mutex),
+          current_focus_(current_focus) {
+        load_static_file(static_files_, base_dir_, "index.html", "text/html");
+        load_static_file(static_files_, base_dir_, "app.js", "application/javascript");
+        thread_ = std::thread([this]() { run(); });
+    }
 
-        server.Get("/", [&](const httplib::Request &, httplib::Response &res) {
-            serve_file(static_files, "index.html", "text/html", res);
-        });
+    ~ServerState() {
+        server_.stop();
+        if (thread_.joinable()) {
+            thread_.join();
+        }
+    }
 
-        server.Get("/index.html", [&](const httplib::Request &, httplib::Response &res) {
-            serve_file(static_files, "index.html", "text/html", res);
-        });
-
-        server.Get("/app.js", [&](const httplib::Request &, httplib::Response &res) {
-            serve_file(static_files, "app.js", "application/javascript", res);
-        });
-
-        server.Get("/events", [&](const httplib::Request &, httplib::Response &res) {
-            auto fut = pool.submit([db_path]() {
-                HttpResult out;
-                out.content_type = "application/json";
-                try {
-                    json rows = fetch_events(db_path);
-                    out.status = 200;
-                    out.body = std::move(rows.dump());
-                } catch (const std::exception &e) {
-                    out.status = 400;
-                    out.content_type = "text/plain";
-                    out.body = e.what();
-                }
-                return out;
-            });
-            apply_result(res, fut.get());
-        });
-
-        server.Get("/tasks", [&](const httplib::Request &, httplib::Response &res) {
-            auto fut = pool.submit([db_path]() {
-                HttpResult out;
-                out.content_type = "application/json";
-                try {
-                    json rows = fetch_tasks(db_path);
-                    out.status = 200;
-                    out.body = std::move(rows.dump());
-                } catch (const std::exception &e) {
-                    out.status = 400;
-                    out.content_type = "text/plain";
-                    out.body = e.what();
-                }
-                return out;
-            });
-            apply_result(res, fut.get());
-        });
-
-        server.Get("/anytype/tasks", [&](const httplib::Request &, httplib::Response &res) {
+  private:
+    void run() {
+        server_.Post("/tasks", [&](const httplib::Request &req, httplib::Response &res) {
+            printf("[POST] Getting tasks\n");
             try {
-                AnytypeCache cache = get_anytype_cache();
-                if ((!cache.tasks.is_array() || cache.tasks.empty()) && !cache.error.empty()) {
-                    res.status = 500;
-                    res.set_content(cache.error, "text/plain");
+                json data = parse_json_or_throw(req.body);
+                std::string error;
+                if (!create_task(db_path_, data, error)) {
+                    res.status = 400;
+                    res.set_content(error, "text/plain");
                     return;
                 }
                 res.status = 200;
-                res.set_header("X-Anytype-Updated", std::to_string(cache.updated_at));
-                std::string payload = cache.tasks.dump();
-                res.set_content(std::move(payload), "application/json");
+                res.set_content("ok", "text/plain");
             } catch (const std::exception &e) {
-                res.status = 500;
+                res.status = 400;
                 res.set_content(e.what(), "text/plain");
             }
         });
 
-        server.Post("/anytype/config", [&](const httplib::Request &req, httplib::Response &res) {
-            std::string body = req.body;
-            auto fut = pool.submit([body = std::move(body), &anytype_refresher]() {
-                HttpResult out;
-                try {
-                    json data = parse_json_or_throw(body);
-                    std::string api_key = get_string(data, "api_key", "");
-                    std::string space_id = get_string(data, "space_id", "");
-                    if (api_key.empty() || space_id.empty()) {
-                        out.status = 400;
-                        out.body = "missing api_key or space_id";
-                        return out;
-                    }
-                    if (!save_secret_string("anytype_api_key", api_key)) {
-                        out.status = 500;
-                        out.body = "failed to store api_key";
-                        return out;
-                    }
-                    if (!save_secret_string("anytype_space_id", space_id)) {
-                        out.status = 500;
-                        out.body = "failed to store space_id";
-                        return out;
-                    }
-                    anytype_refresher.request_refresh();
-                    out.status = 200;
-                    out.body = "ok";
-                } catch (const std::exception &e) {
-                    out.status = 400;
-                    out.body = e.what();
+        server_.Post("/tasks/update", [&](const httplib::Request &req, httplib::Response &res) {
+            printf("[POST] Updating tasks\n");
+            try {
+                json data = parse_json_or_throw(req.body);
+                std::string error;
+                if (!update_task(db_path_, data, error)) {
+                    res.status = error == "task not found" ? 404 : 400;
+                    res.set_content(error, "text/plain");
+                    return;
                 }
-                return out;
-            });
-            apply_result(res, fut.get());
+                res.status = 200;
+                res.set_content("ok", "text/plain");
+            } catch (const std::exception &e) {
+                res.status = 400;
+                res.set_content(e.what(), "text/plain");
+            }
         });
 
-        server.Post("/anytype/refresh", [&](const httplib::Request &, httplib::Response &res) {
-            anytype_refresher.request_refresh();
-            res.status = 200;
-            res.set_content("ok", "text/plain");
+        server_.Get("/", [&](const httplib::Request &, httplib::Response &res) {
+            printf("[GET] Get index.html\n");
+            serve_file(static_files_, "index.html", "text/html", res);
         });
 
-        server.Get("/categories", [&](const httplib::Request &, httplib::Response &res) {
-            auto fut = pool.submit([db_path]() {
-                HttpResult out;
-                out.content_type = "application/json";
-                try {
-                    json rows = fetch_categories(db_path);
-                    out.status = 200;
-                    out.body = std::move(rows.dump());
-                } catch (const std::exception &e) {
-                    out.status = 400;
-                    out.content_type = "text/plain";
-                    out.body = e.what();
+        server_.Get("/index.html", [&](const httplib::Request &, httplib::Response &res) {
+            printf("[GET] Get index.html\n");
+            serve_file(static_files_, "index.html", "text/html", res);
+        });
+
+        server_.Get("/app.js", [&](const httplib::Request &, httplib::Response &res) {
+            printf("[GET] Get app.js\n");
+            serve_file(static_files_, "app.js", "application/javascript", res);
+        });
+
+        server_.Get("/events", [&](const httplib::Request &, httplib::Response &res) {
+            printf("[GET] Get Events\n");
+            try {
+                json rows = fetch_events(db_path_);
+                set_json_response(res, rows, 200);
+            } catch (const std::exception &e) {
+                res.status = 400;
+                res.set_content(e.what(), "text/plain");
+            }
+        });
+
+        server_.Get("/tasks", [&](const httplib::Request &, httplib::Response &res) {
+            printf("[GET] Get tasks\n");
+            try {
+                json rows = fetch_tasks(db_path_);
+                set_json_response(res, rows, 200);
+            } catch (const std::exception &e) {
+                res.status = 400;
+                res.set_content(e.what(), "text/plain");
+            }
+        });
+
+        server_.Get("/anytype/tasks", [&](const httplib::Request &, httplib::Response &res) {
+            printf("[GET] Get anytype tasks\n");
+            json tasks;
+            std::string error;
+            if (!fetch_anytype_tasks_live(tasks, error)) {
+                res.status = 500;
+                res.set_content(error.empty() ? "anytype request failed" : error, "text/plain");
+                return;
+            }
+            set_json_response(res, tasks, 200);
+        });
+
+        server_.Post("/anytype/config", [&](const httplib::Request &req, httplib::Response &res) {
+            printf("[POST] Updating anytype config\n");
+            try {
+                json data = parse_json_or_throw(req.body);
+                std::string api_key = get_string(data, "api_key", "");
+                std::string space_id = get_string(data, "space_id", "");
+                if (api_key.empty() || space_id.empty()) {
+                    res.status = 400;
+                    res.set_content("missing api_key or space_id", "text/plain");
+                    return;
                 }
-                return out;
-            });
-            apply_result(res, fut.get());
-        });
-
-        server.Get("/history", [&](const httplib::Request &, httplib::Response &res) {
-            auto fut = pool.submit([db_path]() {
-                HttpResult out;
-                out.content_type = "application/json";
-                try {
-                    json rows = fetch_history(db_path);
-                    out.status = 200;
-                    out.body = std::move(rows.dump());
-                } catch (const std::exception &e) {
-                    out.status = 400;
-                    out.content_type = "text/plain";
-                    out.body = e.what();
+                if (!save_secret_string("anytype_api_key", api_key)) {
+                    res.status = 500;
+                    res.set_content("failed to store api_key", "text/plain");
+                    return;
                 }
-                return out;
-            });
-            apply_result(res, fut.get());
+                if (!save_secret_string("anytype_space_id", space_id)) {
+                    res.status = 500;
+                    res.set_content("failed to store space_id", "text/plain");
+                    return;
+                }
+                res.status = 200;
+                res.set_content("ok", "text/plain");
+            } catch (const std::exception &e) {
+                res.status = 400;
+                res.set_content(e.what(), "text/plain");
+            }
         });
 
-        server.Post("/history/category", [&](const httplib::Request &req, httplib::Response &res) {
-            std::string body = req.body;
-            auto fut = pool.submit([body = std::move(body), db_path]() {
-                HttpResult out;
-                try {
-                    json data = parse_json_or_throw(body);
-                    std::string app_id = get_string(data, "app_id", "");
-                    std::string title = get_string(data, "title", "");
-                    std::string category = get_string(data, "category", "");
-                    std::string error;
-                    if (!upsert_activity_category(db_path, app_id, title, category, error)) {
-                        out.status = 400;
-                        out.body = error;
-                        return out;
+        server_.Post("/anytype/refresh", [&](const httplib::Request &, httplib::Response &res) {
+            printf("[POST] Refresh anytype tasks\n");
+            json tasks;
+            std::string error;
+            if (!fetch_anytype_tasks_live(tasks, error)) {
+                res.status = 500;
+                res.set_content(error.empty() ? "anytype request failed" : error, "text/plain");
+                return;
+            }
+            set_json_response(res, tasks, 200);
+        });
+
+        server_.Get("/categories", [&](const httplib::Request &, httplib::Response &res) {
+            printf("[GET] Getting categories\n");
+            try {
+                json rows = fetch_categories(db_path_);
+                set_json_response(res, rows, 200);
+            } catch (const std::exception &e) {
+                res.status = 400;
+                res.set_content(e.what(), "text/plain");
+            }
+        });
+
+        server_.Get("/history", [&](const httplib::Request &, httplib::Response &res) {
+            printf("[GET] Getting history\n");
+            try {
+                json rows = fetch_history(db_path_);
+                set_json_response(res, rows, 200);
+            } catch (const std::exception &e) {
+                res.status = 400;
+                res.set_content(e.what(), "text/plain");
+            }
+        });
+
+        server_.Post("/history/category", [&](const httplib::Request &req, httplib::Response &res) {
+            printf("[GET] Getting history categories\n");
+            try {
+                json data = parse_json_or_throw(req.body);
+                std::string app_id = get_string(data, "app_id", "");
+                std::string title = get_string(data, "title", "");
+                std::string category = get_string(data, "category", "");
+                std::string error;
+                if (!upsert_activity_category(db_path_, app_id, title, category, error)) {
+                    res.status = 400;
+                    res.set_content(error, "text/plain");
+                    return;
+                }
+                res.status = 200;
+                res.set_content("ok", "text/plain");
+            } catch (const std::exception &e) {
+                res.status = 400;
+                res.set_content(e.what(), "text/plain");
+            }
+        });
+
+        server_.Post("/focus/rules", [&](const httplib::Request &req, httplib::Response &res) {
+            printf("[POST] Update focus rules\n");
+            try {
+                json data = parse_json_or_throw(req.body);
+                FocusRules rules;
+                if (data.contains("allowed_app_ids") && data["allowed_app_ids"].is_array()) {
+                    for (const auto &entry : data["allowed_app_ids"]) {
+                        if (entry.is_string()) {
+                            rules.allowed_app_ids.push_back(entry.get<std::string>());
+                        }
                     }
-                    out.status = 200;
-                    out.body = "ok";
-                } catch (const std::exception &e) {
-                    out.status = 400;
-                    out.body = e.what();
                 }
-                return out;
-            });
-            apply_result(res, fut.get());
+                if (data.contains("allowed_titles") && data["allowed_titles"].is_array()) {
+                    for (const auto &entry : data["allowed_titles"]) {
+                        if (entry.is_string()) {
+                            rules.allowed_titles.push_back(entry.get<std::string>());
+                        }
+                    }
+                }
+                rules.task_title = get_string(data, "task_title", "");
+                set_focus_rules(std::move(rules));
+                res.status = 200;
+                res.set_content("ok", "text/plain");
+            } catch (const std::exception &e) {
+                res.status = 400;
+                res.set_content(e.what(), "text/plain");
+            }
         });
 
-        server.Get("/current", [&](const httplib::Request &, httplib::Response &res) {
+        server_.Post("/notify", [&](const httplib::Request &req, httplib::Response &res) {
+            printf("[POST] Notify\n");
+            try {
+                json data = parse_json_or_throw(req.body);
+                std::string summary = get_string(data, "summary", "FocusService");
+                std::string body = get_string(data, "body", "");
+                if (body.empty()) {
+                    res.status = 400;
+                    res.set_content("missing body", "text/plain");
+                    return;
+                }
+                std::string error;
+                if (!send_focus_notification(summary, body, error)) {
+                    res.status = 500;
+                    res.set_content(error.empty() ? "notify failed" : error, "text/plain");
+                    return;
+                }
+                res.status = 200;
+                res.set_content("ok", "text/plain");
+            } catch (const std::exception &e) {
+                res.status = 400;
+                res.set_content(e.what(), "text/plain");
+            }
+        });
+
+        server_.Get("/current", [&](const httplib::Request &, httplib::Response &res) {
+            printf("[GET] Getting current\n");
             json snapshot;
             {
-                std::lock_guard<std::mutex> lock(current_mutex);
-                snapshot = current_focus;
+                std::lock_guard<std::mutex> lock(current_mutex_);
+                snapshot = current_focus_;
             }
-            res.status = 200;
-            std::string payload = snapshot.dump();
-            res.set_content(std::move(payload), "application/json");
+            set_json_response(res, snapshot, 200);
         });
 
-        server.set_error_handler([&](const httplib::Request &, httplib::Response &res) {
+        server_.set_error_handler([&](const httplib::Request &, httplib::Response &res) {
             res.status = 404;
             res.set_content("not found", "text/plain");
         });
@@ -475,6 +379,25 @@ void start_http_server(const std::string &base_dir,
         const std::string host = "127.0.0.1";
         const int port = 8079;
         std::cout << "Listening on http://" << host << ":" << port << "\n";
-        server.listen(host, port);
-    }).detach();
+        server_.listen(host, port);
+    }
+
+    std::string base_dir_;
+    std::string db_path_;
+    std::mutex &current_mutex_;
+    json &current_focus_;
+    StaticFileMap static_files_;
+    httplib::Server server_;
+    std::thread thread_;
+};
+
+static std::unique_ptr<ServerState> g_server;
+static std::once_flag g_server_once;
+} // namespace
+
+void start_http_server(const std::string &base_dir, const std::string &db_path,
+                       std::mutex &current_mutex, json &current_focus) {
+    std::call_once(g_server_once, [&]() {
+        g_server = std::make_unique<ServerState>(base_dir, db_path, current_mutex, current_focus);
+    });
 }

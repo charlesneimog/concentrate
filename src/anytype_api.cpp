@@ -10,77 +10,61 @@
 #include <strings.h>
 
 namespace {
-std::mutex anytype_mutex;
-AnytypeCache anytype_cache;
 
 // ─────────────────────────────────────
-json extract_anytype_objects(const json &payload) {
-    if (payload.contains("data") && payload["data"].is_object()) {
-        const auto &data = payload["data"];
-        if (data.contains("objects") && data["objects"].is_array()) {
-            return data["objects"];
+const json* extract_anytype_objects(const json& payload) {
+    if (payload.contains("data")) {
+        const auto& data = payload["data"];
+        if (data.is_object()) {
+            if (data.contains("objects") && data["objects"].is_array())
+                return &data["objects"];
+            if (data.contains("results") && data["results"].is_array())
+                return &data["results"];
         }
-        if (data.contains("results") && data["results"].is_array()) {
-            return data["results"];
-        }
+        if (data.is_array())
+            return &data;
     }
-    if (payload.contains("objects") && payload["objects"].is_array()) {
-        return payload["objects"];
-    }
-    if (payload.contains("results") && payload["results"].is_array()) {
-        return payload["results"];
-    }
-    if (payload.contains("data") && payload["data"].is_array()) {
-        return payload["data"];
-    }
-    return json::array();
+    if (payload.contains("objects") && payload["objects"].is_array())
+        return &payload["objects"];
+    if (payload.contains("results") && payload["results"].is_array())
+        return &payload["results"];
+    return nullptr;
 }
 
 // ─────────────────────────────────────
-int extract_anytype_total(const json &payload) {
-    if (payload.contains("data") && payload["data"].is_object()) {
-        const auto &data = payload["data"];
-        if (data.contains("total") && data["total"].is_number()) {
-            return data["total"].get<int>();
-        }
-    }
-    if (payload.contains("total") && payload["total"].is_number()) {
-        return payload["total"].get<int>();
-    }
-    if (payload.contains("meta") && payload["meta"].is_object()) {
-        const auto &meta = payload["meta"];
-        if (meta.contains("total") && meta["total"].is_number()) {
-            return meta["total"].get<int>();
-        }
-    }
-    if (payload.contains("pagination") && payload["pagination"].is_object()) {
-        const auto &pagination = payload["pagination"];
-        if (pagination.contains("total") && pagination["total"].is_number()) {
-            return pagination["total"].get<int>();
-        }
+int extract_anytype_total(const json& payload) {
+    const json* candidates[] = {
+        payload.contains("data") ? &payload["data"] : nullptr,
+        payload.contains("meta") ? &payload["meta"] : nullptr,
+        payload.contains("pagination") ? &payload["pagination"] : nullptr,
+        &payload
+    };
+
+    for (const json* j : candidates) {
+        if (!j || !j->is_object()) continue;
+        auto it = j->find("total");
+        if (it != j->end() && it->is_number_integer())
+            return it->get<int>();
     }
     return -1;
 }
 
 // ─────────────────────────────────────
-json find_property_by_key(const json &properties, const std::string &key) {
-    if (!properties.is_array()) {
-        return json();
-    }
-    for (const auto &prop : properties) {
-        if (!prop.is_object()) {
-            continue;
-        }
+const json* find_property_by_key(const json& properties, std::string_view key) {
+    if (!properties.is_array()) return nullptr;
+
+    for (const auto& prop : properties) {
+        if (!prop.is_object()) continue;
         auto it = prop.find("key");
-        if (it == prop.end() || !it->is_string()) {
-            continue;
-        }
-        std::string prop_key = it->get<std::string>();
-        if (strcasecmp(prop_key.c_str(), key.c_str()) == 0) {
-            return prop;
+        if (it == prop.end() || !it->is_string()) continue;
+
+        const auto& prop_key = it->get_ref<const std::string&>();
+        if (prop_key.size() == key.size() &&
+            strcasecmp(prop_key.c_str(), key.data()) == 0) {
+            return &prop;
         }
     }
-    return json();
+    return nullptr;
 }
 
 // ─────────────────────────────────────
@@ -106,158 +90,253 @@ json extract_multi_select_names(const json &prop) {
 }
 
 // ─────────────────────────────────────
-json normalize_anytype_task(const json &obj, int fallback_id) {
-    std::string id = get_string(obj, "id", "");
-    if (id.empty()) {
-        id = get_string(obj, "objectId", "");
-    }
-    if (id.empty()) {
-        id = get_string(obj, "object_id", "");
-    }
-    if (id.empty()) {
-        id = get_string(obj, "uid", "");
-    }
-    if (id.empty()) {
-        id = "anytype-" + std::to_string(fallback_id);
-    }
-
-    std::string title = get_string(obj, "name", "");
-    if (title.empty()) {
-        title = get_string(obj, "title", "(Untitled)");
-    }
-
-    json properties = obj.contains("properties") ? obj["properties"] : json::array();
-    json done_prop = find_property_by_key(properties, "done");
-    json category_prop = find_property_by_key(properties, "category");
-    json apps_allowed_prop = find_property_by_key(properties, "apps_allowed");
-    json app_title_prop = find_property_by_key(properties, "app_title");
-
-    bool done = done_prop.contains("checkbox") && done_prop["checkbox"].is_boolean()
-                    ? done_prop["checkbox"].get<bool>()
-                    : false;
-    std::string category = "Uncategorized";
-    if (category_prop.contains("select") && category_prop["select"].is_object()) {
-        category = get_string(category_prop["select"], "name", "Uncategorized");
-        if (category.empty()) {
-            category = "Uncategorized";
+json normalize_anytype_task(const json& obj, int fallback_id) {
+    auto get_id = [&]() -> std::string {
+        static constexpr std::string_view keys[] = {
+            "id", "objectId", "object_id", "uid"
+        };
+        for (auto k : keys) {
+            std::string v = get_string(obj, k.data(), "");
+            if (!v.empty()) return v;
         }
-    }
+        return "anytype-" + std::to_string(fallback_id);
+    };
 
     json out = json::object();
-    out["id"] = id;
+    out["id"] = get_id();
+
+    std::string title = get_string(obj, "name", "");
+    if (title.empty())
+        title = get_string(obj, "title", "(Untitled)");
     out["title"] = title;
-    out["category"] = category;
+
+    const json& properties = obj.contains("properties") && obj["properties"].is_array()
+                                 ? obj["properties"]
+                                 : json::array();
+
+    const json* done_prop = find_property_by_key(properties, "done");
+    const json* category_prop = find_property_by_key(properties, "category");
+    const json* apps_allowed_prop = find_property_by_key(properties, "apps_allowed");
+    const json* app_title_prop = find_property_by_key(properties, "app_title");
+
+    bool done = done_prop &&
+                done_prop->contains("checkbox") &&
+                (*done_prop)["checkbox"].is_boolean() &&
+                (*done_prop)["checkbox"].get<bool>();
+
+    std::string category = "Uncategorized";
+    if (category_prop &&
+        category_prop->contains("select") &&
+        (*category_prop)["select"].is_object()) {
+        category = get_string((*category_prop)["select"], "name", category);
+    }
+
     out["done"] = done;
-    out["allowed_app_ids"] = extract_multi_select_names(apps_allowed_prop);
-    out["allowed_titles"] = extract_multi_select_names(app_title_prop);
+    out["category"] = category;
+    out["allowed_app_ids"] =
+        apps_allowed_prop ? extract_multi_select_names(*apps_allowed_prop)
+                          : json::array();
+    out["allowed_titles"] =
+        app_title_prop ? extract_multi_select_names(*app_title_prop)
+                       : json::array();
+
     return out;
 }
 
 // ─────────────────────────────────────
-json fetch_anytype_tasks() {
-    const std::string api_key = load_secret_string("anytype_api_key");
-    const std::string space_id = load_secret_string("anytype_space_id");
-    if (api_key.empty() || space_id.empty()) {
-        throw std::runtime_error("missing anytype api key or space id");
-    }
-
-    const std::string base = "http://localhost:31009";
-    const std::string api_version = "2025-11-08";
-    const int limit = 50;
-
-    httplib::Client client(base);
-    client.set_default_headers({
-        {"Authorization", "Bearer " + api_key},
-        {"Anytype-Version", api_version},
-        {"Content-Type", "application/json"},
-    });
-    client.set_connection_timeout(3, 0);
-    client.set_read_timeout(30, 0);
-    client.set_write_timeout(30, 0);
-
-    json tasks = json::array();
-    int offset = 0;
-    constexpr int kMaxTasks = 2000;
-    while (true) {
-        json body = json::object();
-        body["types"] = json::array({"task"});
-        body["offset"] = offset;
-        body["limit"] = limit;
-
-        std::string path = "/v1/spaces/" + space_id + "/search";
-        auto res = client.Post(path.c_str(), body.dump(), "application/json");
-        if (!res) {
-            throw std::runtime_error("anytype request failed");
-        }
-        if (res->status < 200 || res->status >= 300) {
-            throw std::runtime_error("anytype request failed: " + std::to_string(res->status));
+bool fetch_anytype_tasks(json &out, std::string &error) {
+    try {
+        const std::string api_key = load_secret_string("anytype_api_key");
+        const std::string space_id = load_secret_string("anytype_space_id");
+        if (api_key.empty() || space_id.empty()) {
+            error = "missing anytype api key or space id";
+            out = json::array();
+            return false;
         }
 
-        json payload = parse_json_or_throw(res->body);
-        json objects = extract_anytype_objects(payload);
-        int total = extract_anytype_total(payload);
+        constexpr int limit = 50;
+        constexpr int kMaxTasks = 2000;
 
-        if (objects.is_array()) {
-            int idx = 0;
-            for (const auto &obj : objects) {
-                json task = normalize_anytype_task(obj, offset + idx);
-                bool done = task.contains("done") && task["done"].is_boolean()
-                                ? task["done"].get<bool>()
-                                : false;
-                if (!done) {
-                    tasks.push_back(task);
-                }
-                idx += 1;
+        httplib::Client client("http://localhost:31009");
+        client.set_default_headers({
+            {"Authorization", "Bearer " + api_key},
+            {"Anytype-Version", "2025-11-08"},
+            {"Content-Type", "application/json"},
+        });
+        client.set_connection_timeout(3, 0);
+        client.set_read_timeout(30, 0);
+        client.set_write_timeout(30, 0);
+
+        json tasks = json::array();
+        tasks.get_ref<json::array_t&>().reserve(kMaxTasks);
+
+        int offset = 0;
+        while (offset <= 10000) {
+            json body{
+                {"types", json::array({"task"})},
+                {"offset", offset},
+                {"limit", limit},
+            };
+
+            auto res = client.Post(
+                ("/v1/spaces/" + space_id + "/search").c_str(),
+                body.dump(),
+                "application/json"
+            );
+
+            if (!res || res->status < 200 || res->status >= 300) {
+                error = "anytype request failed";
+                out = json::array();
+                return false;
             }
+
+            json payload = parse_json_or_throw(res->body);
+            const json* objects = extract_anytype_objects(payload);
+            int total = extract_anytype_total(payload);
+
+            if (!objects) break;
+
+            int idx = 0;
+            for (const auto& obj : *objects) {
+                json task = normalize_anytype_task(obj, offset + idx++);
+                if (!task.value("done", false)) {
+                    tasks.push_back(std::move(task));
+                    if (tasks.size() >= kMaxTasks) {
+                        out = std::move(tasks);
+                        return true;
+                    }
+                }
+            }
+
+            if (objects->size() < static_cast<size_t>(limit)) break;
+            if (total >= 0 && offset + limit >= total) break;
+
+            offset += limit;
         }
 
-        if (tasks.size() >= static_cast<size_t>(kMaxTasks)) {
-            break;
-        }
-
-        if (!objects.is_array() || objects.size() < static_cast<size_t>(limit)) {
-            break;
-        }
-        if (total >= 0 && offset + limit >= total) {
-            break;
-        }
-        offset += limit;
-        if (offset > 10000) {
-            break;
-        }
+        out = std::move(tasks);
+        return true;
+    } catch (const std::exception &e) {
+        error = e.what();
+        out = json::array();
+        return false;
     }
-
-    return tasks;
 }
+
 } // namespace
 
 // ─────────────────────────────────────
-bool refresh_anytype_cache(std::string *error_out) {
+bool fetch_anytype_tasks_live(json &out, std::string &error) {
+    return fetch_anytype_tasks(out, error);
+}
+
+// ─────────────────────────────────────
+bool create_anytype_auth_challenge(const std::string &app_name, std::string &challenge_id,
+                                   std::string &error) {
     try {
-        json tasks = fetch_anytype_tasks();
-        std::lock_guard<std::mutex> lock(anytype_mutex);
-        json().swap(anytype_cache.tasks);
-        anytype_cache.tasks = std::move(tasks);
-        anytype_cache.updated_at =
-            std::chrono::duration<double>(std::chrono::system_clock::now().time_since_epoch())
-                .count();
-        anytype_cache.error.clear();
-        anytype_cache.ready = true;
+        if (app_name.empty()) {
+            error = "missing app_name";
+            return false;
+        }
+
+        httplib::Client client("http://localhost:31009");
+        client.set_default_headers({
+            {"Anytype-Version", "2025-11-08"},
+            {"Content-Type", "application/json"},
+        });
+        client.set_connection_timeout(3, 0);
+        client.set_read_timeout(30, 0);
+        client.set_write_timeout(30, 0);
+
+        json body{{"app_name", app_name}};
+        auto res = client.Post("/v1/auth/challenges", body.dump(), "application/json");
+        if (!res || res->status < 200 || res->status >= 300) {
+            error = "anytype auth challenge failed";
+            return false;
+        }
+
+        json payload = parse_json_or_throw(res->body);
+        challenge_id = get_string(payload, "challenge_id", "");
+        if (challenge_id.empty()) {
+            error = "missing challenge_id";
+            return false;
+        }
         return true;
     } catch (const std::exception &e) {
-        std::lock_guard<std::mutex> lock(anytype_mutex);
-        anytype_cache.error = e.what();
-        anytype_cache.ready = false;
-        json().swap(anytype_cache.tasks);
-        if (error_out) {
-            *error_out = e.what();
-        }
+        error = e.what();
         return false;
     }
 }
 
 // ─────────────────────────────────────
-AnytypeCache get_anytype_cache() {
-    std::lock_guard<std::mutex> lock(anytype_mutex);
-    return anytype_cache;
+bool create_anytype_api_key(const std::string &challenge_id, const std::string &code,
+                            std::string &api_key, std::string &error) {
+    try {
+        if (challenge_id.empty() || code.empty()) {
+            error = "missing challenge_id or code";
+            return false;
+        }
+
+        httplib::Client client("http://localhost:31009");
+        client.set_default_headers({
+            {"Anytype-Version", "2025-11-08"},
+            {"Content-Type", "application/json"},
+        });
+        client.set_connection_timeout(3, 0);
+        client.set_read_timeout(30, 0);
+        client.set_write_timeout(30, 0);
+
+        json body{{"challenge_id", challenge_id}, {"code", code}};
+        auto res = client.Post("/v1/auth/api_keys", body.dump(), "application/json");
+        if (!res || res->status < 200 || res->status >= 300) {
+            error = "anytype api key request failed";
+            return false;
+        }
+
+        json payload = parse_json_or_throw(res->body);
+        api_key = get_string(payload, "api_key", "");
+        if (api_key.empty()) {
+            error = "missing api_key";
+            return false;
+        }
+        return true;
+    } catch (const std::exception &e) {
+        error = e.what();
+        return false;
+    }
+}
+
+// ─────────────────────────────────────
+bool fetch_anytype_spaces(json &out, std::string &error) {
+    try {
+        const std::string api_key = load_secret_string("anytype_api_key");
+        if (api_key.empty()) {
+            error = "missing anytype api key";
+            out = json::object();
+            return false;
+        }
+
+        httplib::Client client("http://localhost:31009");
+        client.set_default_headers({
+            {"Authorization", "Bearer " + api_key},
+            {"Anytype-Version", "2025-11-08"},
+        });
+        client.set_connection_timeout(3, 0);
+        client.set_read_timeout(30, 0);
+        client.set_write_timeout(30, 0);
+
+        auto res = client.Get("/v1/spaces");
+        if (!res || res->status < 200 || res->status >= 300) {
+            error = "anytype spaces request failed";
+            out = json::object();
+            return false;
+        }
+
+        out = parse_json_or_throw(res->body);
+        return true;
+    } catch (const std::exception &e) {
+        error = e.what();
+        out = json::object();
+        return false;
+    }
 }

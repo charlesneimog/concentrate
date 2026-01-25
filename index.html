@@ -405,7 +405,7 @@
                         class="absolute w-32 h-32 bg-background-sidebar rounded-full flex flex-col items-center justify-center shadow-sm"
                     >
                         <span id="stats-total" class="text-3xl font-bold text-text-main">3h 45m</span>
-                        <span class="text-xs text-text-muted">Total of Use</span>
+                        <span class="text-sm text-text-muted">Total of Use</span>
                     </div>
                 </div>
                 <div
@@ -607,29 +607,82 @@
                     </button>
                 </div>
                 <div class="px-6 py-5 space-y-4">
-                    <div class="space-y-1">
-                        <label class="block text-sm font-medium text-text-main" for="anytype-api-key">
-                            API Key
-                        </label>
-                        <input
-                            id="anytype-api-key"
-                            class="w-full bg-gray-50 border border-transparent focus:bg-white focus:border-border-subtle rounded-md text-base px-3 h-11 text-text-main focus:ring-1 focus:ring-primary focus:border-primary transition-all placeholder:text-gray-400"
-                            placeholder="Paste Anytype API token"
-                            type="password"
-                            autocomplete="off"
-                        />
-                    </div>
-                    <div class="space-y-1">
-                        <label class="block text-sm font-medium text-text-main" for="anytype-space-id">
-                            Space ID
-                        </label>
-                        <input
-                            id="anytype-space-id"
-                            class="w-full bg-gray-50 border border-transparent focus:bg-white focus:border-border-subtle rounded-md text-base px-3 h-11 text-text-main focus:ring-1 focus:ring-primary focus:border-primary transition-all placeholder:text-gray-400"
-                            placeholder="bafy..."
-                            type="text"
-                            autocomplete="off"
-                        />
+                    
+                    <div class="pt-3 border-t border-border-subtle space-y-4">
+                        <div>
+                            <p class="text-sm font-semibold text-text-main">Authenticate from Anytype</p>
+                            <p class="text-xs text-text-muted">
+                                Create a challenge, enter the 4-digit code from Anytype, then select a space.
+                            </p>
+                        </div>
+                        
+                        <div class="grid grid-cols-1 sm:grid-cols-[1fr_auto] gap-2 items-end">
+                            <div class="space-y-1 hidden">
+                                <label class="block text-sm font-medium text-text-main" for="anytype-challenge-id">
+                                    Challenge ID
+                                </label>
+                                <input
+                                    id="anytype-challenge-id"
+                                    class="w-full  bg-gray-50 border border-transparent rounded-md text-base px-3 h-11 text-text-main placeholder:text-gray-400"
+                                    placeholder="challenge id"
+                                    type="text"
+                                    readonly
+                                />
+                            </div>
+                            <button
+                                id="anytype-auth-challenge"
+                                class="h-11 px-4 rounded-lg text-sm font-semibold text-white bg-primary hover:bg-primary-hover transition-colors"
+                                type="button"
+                            >
+                                Start
+                            </button>
+                        </div>
+                        <div class="grid grid-cols-1 sm:grid-cols-[1fr_auto] gap-2 items-end">
+                            <div class="space-y-1">
+                                <label class="block text-sm font-medium text-text-main" for="anytype-auth-code">
+                                    4-Digit Code
+                                </label>
+                                <input
+                                    id="anytype-auth-code"
+                                    class="w-full bg-gray-50 border border-transparent focus:bg-white focus:border-border-subtle rounded-md text-base px-3 h-11 text-text-main focus:ring-1 focus:ring-primary focus:border-primary transition-all placeholder:text-gray-400"
+                                    placeholder="1234"
+                                    type="text"
+                                    autocomplete="off"
+                                />
+                            </div>
+                            <button
+                                id="anytype-auth-create"
+                                class="h-11 px-4 rounded-lg text-sm font-semibold text-white bg-emerald-600 hover:bg-emerald-700 transition-colors"
+                                type="button"
+                            >
+                                Create Key
+                            </button>
+                        </div>
+                        <div class="space-y-2">
+                            <label class="block text-sm font-medium text-text-main" for="anytype-space-select">
+                                Space
+                            </label>
+                            <div class="flex flex-col sm:flex-row gap-2">
+                                <select
+                                    id="anytype-space-select"
+                                    class="w-full bg-gray-50 border border-transparent focus:bg-white focus:border-border-subtle rounded-md text-base px-3 h-11 text-text-main focus:ring-1 focus:ring-primary focus:border-primary transition-all"
+                                ></select>
+                                <button
+                                    id="anytype-spaces-refresh"
+                                    class="h-11 px-4 rounded-lg text-sm font-semibold text-gray-700 bg-gray-100 hover:bg-gray-200 transition-colors"
+                                    type="button"
+                                >
+                                    Load Spaces
+                                </button>
+                            </div>
+                            <button
+                                id="anytype-space-save"
+                                class="h-11 w-full rounded-lg text-sm font-semibold text-white bg-primary hover:bg-primary-hover transition-colors"
+                                type="button"
+                            >
+                                Save Space Selection
+                            </button>
+                        </div>
                     </div>
                     <p id="anytype-config-status" class="text-xs text-text-muted"></p>
                 </div>

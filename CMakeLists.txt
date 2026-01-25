@@ -30,6 +30,7 @@ include(${CPM_FILE})
 cpmaddpackage("gh:yhirose/cpp-httplib@0.30.1")
 cpmaddpackage("gh:nlohmann/json@3.11.3")
 find_package(SQLite3 REQUIRED)
+pkg_check_modules(PC_DBUS REQUIRED dbus-1)
 
 # Global warnings
 add_compile_options(-Wall -Wextra -Wpedantic -Wconversion -Wsign-conversion)
@@ -61,11 +62,17 @@ if(focusservice)
         src/secret_store.cpp
         src/anytype_api.cpp
         src/window_focus.cpp
+        src/focus_rules.cpp
         src/sqlite_store.cpp
         src/http_server.cpp
+        src/notification.cpp
     )
 
-    target_link_libraries(focusservice PRIVATE httplib::httplib nlohmann_json::nlohmann_json SQLite::SQLite3 ${PC_LIBSECRET_LIBRARIES})
+    target_include_directories(focusservice PRIVATE ${PC_DBUS_INCLUDE_DIRS})
+    target_link_directories(focusservice PRIVATE ${PC_DBUS_LIBRARY_DIRS})
+    target_compile_definitions(focusservice PRIVATE ${PC_DBUS_CFLAGS_OTHER})
+
+    target_link_libraries(focusservice PRIVATE httplib::httplib nlohmann_json::nlohmann_json SQLite::SQLite3 ${PC_LIBSECRET_LIBRARIES} ${PC_DBUS_LIBRARIES})
     target_compile_options(focusservice PRIVATE $<$<CONFIG:Release>:-O3 -march=native -DNDEBUG>)
     set_target_properties(focusservice PROPERTIES INTERPROCEDURAL_OPTIMIZATION_RELEASE ON)
 
