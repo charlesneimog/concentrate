@@ -56,16 +56,15 @@ if(focusservice)
     add_definitions(${PC_LIBSECRET_CFLAGS_OTHER})
 
     # focusservice executable
-    add_executable(focusservice
-        src/main.cpp
-        src/common.cpp
-        src/secret_store.cpp
-        src/anytype_api.cpp
-        src/window_focus.cpp
-        src/focus_rules.cpp
-        src/sqlite_store.cpp
-        src/http_server.cpp
-        src/notification.cpp
+    add_executable(
+        focusservice
+        src/main.cpp src/focusservice.cpp src/server.cpp src/secrets.cpp
+        # src/anytype_api.cpp
+        # src/window_focus.cpp
+        # src/focus_rules.cpp
+        # src/sqlite_store.cpp
+        # src/http_server.cpp
+        # src/notification.cpp
     )
 
     target_include_directories(focusservice PRIVATE ${PC_DBUS_INCLUDE_DIRS})
@@ -76,17 +75,18 @@ if(focusservice)
     target_compile_options(focusservice PRIVATE $<$<CONFIG:Release>:-O3 -march=native -DNDEBUG>)
     set_target_properties(focusservice PROPERTIES INTERPROCEDURAL_OPTIMIZATION_RELEASE ON)
 
-    if (ENABLE_PROFILING)
+    if(ENABLE_PROFILING)
         message(STATUS "Profiling enabled")
         target_compile_options(focusservice PRIVATE -pg)
         target_link_options(focusservice PRIVATE -pg)
         target_compile_options(focusservice PRIVATE -g -O2 -fno-omit-frame-pointer)
 
         # copy index.html and app.js to binary dir for profiling report generation
-        add_custom_command(TARGET focusservice POST_BUILD
+        add_custom_command(
+            TARGET focusservice
+            POST_BUILD
             COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_SOURCE_DIR}/index.html $<TARGET_FILE_DIR:focusservice>
-            COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_SOURCE_DIR}/app.js $<TARGET_FILE_DIR:focusservice>
-        )
+            COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_SOURCE_DIR}/app.js $<TARGET_FILE_DIR:focusservice>)
     elseif(ENABLE_SANITIZERS AND CMAKE_BUILD_TYPE STREQUAL "Debug")
         target_compile_options(focusservice PRIVATE -fsanitize=address,undefined -fno-omit-frame-pointer)
         target_link_options(focusservice PRIVATE -fsanitize=address,undefined)
