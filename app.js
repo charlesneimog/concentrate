@@ -118,9 +118,7 @@ function setCurrentTaskId(taskId) {
     renderTasks(lastTasks);
     renderCurrentTask(lastTasks);
     updateFocusWarning(null, lastTasks);
-    const task = Array.isArray(lastTasks)
-        ? lastTasks.find((t) => String(t.id) === String(currentTaskId))
-        : null;
+    const task = Array.isArray(lastTasks) ? lastTasks.find((t) => String(t.id) === String(currentTaskId)) : null;
     updateServerFocusRules(task);
 }
 
@@ -151,9 +149,7 @@ function updateCategorySuggestions(categories) {
 }
 
 function applyCategoryDefaults(categoryValue) {
-    const match = lastCategories.find(
-        (c) => String(c.category).toLowerCase() === String(categoryValue).toLowerCase(),
-    );
+    const match = lastCategories.find((c) => String(c.category).toLowerCase() === String(categoryValue).toLowerCase());
     if (!match) return;
     if (Array.isArray(match.allowed_app_ids)) {
         allowedApps = [...match.allowed_app_ids];
@@ -172,8 +168,7 @@ function renderAllowedLists() {
         allowedApps.forEach((app, idx) => {
             const chip = document.createElement("button");
             chip.type = "button";
-            chip.className =
-                "px-2 py-1 rounded-full text-xs bg-gray-100 border border-gray-200 text-gray-700";
+            chip.className = "px-2 py-1 rounded-full text-xs bg-gray-100 border border-gray-200 text-gray-700";
             chip.innerHTML = `${escapeHtml(app)} <span class="ml-1">×</span>`;
             chip.addEventListener("click", () => {
                 allowedApps = allowedApps.filter((_, i) => i !== idx);
@@ -187,8 +182,7 @@ function renderAllowedLists() {
         allowedTitles.forEach((title, idx) => {
             const chip = document.createElement("button");
             chip.type = "button";
-            chip.className =
-                "px-2 py-1 rounded-full text-xs bg-gray-100 border border-gray-200 text-gray-700";
+            chip.className = "px-2 py-1 rounded-full text-xs bg-gray-100 border border-gray-200 text-gray-700";
             chip.innerHTML = `${escapeHtml(title)} <span class="ml-1">×</span>`;
             chip.addEventListener("click", () => {
                 allowedTitles = allowedTitles.filter((_, i) => i !== idx);
@@ -251,8 +245,7 @@ function renderTasks(tasks) {
             const done = !!task.done;
             const isCurrent = currentTaskId && String(task.id) === String(currentTaskId);
             const li = document.createElement("li");
-            li.className =
-                "flex flex-col gap-1 bg-white border border-border-subtle rounded-lg px-3 py-2";
+            li.className = "flex flex-col gap-1 bg-white border border-border-subtle rounded-lg px-3 py-2";
 
             const row = document.createElement("div");
             row.className = "flex items-center gap-2";
@@ -262,8 +255,7 @@ function renderTasks(tasks) {
             mark.textContent = done ? "[x]" : "[ ]";
 
             const text = document.createElement("span");
-            text.className =
-                `text-sm font-medium ${done ? "text-gray-400 line-through" : "text-gray-800"}`;
+            text.className = `text-sm font-medium ${done ? "text-gray-400 line-through" : "text-gray-800"}`;
             text.textContent = task.title || "(task)";
 
             const spacer = document.createElement("span");
@@ -271,8 +263,7 @@ function renderTasks(tasks) {
 
             const currentBtn = document.createElement("button");
             currentBtn.type = "button";
-            currentBtn.className =
-                `h-7 w-7 rounded border ${isCurrent ? "bg-emerald-500 border-emerald-500 text-white" : "border-gray-200 text-gray-400 hover:text-emerald-500"} flex items-center justify-center transition-all`;
+            currentBtn.className = `h-7 w-7 rounded border ${isCurrent ? "bg-emerald-500 border-emerald-500 text-white" : "border-gray-200 text-gray-400 hover:text-emerald-500"} flex items-center justify-center transition-all`;
             currentBtn.dataset.taskCurrent = "1";
             currentBtn.dataset.taskId = String(task.id);
             currentBtn.title = isCurrent ? "Current task" : "Set as current";
@@ -332,9 +323,7 @@ function renderCurrentStatus(current) {
 function renderCurrentTask(tasks) {
     const label = document.getElementById("current-task");
     if (!label) return;
-    const match = Array.isArray(tasks)
-        ? tasks.find((t) => String(t.id) === String(currentTaskId))
-        : null;
+    const match = Array.isArray(tasks) ? tasks.find((t) => String(t.id) === String(currentTaskId)) : null;
     if (!match) {
         label.textContent = "Current task: None";
         return;
@@ -343,9 +332,7 @@ function renderCurrentTask(tasks) {
 }
 
 function normalizeAllowList(list) {
-    return (Array.isArray(list) ? list : [])
-        .map((item) => String(item || "").trim())
-        .filter(Boolean);
+    return (Array.isArray(list) ? list : []).map((item) => String(item || "").trim()).filter(Boolean);
 }
 
 function isFocusAllowed(current, task) {
@@ -357,8 +344,7 @@ function isFocusAllowed(current, task) {
     const allowedTitles = normalizeAllowList(task.allowed_titles);
 
     const appMatch =
-        allowedApps.length > 0 &&
-        allowedApps.some((allowed) => allowed.toLowerCase() === appId.toLowerCase());
+        allowedApps.length > 0 && allowedApps.some((allowed) => allowed.toLowerCase() === appId.toLowerCase());
     const titleMatch =
         allowedTitles.length > 0 &&
         allowedTitles.some((allowed) => title.toLowerCase().includes(allowed.toLowerCase()));
@@ -384,9 +370,7 @@ async function sendFocusNotification(summary, body) {
 function updateFocusWarning(current, tasks) {
     const warning = document.getElementById("focus-warning");
     if (!warning) return;
-    const task = Array.isArray(tasks)
-        ? tasks.find((t) => String(t.id) === String(currentTaskId))
-        : null;
+    const task = Array.isArray(tasks) ? tasks.find((t) => String(t.id) === String(currentTaskId)) : null;
     if (!current || !task) {
         warning.classList.add("hidden");
         lastFocusWarningKey = "";
@@ -409,27 +393,9 @@ function updateFocusWarning(current, tasks) {
     const allowedTitleLabel = allowedTitles.length ? allowedTitles.join(", ") : "Any title";
     warning.textContent = `Not focused: ${appId} — ${title}. Allowed apps: ${allowedAppLabel}. Allowed titles: ${allowedTitleLabel}.`;
     const key = `${task.id}:${current.app_id || ""}:${current.title || ""}`;
-    /*
-    if (key !== lastFocusWarningKey) {
-        lastFocusWarningKey = key;
-        sendFocusNotification(
-            "Focus reminder",
-            `Not focused: ${appId} — ${title}. Stay focused on ${task.title || "task"}.`,
-        );
-        if ("Notification" in window) {
-            if (Notification.permission === "granted") {
-                new Notification("Not focused", {
-                    body: `${appId} — ${title} is not allowed for: ${task.title || "task"}`,
-                });
-                console.log("Focus notification sent");
-            } else if (Notification.permission === "default") {
-                Notification.requestPermission().then(() => {});
-            }
-        }
-    }
-        */
 }
 
+// ─────────────────────────────────────
 function getAnytypeWarningElement() {
     let warning = document.getElementById("anytype-warning");
     if (warning) return warning;
@@ -452,13 +418,13 @@ function getAnytypeWarningElement() {
     return warning;
 }
 
+// ─────────────────────────────────────
 function updateAnytypeWarning() {
     const warning = getAnytypeWarningElement();
     if (!warning) return;
 
     const missing =
-        typeof anytypeError === "string" &&
-        /missing\s+anytype\s+api\s+key\s+or\s+space\s+id/i.test(anytypeError);
+        typeof anytypeError === "string" && /missing\s+anytype\s+api\s+key\s+or\s+space\s+id/i.test(anytypeError);
 
     if (missing) {
         warning.textContent = "Anytype API is not configured. Open settings to connect.";
@@ -469,6 +435,7 @@ function updateAnytypeWarning() {
     }
 }
 
+// ─────────────────────────────────────
 function renderStats(history, events, tasks) {
     const pie = document.getElementById("stats-pie");
     const legend = document.getElementById("stats-legend");
@@ -556,17 +523,7 @@ function renderStats(history, events, tasks) {
         filtered.push(["Others", othersTotal]);
     }
 
-    const colors = [
-        "#2563EB",
-        "#A855F7",
-        "#F97316",
-        "#10b981",
-        "#f59e0b",
-        "#06b6d4",
-        "#ef4444",
-        "#3b82f6",
-        "#94a3b8",
-    ];
+    const colors = ["#2563EB", "#A855F7", "#F97316", "#10b981", "#f59e0b", "#06b6d4", "#ef4444", "#3b82f6", "#94a3b8"];
 
     let offset = 0;
     const slices = filtered.map(([label, value], idx) => {
@@ -734,7 +691,8 @@ function renderHistory(history, events, tasks) {
         const opacity = Math.max(0.7, 1 - index * 0.05);
 
         const card = document.createElement("div");
-        card.className = "bg-white border border-border-subtle rounded-xl overflow-hidden shadow-subtle hover:border-primary/30 transition-all";
+        card.className =
+            "bg-white border border-border-subtle rounded-xl overflow-hidden shadow-subtle hover:border-primary/30 transition-all";
         card.style.opacity = String(opacity);
 
         const header = document.createElement("div");
@@ -764,7 +722,8 @@ function renderHistory(history, events, tasks) {
             const displayLabel = truncateText(label, 32);
             const badgeLabel = item.app_id || "Unknown app";
             const badgeStyle = appIdBadgeStyle(badgeLabel);
-            row.className = "flex items-center justify-between gap-3 p-3 rounded-lg border border-border-subtle bg-white";
+            row.className =
+                "flex items-center justify-between gap-3 p-3 rounded-lg border border-border-subtle bg-white";
             row.innerHTML = `
                             <div class="flex items-center gap-3 min-w-0 flex-1">
                                 <span class="material-symbols-outlined text-emerald-500 text-sm">check_circle</span>
@@ -838,7 +797,17 @@ function renderHistoryStats(items) {
                         </div>
                     `;
     } else {
-        const colors = ["#2563EB", "#A855F7", "#F97316", "#10b981", "#f59e0b", "#06b6d4", "#ef4444", "#3b82f6", "#94a3b8"];
+        const colors = [
+            "#2563EB",
+            "#A855F7",
+            "#F97316",
+            "#10b981",
+            "#f59e0b",
+            "#06b6d4",
+            "#ef4444",
+            "#3b82f6",
+            "#94a3b8",
+        ];
         let offset = 0;
         const slices = entries.map(([label, value], idx) => {
             const percent = (value / total) * 100;
@@ -988,11 +957,7 @@ async function refreshAll() {
             return;
         }
 
-        const [tasks, current, categories] = await Promise.all([
-            loadTasks(),
-            loadCurrent(),
-            loadCategories(),
-        ]);
+        const [tasks, current, categories] = await Promise.all([loadTasks(), loadCurrent(), loadCategories()]);
         lastTasks = Array.isArray(tasks) ? tasks : [];
         lastCurrentFocus = current;
         renderTasks(tasks);
@@ -1204,7 +1169,6 @@ function playTimerEndSound() {
     oscillator.start(now);
     oscillator.stop(now + duration);
 }
-
 
 function parseDurationInput(value) {
     const v = String(value || "")
@@ -1518,7 +1482,6 @@ async function createAnytypeChallenge() {
         const res = await fetch("/anytype/auth/challenges", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ app_name: appName }),
         });
         if (!res.ok) {
             const text = await res.text();
@@ -1672,9 +1635,7 @@ async function refreshAnytypeCache() {
 
 document.getElementById("anytype-config-open")?.addEventListener("click", openAnytypeConfigModal);
 if (!document.getElementById("anytype-config-open")) {
-    document
-        .querySelector("button[data-anytype-config='open']")
-        ?.addEventListener("click", openAnytypeConfigModal);
+    document.querySelector("button[data-anytype-config='open']")?.addEventListener("click", openAnytypeConfigModal);
 }
 document.getElementById("anytype-config-close")?.addEventListener("click", closeAnytypeConfigModal);
 document.getElementById("anytype-config-cancel")?.addEventListener("click", closeAnytypeConfigModal);

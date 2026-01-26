@@ -3,17 +3,120 @@
 
 #include "anytype.hpp"
 
-Anytype::Anytype() {}
+// ─────────────────────────────────────
+Anytype::Anytype() {
+    m_Secrets = Secrets();
+}
 
 // ─────────────────────────────────────
-nlohmann::json Anytype::GetTasks(const std::string api_key, const std::string space_id) {
-    if (api_key.empty() || space_id.empty()) {
-        throw std::runtime_error("missing anytype api key or space id");
+Anytype::~Anytype() {}
+
+// ─────────────────────────────────────
+std::string Anytype::LoginChallengeId() {
+    const char *BASE_URL = "http://localhost:31009";
+    const char *API_VERSION = "2025-11-08";
+    const char *APP_NAME = "FocusService";
+
+    httplib::Client client(BASE_URL);
+    client.set_default_headers({
+        {"Anytype-Version", API_VERSION},
+        {"Content-Type", "application/json"},
+    });
+    client.set_connection_timeout(3, 0);
+    client.set_read_timeout(30, 0);
+    client.set_write_timeout(30, 0);
+
+    nlohmann::json body = {{"app_name", APP_NAME}};
+    auto res = client.Post("/v1/auth/challenges", body.dump(), "application/json");
+
+    if (!res) {
+        throw std::runtime_error("Anytype: connection failed");
     }
 
+    if (res->status < 200 || res->status >= 300) {
+        throw std::runtime_error("Anytype: HTTP " + std::to_string(res->status) + " — " +
+                                 res->body);
+    }
+
+    auto j = nlohmann::json::parse(res->body);
+    return j.at("challenge_id").get<std::string>();
+}
+
+// ─────────────────────────────────────
+std::string Anytype::CreateApiKey(const std::string &challenge_id, const std::string &code) {
+    const char *BASE_URL = "http://localhost:31009";
+    const char *API_VERSION = "2025-11-08";
+
+    httplib::Client client(BASE_URL);
+    client.set_default_headers({
+        {"Anytype-Version", API_VERSION},
+        {"Content-Type", "application/json"},
+    });
+    client.set_connection_timeout(3, 0);
+    client.set_read_timeout(30, 0);
+    client.set_write_timeout(30, 0);
+
+    nlohmann::json body = {{"challenge_id", challenge_id}, {"code", code}};
+    auto res = client.Post("/v1/auth/api_keys", body.dump(), "application/json");
+
+    if (!res) {
+        throw std::runtime_error("Anytype: connection failed");
+    }
+
+    if (res->status < 200 || res->status >= 300) {
+        throw std::runtime_error("Anytype: HTTP " + std::to_string(res->status) + " — " +
+                                 res->body);
+    }
+
+    auto j = nlohmann::json::parse(res->body);
+    std::string api_key = j.at("api_key").get<std::string>();
+    m_Secrets.SaveSecret("api_key", api_key);
+    return api_key;
+}
+
+// ─────────────────────────────────────
+nlohmann::json Anytype::GetSpaces() {
+    const char *BASE_URL = "http://localhost:31009";
+    const char *API_VERSION = "2025-11-08";
+    std::string api_key = m_Secrets.LoadSecret("api_key");
+    std::string space_id = m_Secrets.LoadSecret("space_id");
+
+    httplib::Client client(BASE_URL);
+    client.set_default_headers({
+        {"Anytype-Version", API_VERSION},
+        {"Authorization", "Bearer " + api_key},
+        {"Content-Type", "application/json"},
+    });
+    client.set_connection_timeout(3, 0);
+    client.set_read_timeout(30, 0);
+    client.set_write_timeout(30, 0);
+
+    auto res = client.Get("/v1/spaces");
+
+    if (!res) {
+        throw std::runtime_error("Anytype: connection failed");
+    }
+
+    if (res->status < 200 || res->status >= 300) {
+        throw std::runtime_error("Anytype: HTTP " + std::to_string(res->status) + " — " +
+                                 res->body);
+    }
+
+    return nlohmann::json::parse(res->body);
+}
+// ─────────────────────────────────────
+void Anytype::SetDefaultSpace(std::string space_id) {
+    m_Secrets.SaveSecret("default_space_id", space_id);
+}
+
+// ─────────────────────────────────────
+nlohmann::json Anytype::GetTasks() {
     const std::string base = "http://localhost:31009";
     const std::string api_version = "2025-11-08";
     const int limit = 50;
+
+    std::string api_key = m_Secrets.LoadSecret("api_key");
+    std::string space_id = m_Secrets.LoadSecret("default_space_id");
 
     httplib::Client client(base);
     client.set_default_headers({
@@ -37,16 +140,15 @@ nlohmann::json Anytype::GetTasks(const std::string api_key, const std::string sp
         std::string path = "/v1/spaces/" + space_id + "/search";
         auto res = client.Post(path.c_str(), body.dump(), "application/json");
         if (!res) {
-            throw std::runtime_error("anytype request failed");
+            return tasks;
         }
         if (res->status < 200 || res->status >= 300) {
-            throw std::runtime_error("anytype request failed: " + std::to_string(res->status));
+            return tasks;
         }
 
         nlohmann::json payload = nlohmann::json::parse(res->body);
         nlohmann::json objects = GetAnytypeObjects(payload);
         int total = GetExtractLength(payload);
-
         if (objects.is_array()) {
             int idx = 0;
             for (const auto &obj : objects) {
@@ -72,9 +174,6 @@ nlohmann::json Anytype::GetTasks(const std::string api_key, const std::string sp
             break;
         }
         offset += limit;
-        if (offset > 10000) {
-            break;
-        }
     }
 
     return tasks;

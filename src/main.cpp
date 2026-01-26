@@ -2,10 +2,9 @@
 #include "focusservice.hpp"
 
 // ─────────────────────────────────────
-int main(int argc, const char *argv[]) {
+int main() {
     unsigned ServerPort = 7079;
-    unsigned PingEach = 2; // Seconds
+    unsigned PingEach = 2; // Seconds to request AppID from Window
     FocusService FocusService(ServerPort, PingEach);
-
     return 0;
 }

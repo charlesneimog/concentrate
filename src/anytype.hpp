@@ -4,13 +4,26 @@
 
 #include <nlohmann/json.hpp>
 
+#include "secrets.hpp"
+
 class Anytype {
   public:
     Anytype();
     ~Anytype();
 
+    // Login
+    std::string LoginChallengeId();
+    std::string CreateApiKey(const std::string &challenge_id, const std::string &code);
+    void SetDefaultSpace(std::string space_id);
+
+    void SetSpaceID(std::string &key);
+    void GetSpaceID();
+
+    // Get
+    nlohmann::json GetSpaces();
+    nlohmann::json GetTasks();
+
   private:
-    nlohmann::json GetTasks(const std::string api_key, const std::string space_id);
     nlohmann::json GetAnytypeObjects(const nlohmann::json &payload);
     int GetExtractLength(const nlohmann::json &payload);
     nlohmann::json NormalizeTask(const nlohmann::json &obj, int fallback_id);
@@ -18,4 +31,6 @@ class Anytype {
     nlohmann::json ExtractArray(const nlohmann::json &prop);
     std::string GetString(const nlohmann::json &j, const std::string &key,
                           const std::string &fallback);
+
+    Secrets m_Secrets;
 };

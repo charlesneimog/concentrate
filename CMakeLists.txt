@@ -54,18 +54,30 @@ if(focusservice)
     include_directories(${PC_LIBSECRET_INCLUDE_DIRS})
     link_directories(${PC_LIBSECRET_LIBRARY_DIRS})
     add_definitions(${PC_LIBSECRET_CFLAGS_OTHER})
+    add_definitions("-DCPPHTTPLIB_THREAD_POOL_COUNT=1")
 
     # focusservice executable
     add_executable(
         focusservice
-        src/main.cpp src/focusservice.cpp src/server.cpp src/secrets.cpp
-        # src/anytype_api.cpp
+        src/main.cpp
+        src/focusservice.cpp
+        src/secrets.cpp
+        src/notification.cpp
+        src/window.cpp
+        src/anytype.cpp
+        src/sqlite.cpp
         # src/window_focus.cpp
         # src/focus_rules.cpp
         # src/sqlite_store.cpp
         # src/http_server.cpp
         # src/notification.cpp
     )
+
+    add_custom_command(
+        TARGET focusservice
+        POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different ${CMAKE_SOURCE_DIR}/index.html $<TARGET_FILE_DIR:focusservice>/index.html
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different ${CMAKE_SOURCE_DIR}/app.js $<TARGET_FILE_DIR:focusservice>/app.js)
 
     target_include_directories(focusservice PRIVATE ${PC_DBUS_INCLUDE_DIRS})
     target_link_directories(focusservice PRIVATE ${PC_DBUS_LIBRARY_DIRS})

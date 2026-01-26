@@ -4,10 +4,15 @@
 
 #include <nlohmann/json.hpp>
 
+#include "common.hpp"
+
 class Window {
   public:
     Window();
-    ~Window();
+    FocusedWindow GetFocusedWindow();
+    enum WM { NIRI, SWAY, HYPRLAND, GNOME, KDE };
 
   private:
+    FocusedWindow GetNiriFocusedWindow();
+    WM m_WM;
 };

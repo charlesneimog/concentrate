@@ -1,13 +1,19 @@
-#include <string>
 #include <filesystem>
-#include <iostream>
 #include <memory>
+#include <mutex>
+#include <fstream>
+
+// Libs
+#include <httplib.h>
 
 // parts
-#include "server.hpp"
 #include "anytype.hpp"
 #include "window.hpp"
 #include "secrets.hpp"
+#include "notification.hpp"
+#include "sqlite.hpp"
+
+#include "common.hpp"
 
 class FocusService {
   public:
@@ -15,19 +21,37 @@ class FocusService {
     ~FocusService();
 
   private:
-    std::filesystem::path GetRootOfBinary();
+    std::filesystem::path GetBinaryPath();
+    std::filesystem::path GetDBPath();
 
     // Anytype
     nlohmann::json GetTasks();
+
+    // Server
+    bool InitServer();
 
   private:
     const unsigned m_Port;
     const unsigned m_Ping;
     std::filesystem::path m_Root;
+    std::mutex m_GlobalMutex;
 
     // Parts
-    std::unique_ptr<Server> m_Server;
     std::unique_ptr<Anytype> m_Anytype;
     std::unique_ptr<Window> m_Window;
     std::unique_ptr<Secrets> m_Secrets;
+    std::unique_ptr<Notification> m_Notification;
+    std::unique_ptr<SQLite> m_SQLite;
+
+    // Server
+    std::thread m_Thread;
+    httplib::Server m_Server;
+    std::string m_IndexHtml;
+    std::string m_AppJs;
+    FocusedWindow m_Fw;
+
+    // Current Task
+    std::vector<std::string> m_AllowedApps;
+    std::vector<std::string> m_AllowedWindowTitles;
+    std::string m_TaskTitle;
 };
