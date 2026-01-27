@@ -223,10 +223,6 @@ class FocusApp {
         }
     }
 
-    async getTaskMarkdown(task) {
-        console.log(task);
-    }
-
     // ==================== STATE MANAGEMENT ====================
     setCurrentTaskId(taskId) {
         this.currentTaskId = taskId ? String(taskId) : null;
@@ -428,6 +424,7 @@ class FocusApp {
                 const isCurrent = this.currentTaskId && String(task.id) === String(this.currentTaskId);
                 const li = document.createElement("li");
                 li.className = "flex flex-col gap-1 bg-white shadow-sm rounded-lg px-3 py-2";
+                li.dataset.taskId = task.id; // Use data-task-id instead of id
 
                 const row = document.createElement("div");
                 row.className = "flex items-center gap-2";
@@ -449,23 +446,32 @@ class FocusApp {
                 currentBtn.title = isCurrent ? "Current task" : "Set as current";
                 currentBtn.innerHTML = `<span class="material-symbols-outlined text-[16px]">${isCurrent ? "radio_button_checked" : "radio_button_unchecked"}</span>`;
 
-                // In renderTasks method, replace the currentBtn event listener:
+                // Current button click handler
                 currentBtn.addEventListener("click", (event) => {
                     event.stopPropagation();
-                    const isCurrent = this.currentTaskId && String(task.id) === String(this.currentTaskId);
-                    if (isCurrent) {
+                    const isCurrentlySelected = this.currentTaskId && String(task.id) === String(this.currentTaskId);
+
+                    // Clear all markdown containers first
+                    document.querySelectorAll(".task-markdown-container").forEach((container) => {
+                        container.remove();
+                    });
+
+                    if (isCurrentlySelected) {
                         this.setCurrentTaskId(null);
                         this.updateServerFocusRules(null);
-                        this.getTaskMarkdown(null);
                     } else {
                         this.setCurrentTaskId(task.id);
                         this.updateServerFocusRules(task);
-                        this.getTaskMarkdown(task);
+                        // Render markdown for this task
+                        setTimeout(() => {
+                            this.renderTaskMarkdown(task);
+                        }, 0);
                     }
-                    this.renderTasks(tasks);
+
+                    // Update button states without re-rendering everything
+                    this.updateCurrentButtonStates();
                 });
 
-                // Also, add data attributes to the button for better debugging:
                 currentBtn.dataset.taskId = task.id;
                 currentBtn.dataset.taskCurrent = isCurrent ? "true" : "false";
 
@@ -500,6 +506,14 @@ class FocusApp {
 
                 li.appendChild(row);
                 li.appendChild(debug);
+
+                // Only render markdown if this is the current task
+                if (isCurrent && task.markdown) {
+                    setTimeout(() => {
+                        this.renderTaskMarkdown(task);
+                    }, 0);
+                }
+
                 list.appendChild(li);
             });
 
@@ -508,22 +522,267 @@ class FocusApp {
         }
     }
 
-    async renderSubTasks() {
-        const res = await fetch("/anytype/get_markdown", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(payload),
+    async renderTaskMarkdown(task) {
+        if (!task?.markdown) return;
+
+        const markdown = task.markdown;
+        const match = markdown.match(/## TO-DO[\s\S]*$/);
+        if (!match) return null;
+
+        // Extract TO-DO section and clean completed items
+        const parsedMarkdown = match[0]
+            .replace(/^\s*-\s*\[x\].*\n?/gim, "")
+            .replace(/\n{3,}/g, "\n\n")
+            .trim();
+
+        // Find the task element
+        const taskElement = document.querySelector(`[data-task-id="${task.id}"]`);
+        if (!taskElement) {
+            console.warn(`Task element not found for task ${task.id}`);
+            return;
+        }
+
+        // Convert markdown to HTML
+        const html = this.convertMarkdownToHtml(parsedMarkdown);
+
+        // Remove any existing markdown container
+        const existingContainer = taskElement.querySelector(".task-markdown-container");
+        if (existingContainer) {
+            existingContainer.remove();
+        }
+
+        // Create and append the markdown container
+        const markdownContainer = document.createElement("div");
+        markdownContainer.className = "task-markdown-container mt-3 pt-3 border-t border-gray-100";
+        markdownContainer.innerHTML = html;
+        taskElement.appendChild(markdownContainer);
+    }
+    convertMarkdownToHtml(markdown) {
+        // First, unescape escaped characters that markdown would normally handle
+        // Replace \_ with _, \* with *, etc.
+        let processedMarkdown = markdown
+            .replace(/\\_/g, "_")
+            .replace(/\\\*/g, "*")
+            .replace(/\\`/g, "`")
+            .replace(/\\\[/g, "[")
+            .replace(/\\\]/g, "]")
+            .replace(/\\\(/g, "(")
+            .replace(/\\\)/g, ")")
+            .replace(/\\{/g, "{")
+            .replace(/\\}/g, "}")
+            .replace(/\\#/g, "#")
+            .replace(/\\\+/g, "+")
+            .replace(/\\-/g, "-")
+            .replace(/\\\./g, ".")
+            .replace(/\\!/g, "!");
+
+        // Then process inline code blocks
+        let html = processedMarkdown.replace(/`([^`]+)`/g, (match, code) => {
+            // Unescape any remaining escaped characters in code
+            const unescapedCode = code.replace(/\\_/g, "_").replace(/\\\*/g, "*").replace(/\\`/g, "`");
+            const escapedCode = this.escapeHtml(unescapedCode);
+            return `<code class="bg-gray-100 px-1 py-0.5 rounded text-sm font-mono">${escapedCode}</code>`;
         });
 
-        console.log(res.json());
+        // Then process multiline code blocks (triple backticks)
+        html = html.replace(/```([\s\S]*?)```/g, (match, code) => {
+            // Unescape any remaining escaped characters in code blocks
+            const unescapedCode = code.replace(/\\_/g, "_").replace(/\\\*/g, "*").replace(/\\`/g, "`");
+            const escapedCode = this.escapeHtml(unescapedCode.trim());
+            return `<pre class="bg-gray-50 p-3 rounded-lg overflow-x-auto my-2"><code class="text-sm font-mono">${escapedCode}</code></pre>`;
+        });
 
-        // const match = markdown.match(/## TO-DO[\s\S]*$/);
-        // if (!match) return null;
-        //
-        // return match[0]
-        //     .replace(/^\s*-\s*\[x\].*\n?/gim, "")
-        //     .replace(/\n{3,}/g, "\n\n")
-        //     .trim();
+        // Process headers (h1, h2, h3)
+        html = html.replace(/^### (.*$)/gm, (match, content) => {
+            // Don't escape the entire content as it may contain HTML from code blocks
+            // Just escape any remaining plain text
+            const processedContent = content.replace(
+                /(?<!<\/?code[^>]*>)(?<!<\/?strong[^>]*>)(?<!<\/?em[^>]*>)[^<>]+/g,
+                (text) => this.escapeHtml(text),
+            );
+            return `<h3 class="text-sm font-semibold text-gray-800 mt-3 mb-1">${processedContent}</h3>`;
+        });
+
+        html = html.replace(/^## (.*$)/gm, (match, content) => {
+            const processedContent = content.replace(
+                /(?<!<\/?code[^>]*>)(?<!<\/?strong[^>]*>)(?<!<\/?em[^>]*>)[^<>]+/g,
+                (text) => this.escapeHtml(text),
+            );
+            return `<h2 class="text-base font-bold text-gray-900 mt-4 mb-2">${processedContent}</h2>`;
+        });
+
+        html = html.replace(/^# (.*$)/gm, (match, content) => {
+            const processedContent = content.replace(
+                /(?<!<\/?code[^>]*>)(?<!<\/?strong[^>]*>)(?<!<\/?em[^>]*>)[^<>]+/g,
+                (text) => this.escapeHtml(text),
+            );
+            return `<h1 class="text-lg font-bold text-gray-900 mt-5 mb-3">${processedContent}</h1>`;
+        });
+
+        // Process bold text (**text** or __text__) - but only if not inside code blocks
+        html = html.replace(/\*\*(.*?)\*\*|__(.*?)__/g, (match, p1, p2) => {
+            const content = p1 || p2;
+            // Skip if inside a code tag
+            if (match.includes("<code") || match.includes("</code>")) {
+                return match;
+            }
+            const escapedContent = this.escapeHtml(content);
+            return `<strong class="font-semibold">${escapedContent}</strong>`;
+        });
+
+        // Process italic text (*text* or _text_) - but only if not inside code blocks
+        html = html.replace(/\*(.*?)\*|_(.*?)_/g, (match, p1, p2) => {
+            const content = p1 || p2;
+            // Skip if inside a code tag
+            if (match.includes("<code") || match.includes("</code>")) {
+                return match;
+            }
+            const escapedContent = this.escapeHtml(content);
+            return `<em class="italic">${escapedContent}</em>`;
+        });
+
+        // Process unordered lists (including checkbox items)
+        // This needs to handle HTML that's already been inserted (like code blocks)
+        html = html.replace(/^\s*[-*+] (\[[ x]\]\s*)?(.*$)/gm, (match, checkbox, content) => {
+            let checkboxHtml = "";
+            if (checkbox) {
+                const isChecked = checkbox.includes("x");
+                checkboxHtml = `<span class="pl-1 inline-flex items-center justify-center h-6 mr-3 font-mono text-sm ${isChecked ? "text-emerald-600 font-semibold" : "text-gray-500"}">${isChecked ? "[✓]" : "[ ]"}</span>`;
+            } else {
+                checkboxHtml = '<span class="inline-flex items-center justify-center h-6 mr-3 text-gray-500">•</span>';
+            }
+            // If content already contains HTML (like from code blocks), don't escape it
+            let contentHtml = content || "";
+            // Only escape parts that aren't already HTML
+            if (contentHtml && !contentHtml.includes("<")) {
+                // Unescape any markdown escapes before escaping for HTML
+                const unescapedContent = contentHtml
+                    .replace(/\\_/g, "_")
+                    .replace(/\\\*/g, "*")
+                    .replace(/\\`/g, "`")
+                    .replace(/\\\[/g, "[")
+                    .replace(/\\\]/g, "]");
+                contentHtml = this.escapeHtml(unescapedContent.trim());
+            }
+
+            return `<li class="ml-4 pl-1 text-sm text-gray-700 flex items-start">${checkboxHtml}<span class="flex-1">${contentHtml}</span></li>`;
+        });
+
+        // Wrap consecutive list items in <ul>
+        const lines = html.split("\n");
+        let inList = false;
+        let resultLines = [];
+
+        for (let i = 0; i < lines.length; i++) {
+            if (lines[i].startsWith("<li")) {
+                if (!inList) {
+                    resultLines.push('<ul class="list-disc pl-5 my-2 space-y-1">');
+                    inList = true;
+                }
+                resultLines.push(lines[i]);
+            } else {
+                if (inList) {
+                    resultLines.push("</ul>");
+                    inList = false;
+                }
+                resultLines.push(lines[i]);
+            }
+        }
+
+        if (inList) {
+            resultLines.push("</ul>");
+        }
+
+        html = resultLines.join("\n");
+
+        // Process paragraphs (lines that aren't HTML tags)
+        const finalLines = html.split("\n");
+        const processedLines = [];
+        let currentParagraph = [];
+
+        for (let i = 0; i < finalLines.length; i++) {
+            const line = finalLines[i].trim();
+
+            if (!line) {
+                if (currentParagraph.length > 0) {
+                    const paragraphText = currentParagraph.join("\n");
+                    if (!paragraphText.startsWith("<")) {
+                        // Unescape markdown escapes in plain text paragraphs too
+                        const unescapedText = paragraphText
+                            .replace(/\\_/g, "_")
+                            .replace(/\\\*/g, "*")
+                            .replace(/\\`/g, "`");
+                        const escapedText = this.escapeHtml(unescapedText);
+                        processedLines.push(`<p class="text-sm text-gray-700 my-2">${escapedText}</p>`);
+                    } else {
+                        processedLines.push(paragraphText);
+                    }
+                    currentParagraph = [];
+                }
+                continue;
+            }
+
+            if (line.startsWith("<")) {
+                if (currentParagraph.length > 0) {
+                    const paragraphText = currentParagraph.join("\n");
+                    if (!paragraphText.startsWith("<")) {
+                        const unescapedText = paragraphText
+                            .replace(/\\_/g, "_")
+                            .replace(/\\\*/g, "*")
+                            .replace(/\\`/g, "`");
+                        const escapedText = this.escapeHtml(unescapedText);
+                        processedLines.push(`<p class="text-sm text-gray-700 my-2">${escapedText}</p>`);
+                    } else {
+                        processedLines.push(paragraphText);
+                    }
+                    currentParagraph = [];
+                }
+                processedLines.push(line);
+            } else {
+                currentParagraph.push(line);
+            }
+        }
+
+        // Handle any remaining paragraph
+        if (currentParagraph.length > 0) {
+            const paragraphText = currentParagraph.join("\n");
+            if (!paragraphText.startsWith("<")) {
+                const unescapedText = paragraphText.replace(/\\_/g, "_").replace(/\\\*/g, "*").replace(/\\`/g, "`");
+                const escapedText = this.escapeHtml(unescapedText);
+                processedLines.push(`<p class="text-sm text-gray-700 my-2">${escapedText}</p>`);
+            } else {
+                processedLines.push(paragraphText);
+            }
+        }
+
+        // Wrap in a container with proper styling
+        const finalHtml = `
+        <div class="task-markdown-content prose prose-sm max-w-none">
+            ${processedLines.join("\n")}
+        </div>
+    `;
+
+        return finalHtml;
+    }
+
+    // Add this helper method to update button states
+    updateCurrentButtonStates() {
+        // Update all current buttons to show correct state
+        document.querySelectorAll("[data-task-id]").forEach((taskElement) => {
+            const taskId = taskElement.dataset.taskId;
+            const isCurrent = this.currentTaskId && String(taskId) === String(this.currentTaskId);
+            const currentBtn = taskElement.querySelector("button[data-task-id]");
+
+            if (currentBtn) {
+                currentBtn.className = `h-7 w-7 rounded shadow-sm ${isCurrent ? "bg-emerald-500 border-emerald-500 text-white" : "border-gray-200 text-gray-400 hover:text-emerald-500"} flex items-center justify-center transition-all`;
+                currentBtn.title = isCurrent ? "Current task" : "Set as current";
+                currentBtn.innerHTML = `<span class="material-symbols-outlined text-[16px]">${isCurrent ? "radio_button_checked" : "radio_button_unchecked"}</span>`;
+                currentBtn.dataset.taskCurrent = isCurrent ? "true" : "false";
+            }
+        });
+
+        // Update the current task label
+        this.renderCurrentTask(this.lastTasks);
     }
 
     renderCurrentStatus(current) {

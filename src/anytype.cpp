@@ -229,14 +229,13 @@ nlohmann::json Anytype::GetTasks() {
                 nlohmann::json task = NormalizeTask(obj, offset + idx);
                 spdlog::debug("Page Id {}", task["id"].get<std::string>());
 
-                // get markdown
-                nlohmann::json page = GetPage(task["id"].get<std::string>());
-                task["markdown"] = task["data"]["markdown"].get<std::string>();
-
                 bool done = task.contains("done") && task["done"].is_boolean()
                                 ? task["done"].get<bool>()
                                 : false;
                 if (!done) {
+                    // get markdown
+                    nlohmann::json page = GetPage(task["id"].get<std::string>());
+                    task["markdown"] = page["object"]["markdown"].get<std::string>();
                     tasks.push_back(task);
                 }
                 idx += 1;
