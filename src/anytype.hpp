@@ -2,6 +2,7 @@
 #include <filesystem>
 #include <iostream>
 
+#include <spdlog/spdlog.h>
 #include <nlohmann/json.hpp>
 
 #include "secrets.hpp"
@@ -22,6 +23,7 @@ class Anytype {
     // Get
     nlohmann::json GetSpaces();
     nlohmann::json GetTasks();
+    nlohmann::json GetPage(const std::string &id);
 
   private:
     nlohmann::json GetAnytypeObjects(const nlohmann::json &payload);

@@ -6,6 +6,34 @@
 // ─────────────────────────────────────
 Anytype::Anytype() {
     m_Secrets = Secrets();
+
+    const char *BASE_URL = "http://localhost:31009";
+    const char *API_VERSION = "2025-11-08";
+    httplib::Client client(BASE_URL);
+    client.set_default_headers({
+        {"Anytype-Version", API_VERSION},
+        {"Content-Type", "application/json"},
+    });
+
+    client.set_connection_timeout(3, 0);
+    client.set_read_timeout(30, 0);
+    client.set_write_timeout(30, 0);
+
+    int Attemps = 0;
+    while (true) {
+        Attemps++;
+        if (auto res = client.Get("/")) {
+            spdlog::info("Serving on: http://localhost:31009");
+            break;
+        } else {
+            spdlog::warn("Waiting for Anytype Server...");
+        }
+        std::this_thread::sleep_for(std::chrono::seconds(2));
+        if (Attemps > 15) {
+            spdlog::error("Waited too long for the Anytype Server. Exiting...");
+            exit(1);
+        }
+    }
 }
 
 // ─────────────────────────────────────
@@ -110,6 +138,52 @@ void Anytype::SetDefaultSpace(std::string space_id) {
 }
 
 // ─────────────────────────────────────
+nlohmann::json Anytype::GetPage(const std::string &id) {
+    const std::string base = "http://localhost:31009";
+    const std::string api_version = "2025-11-08";
+
+    // Load secrets
+    std::string api_key = m_Secrets.LoadSecret("api_key");
+    std::string space_id = m_Secrets.LoadSecret("default_space_id");
+
+    if (api_key.empty() || space_id.empty()) {
+        spdlog::error("API key or default space ID is missing");
+        return {};
+    }
+
+    // Build URL
+    std::string url = "/v1/spaces/" + space_id + "/objects/" + id;
+
+    httplib::Client client(base);
+    client.set_default_headers({
+        {"Authorization", "Bearer " + api_key},
+        {"Anytype-Version", api_version},
+        {"Content-Type", "application/json"},
+    });
+    client.set_connection_timeout(3, 0);
+    client.set_read_timeout(30, 0);
+    client.set_write_timeout(30, 0);
+
+    if (auto res = client.Get(url.c_str())) {
+        if (res->status == 200) {
+            try {
+                nlohmann::json page_json = nlohmann::json::parse(res->body);
+                return page_json;
+            } catch (const nlohmann::json::parse_error &e) {
+                spdlog::error("Failed to parse JSON response: {}", e.what());
+                return {};
+            }
+        } else {
+            spdlog::error("Failed to fetch page, HTTP status: {}", res->status);
+            return {};
+        }
+    } else {
+        spdlog::error("HTTP request failed: {}", httplib::to_string(res.error()));
+        return {};
+    }
+}
+
+// ─────────────────────────────────────
 nlohmann::json Anytype::GetTasks() {
     const std::string base = "http://localhost:31009";
     const std::string api_version = "2025-11-08";
@@ -153,6 +227,12 @@ nlohmann::json Anytype::GetTasks() {
             int idx = 0;
             for (const auto &obj : objects) {
                 nlohmann::json task = NormalizeTask(obj, offset + idx);
+                spdlog::debug("Page Id {}", task["id"].get<std::string>());
+
+                // get markdown
+                nlohmann::json page = GetPage(task["id"].get<std::string>());
+                task["markdown"] = task["data"]["markdown"].get<std::string>();
+
                 bool done = task.contains("done") && task["done"].is_boolean()
                                 ? task["done"].get<bool>()
                                 : false;

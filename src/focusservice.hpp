@@ -5,6 +5,7 @@
 
 // Libs
 #include <httplib.h>
+#include <spdlog/spdlog.h>
 
 // parts
 #include "anytype.hpp"
@@ -15,6 +16,8 @@
 
 #include "common.hpp"
 
+#define ONFOCUSWARNINGAFTER 15 // seconds
+
 class FocusService {
   public:
     FocusService(const unsigned port, const unsigned ping);
@@ -23,11 +26,7 @@ class FocusService {
   private:
     std::filesystem::path GetBinaryPath();
     std::filesystem::path GetDBPath();
-
-    // Anytype
-    nlohmann::json GetTasks();
-
-    // Server
+    void UpdateAllowedApps();
     bool InitServer();
 
   private:
@@ -54,4 +53,5 @@ class FocusService {
     std::vector<std::string> m_AllowedApps;
     std::vector<std::string> m_AllowedWindowTitles;
     std::string m_TaskTitle;
+    bool m_IsFocused;
 };

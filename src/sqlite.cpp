@@ -1,7 +1,4 @@
 #include "sqlite.hpp"
-#include "common.hpp"
-
-#include <stdexcept>
 
 // ─────────────────────────────────────
 SQLite::SQLite(const std::string &db_path) : m_Db(nullptr), m_DbPath(db_path) {

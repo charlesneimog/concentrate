@@ -1,11 +1,13 @@
 <!doctype html>
 <html lang="en">
     <head>
+        <title>Focus Dashboard - Tasks Light View</title>
         <meta charset="utf-8" />
         <meta content="width=device-width, initial-scale=1.0" name="viewport" />
-        <title>Focus Dashboard - Tasks Light View</title>
+
         <link href="https://fonts.googleapis.com" rel="preconnect" />
         <link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect" />
+
         <link
             href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&amp;display=swap"
             rel="stylesheet"
@@ -14,56 +16,13 @@
             href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap"
             rel="stylesheet"
         />
-        <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
-        <script id="tailwind-config">
-            tailwind.config = {
-                theme: {
-                    extend: {
-                        colors: {
-                            primary: "#2563EB", // Bright professional blue
-                            "primary-hover": "#1d4ed8",
-                            "background-main": "#ffffff",
-                            "background-sidebar": "#f8f9fa",
-                            "surface-card": "#ffffff",
-                            "text-main": "#1f2937", // Charcoal gray
-                            "text-muted": "#6b7280",
-                            "border-subtle": "#e5e7eb",
-                            "border-focus": "#2563EB",
-                        },
-                        fontFamily: {
-                            display: ["Inter", "sans-serif"],
-                        },
-                        boxShadow: {
-                            subtle: "0 1px 3px 0 rgba(0, 0, 0, 0.05), 0 1px 2px -1px rgba(0, 0, 0, 0.05)",
-                        },
-                        borderRadius: { DEFAULT: "0.25rem", lg: "0.5rem", xl: "0.75rem", full: "9999px" },
-                    },
-                },
-            };
-        </script>
-        <style>
-            .heatmap-cell {
-                width: 0.875rem;
-                height: 0.875rem;
-                border-radius: 0.125rem;
-            }
-            .heatmap-low {
-                background-color: #eff6ff;
-            }
-            .heatmap-mid {
-                background-color: #bfdbfe;
-            }
-            .heatmap-high {
-                background-color: #2563eb;
-            }
-            .heatmap-empty {
-                background-color: #f3f4f6;
-            }
-        </style>
+
+        <link rel="icon" type="image/svg+xml" href="/favicon.svg" sizes="any" />
+        <link rel="stylesheet" href="/style.css" />
     </head>
     <body class="font-display bg-background-main text-text-main antialiased overflow-hidden h-screen flex">
         <aside
-            class="w-64 border-r border-border-subtle flex-shrink-0 flex flex-col bg-background-sidebar z-20 hidden md:flex"
+            class="w-64 shadow-sm border-border-subtle flex-shrink-0 flex flex-col bg-background-sidebar z-20 hidden md:flex"
         >
             <div class="p-6 flex items-center gap-3">
                 <div class="h-8 w-8 rounded-lg bg-primary flex items-center justify-center shadow-sm">
@@ -82,7 +41,7 @@
                     >
                     <span class="text-sm">Tasks View</span>
                 </a>
-                
+
                 <a
                     class="nav-link flex items-center gap-3 px-3 py-2.5 rounded-lg group transition-all"
                     href="#"
@@ -91,39 +50,8 @@
                     <span class="material-symbols-outlined">history</span>
                     <span class="text-sm font-medium">History</span>
                 </a>
-                <div class="pt-4 mt-4 border-t border-border-subtle">
-                    <p class="px-3 text-xs font-semibold text-text-muted uppercase tracking-wider mb-2">Favorites</p>
-                    <a
-                        class="flex items-center gap-3 px-3 py-2 rounded-lg text-text-muted hover:bg-white hover:text-text-main hover:shadow-subtle transition-all"
-                        href="#"
-                    >
-                        <span class="w-2 h-2 rounded-full bg-indigo-500"></span>
-                        <span class="text-sm font-medium">Compose</span>
-                    </a>
-                    <a
-                        class="flex items-center gap-3 px-3 py-2 rounded-lg text-text-muted hover:bg-white hover:text-text-main hover:shadow-subtle transition-all"
-                        href="#"
-                    >
-                        <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
-                        <span class="text-sm font-medium">Write</span>
-                    </a>
-                    <a
-                        class="flex items-center gap-3 px-3 py-2 rounded-lg text-text-muted hover:bg-white hover:text-text-main hover:shadow-subtle transition-all"
-                        href="#"
-                    >
-                        <span class="w-2 h-2 rounded-full bg-blue-500"></span>
-                        <span class="text-sm font-medium">Code</span>
-                    </a>
-                    <a
-                        class="flex items-center gap-3 px-3 py-2 rounded-lg text-text-muted hover:bg-white hover:text-text-main hover:shadow-subtle transition-all"
-                        href="#"
-                    >
-                        <span class="w-2 h-2 rounded-full bg-amber-500"></span>
-                        <span class="text-sm font-medium">Read</span>
-                    </a>
-                </div>
             </nav>
-            <div class="p-4 border-t border-border-subtle bg-background-sidebar">
+            <div class="p-4 shadow-sm border-border-subtle bg-background-sidebar">
                 <a
                     class="flex items-center gap-3 p-2 rounded-lg hover:bg-white hover:shadow-subtle transition-all"
                     href="#"
@@ -136,199 +64,50 @@
         </aside>
         <main class="flex-1 flex flex-col min-w-0 overflow-y-auto bg-background-main relative">
             <div id="view-tasks" class="flex flex-col min-w-0">
-            <header class="pt-8 pb-6 px-8 flex flex-col gap-6">
-                <div class="flex justify-between items-end">
-                    <div>
-                        <h2 class="text-3xl font-bold text-text-main tracking-tight">Focus Session</h2>
-                        <div class="flex items-center gap-2 mt-2">
-                            <span id="activity-indicator-active" class="relative flex h-2.5 w-2.5 hidden">
-                                <span
-                                    class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"
-                                ></span>
-                                <span class="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
-                            </span>
-                            <span id="activity-indicator-idle" class="relative flex h-2.5 w-2.5">
-                                <span class="relative inline-flex rounded-full h-2.5 w-2.5 bg-red-500"></span>
-                            </span>
-                            <p id="current-status" class="text-sm text-text-muted">Ready to focus</p>
+                <header class="pt-8 pb-6 px-8 flex flex-col gap-6">
+                    <div class="flex justify-between items-end">
+                        <div>
+                            <h2 class="text-3xl font-bold text-text-main tracking-tight">Focus Session</h2>
+                            <div class="flex items-center gap-2 mt-2">
+                                <span id="activity-indicator-active" class="relative flex h-2.5 w-2.5 hidden">
+                                    <span
+                                        class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"
+                                    ></span>
+                                    <span class="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
+                                </span>
+                                <span id="activity-indicator-idle" class="relative flex h-2.5 w-2.5">
+                                    <span class="relative inline-flex rounded-full h-2.5 w-2.5 bg-red-500"></span>
+                                </span>
+                                <p id="current-status" class="text-sm text-text-muted">Ready to focus</p>
+                            </div>
+                            <p id="current-task" class="text-xs text-text-muted mt-2">Current task: None</p>
+                            <div id="focus-warning" class="hidden mt-2 text-xs font-semibold text-rose-600">
+                                Not focused: current app is not allowed for this task.
+                            </div>
                         </div>
-                        <p id="current-task" class="text-xs text-text-muted mt-2">Current task: None</p>
-                        <div id="focus-warning" class="hidden mt-2 text-xs font-semibold text-rose-600">
-                            Not focused: current app is not allowed for this task.
-                        </div>
-                    </div>
-                    <div class="hidden sm:flex items-center gap-2">
-                        <button
-                            id="anytype-refresh-open"
-                            class="flex items-center justify-center p-2 text-gray-400 hover:text-primary transition-colors bg-gray-50 rounded-full"
-                            title="Update Anytype"
-                        >
-                            <span class="material-symbols-outlined">sync</span>
-                        </button>
-                        <button
-                            id="anytype-config-open"
-                            data-anytype-config="open"
-                            class="flex items-center justify-center p-2 text-gray-400 hover:text-primary transition-colors bg-gray-50 rounded-full"
-                            title="Anytype settings"
-                        >
-                            <span class="material-symbols-outlined">settings</span>
-                        </button>
-                    </div>
-                </div>
-                <div
-                    class="bg-white rounded-xl p-6 shadow-subtle border border-border-subtle flex flex-col sm:flex-row items-center justify-between gap-8"
-                >
-                    <div class="flex gap-4 items-center">
-                        <div class="flex flex-col items-center gap-1">
-                            <div
-                                id="timer-hrs"
-                                class="flex h-16 w-16 items-center justify-center rounded-lg bg-gray-50 text-text-main text-3xl font-bold font-mono tracking-tighter border border-gray-100"
+                        <div class="hidden sm:flex items-center gap-2">
+                            <button
+                                id="anytype-refresh-open"
+                                class="flex items-center justify-center p-2 text-gray-400 hover:text-primary transition-colors bg-gray-50 rounded-full"
+                                title="Update Anytype"
                             >
-                                00
-                            </div>
-                            <span class="text-xs font-medium text-text-muted">HRS</span>
-                        </div>
-                        <span class="text-2xl font-bold text-gray-300 -mt-5">:</span>
-                        <div class="flex flex-col items-center gap-1">
-                            <div
-                                id="timer-min"
-                                class="flex h-16 w-16 items-center justify-center rounded-lg bg-gray-50 text-text-main text-3xl font-bold font-mono tracking-tighter border border-gray-100"
+                                <span class="material-symbols-outlined">sync</span>
+                            </button>
+                            <button
+                                id="anytype-config-open"
+                                data-anytype-config="open"
+                                class="flex items-center justify-center p-2 text-gray-400 hover:text-primary transition-colors bg-gray-50 rounded-full"
+                                title="Anytype settings"
                             >
-                                25
-                            </div>
-                            <span class="text-xs font-medium text-text-muted">MIN</span>
-                        </div>
-                        <span class="text-2xl font-bold text-gray-300 -mt-5">:</span>
-                        <div class="flex flex-col items-center gap-1">
-                            <div
-                                id="timer-sec"
-                                class="flex h-16 w-16 items-center justify-center rounded-lg bg-gray-50 text-text-main text-3xl font-bold font-mono tracking-tighter border border-gray-100"
-                            >
-                                00
-                            </div>
-                            <span class="text-xs font-medium text-text-muted">SEC</span>
+                                <span class="material-symbols-outlined">settings</span>
+                            </button>
                         </div>
                     </div>
-                    <div class="h-12 w-px bg-gray-200 hidden sm:block"></div>
-                    <div class="flex items-center gap-4 w-full sm:w-auto">
-                        <button
-                            id="record-toggle"
-                            class="flex-1 sm:flex-none flex cursor-pointer items-center justify-center rounded-lg h-12 px-8 bg-primary hover:bg-primary-hover transition-colors text-white gap-2 text-base font-bold shadow-lg shadow-blue-500/20 active:scale-95"
-                        >
-                            <span class="material-symbols-outlined">play_arrow</span>
-                            <span>Start Focus</span>
-                        </button>
-                        <button
-                            class="h-12 w-12 flex items-center justify-center rounded-lg border border-border-subtle text-text-muted hover:bg-gray-50 hover:text-text-main transition-colors bg-white"
-                        >
-                            <span class="material-symbols-outlined">tune</span>
-                        </button>
-                    </div>
-                </div>
-            </header>
-            <section class="px-8 pb-12 flex-1 flex flex-col gap-6">
-                
-                <div id="tasks-container" class="flex flex-col gap-6">
-                    <div class="flex flex-col gap-2">
-                        <h3 class="text-xs font-semibold uppercase tracking-wider text-gray-500 pl-1 mb-1">
-                            Work Projects
-                        </h3>
-                        <div
-                            class="group flex items-center justify-between p-3 bg-white border border-border-subtle rounded-lg hover:border-primary/50 hover:shadow-md transition-all shadow-sm"
-                        >
-                            <div class="flex items-center gap-3 flex-1">
-                                <button
-                                    class="h-5 w-5 rounded border border-gray-300 hover:border-primary flex items-center justify-center text-transparent hover:text-primary transition-all bg-white"
-                                >
-                                    <span class="material-symbols-outlined text-[16px]">check</span>
-                                </button>
-                                <span
-                                    class="text-sm font-medium text-gray-800 group-hover:text-primary transition-colors"
-                                    >Prepare Q3 Financial Report</span
-                                >
-                                <span
-                                    class="px-2 py-0.5 rounded text-[10px] font-bold bg-purple-100 text-purple-700 border border-purple-200"
-                                    >FINANCE</span
-                                >
-                            </div>
-                            <div class="flex items-center gap-4">
-                                <span
-                                    class="text-xs font-mono text-gray-500 bg-gray-50 border border-gray-100 px-2 py-1 rounded"
-                                    >45m</span
-                                >
-                                <span
-                                    class="material-symbols-outlined text-gray-300 cursor-grab opacity-0 group-hover:opacity-100 transition-opacity hover:text-gray-500"
-                                    >drag_indicator</span
-                                >
-                            </div>
-                        </div>
-                        <div
-                            class="group flex items-center justify-between p-3 bg-white border border-border-subtle rounded-lg hover:border-primary/50 hover:shadow-md transition-all shadow-sm"
-                        >
-                            <div class="flex items-center gap-3 flex-1">
-                                <button
-                                    class="h-5 w-5 rounded border border-gray-300 hover:border-primary flex items-center justify-center text-transparent hover:text-primary transition-all bg-white"
-                                >
-                                    <span class="material-symbols-outlined text-[16px]">check</span>
-                                </button>
-                                <span
-                                    class="text-sm font-medium text-gray-800 group-hover:text-primary transition-colors"
-                                    >Review Marketing Copy</span
-                                >
-                                <span
-                                    class="px-2 py-0.5 rounded text-[10px] font-bold bg-orange-100 text-orange-700 border border-orange-200"
-                                    >MARKETING</span
-                                >
-                            </div>
-                            <div class="flex items-center gap-4">
-                                <span
-                                    class="text-xs font-mono text-gray-500 bg-gray-50 border border-gray-100 px-2 py-1 rounded"
-                                    >20m</span
-                                >
-                                <span
-                                    class="material-symbols-outlined text-gray-300 cursor-grab opacity-0 group-hover:opacity-100 transition-opacity hover:text-gray-500"
-                                    >drag_indicator</span
-                                >
-                            </div>
-                        </div>
-                    </div>
-                    <div class="flex flex-col gap-2">
-                        <h3 class="text-xs font-semibold uppercase tracking-wider text-gray-500 pl-1 mb-1">Personal</h3>
-                        <div
-                            class="group flex items-center justify-between p-3 bg-gray-50 border border-border-subtle rounded-lg opacity-75 hover:opacity-100 transition-all"
-                        >
-                            <div class="flex items-center gap-3 flex-1">
-                                <button
-                                    class="h-5 w-5 rounded bg-primary border border-primary flex items-center justify-center text-white transition-all shadow-sm"
-                                >
-                                    <span class="material-symbols-outlined text-[16px] font-bold">check</span>
-                                </button>
-                                <span class="text-sm font-medium text-gray-400 line-through"
-                                    >Book dentist appointment</span
-                                >
-                                <span
-                                    class="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-700 border border-emerald-200"
-                                    >HEALTH</span
-                                >
-                            </div>
-                            <div class="flex items-center gap-4">
-                                <span class="text-xs font-mono text-gray-400">10m</span>
-                                <span
-                                    class="material-symbols-outlined text-gray-300 cursor-grab opacity-0 group-hover:opacity-100 transition-opacity"
-                                    >drag_indicator</span
-                                >
-                            </div>
-                        </div>
-                    </div>
-                    <div class="flex flex-col gap-2 animate-pulse mt-4">
-                        <h3 class="text-xs font-semibold uppercase tracking-wider text-gray-400 pl-1 mb-1">
-                            Syncing from Calendar...
-                        </h3>
-                        <div class="h-14 w-full bg-gray-100 rounded-lg border border-gray-50"></div>
-                        <div class="h-14 w-full bg-gray-100 rounded-lg border border-gray-50 opacity-60"></div>
-                    </div>
-                </div>
-            </section>
+                </header>
+                <section class="px-8 pb-12 flex-1 flex flex-col gap-6">
+                    <h2 class="text-3xl font-bold text-text-main tracking-tight">Current Tasks</h2>
+                    <div id="tasks-container" class="flex flex-col gap-6">Loading...</div>
+                </section>
             </div>
             <div id="view-history" class="flex flex-col min-w-0 hidden">
                 <header class="pt-8 pb-6 px-8 flex flex-col gap-6">
@@ -340,7 +119,7 @@
                         <div class="flex gap-2">
                             <button
                                 id="history-export"
-                                class="flex items-center gap-2 px-4 py-2 bg-white border border-border-subtle rounded-lg text-sm font-medium text-text-main hover:bg-gray-50 transition-colors shadow-subtle"
+                                class="flex hover:cursor-pointer items-center gap-2 px-4 py-2 bg-white shadow-sm border-border-subtle rounded-lg text-sm font-medium text-text-main hover:bg-gray-50 transition-colors shadow-subtle"
                                 type="button"
                             >
                                 <span class="material-symbols-outlined text-lg">download</span>
@@ -349,22 +128,32 @@
                         </div>
                     </div>
                     <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                        <div class="bg-white p-5 rounded-xl border border-border-subtle shadow-subtle flex flex-col gap-1">
-                            <span class="text-xs font-semibold text-text-muted uppercase tracking-wider">Weekly Total</span>
+                        <div class="bg-white p-5 rounded-xl shadow-sm flex flex-col gap-1">
+                            <span class="text-xs font-semibold text-text-muted uppercase tracking-wider"
+                                >Weekly Total</span
+                            >
                             <div class="flex items-end gap-2">
                                 <span id="history-weekly-total" class="text-2xl font-bold text-text-main">0m</span>
                                 <span id="history-weekly-note" class="text-xs text-text-muted pb-1">Last 7 days</span>
                             </div>
                         </div>
-                        <div class="bg-white p-5 rounded-xl border border-border-subtle shadow-subtle flex flex-col gap-1">
-                            <span class="text-xs font-semibold text-text-muted uppercase tracking-wider">Average Session</span>
+                        <div
+                            class="bg-white p-5 rounded-xl shadow-sm border-border-subtle shadow-subtle flex flex-col gap-1"
+                        >
+                            <span class="text-xs font-semibold text-text-muted uppercase tracking-wider"
+                                >Average Session</span
+                            >
                             <div class="flex items-end gap-2">
                                 <span id="history-avg-session" class="text-2xl font-bold text-text-main">0m</span>
                                 <span class="text-xs text-text-muted pb-1">Per session</span>
                             </div>
                         </div>
-                        <div class="bg-white p-5 rounded-xl border border-border-subtle shadow-subtle flex flex-col gap-1 sm:col-span-2 lg:col-span-1">
-                            <span class="text-xs font-semibold text-text-muted uppercase tracking-wider">Tasks Completed</span>
+                        <div
+                            class="bg-white p-5 rounded-xl shadow-sm border-border-subtle shadow-subtle flex flex-col gap-1 sm:col-span-2 lg:col-span-1"
+                        >
+                            <span class="text-xs font-semibold text-text-muted uppercase tracking-wider"
+                                >Tasks Completed</span
+                            >
                             <div class="flex items-end gap-2">
                                 <span id="history-tasks-completed" class="text-2xl font-bold text-text-main">0</span>
                                 <span id="history-tasks-today" class="text-xs text-text-muted pb-1">0 today</span>
@@ -372,26 +161,42 @@
                         </div>
                     </div>
                 </header>
-                <section class="px-8 pb-12 flex flex-col gap-4">
+                <section class="px-8 pb-12 flex flex-col gap-4 shadow-sm">
                     <div class="flex items-center justify-between mb-2">
-                        <h3 class="text-sm font-semibold text-text-muted uppercase tracking-wider">Chronological History</h3>
+                        <h3 class="text-sm font-semibold text-text-muted uppercase tracking-wider">
+                            Chronological History
+                        </h3>
                         <div class="flex items-center gap-2">
-                            <button id="history-filter-month" class="text-xs font-medium text-primary hover:underline" type="button">This Month</button>
+                            <button
+                                id="history-filter-month"
+                                class="text-xs font-medium text-primary hover:underline"
+                                type="button"
+                            >
+                                This Month
+                            </button>
                             <span class="text-gray-300">|</span>
-                            <button id="history-filter-all" class="text-xs font-medium text-text-muted hover:text-text-main" type="button">All Time</button>
+                            <button
+                                id="history-filter-all"
+                                class="text-xs font-medium text-text-muted hover:text-text-main"
+                                type="button"
+                            >
+                                All Time
+                            </button>
                         </div>
                     </div>
                     <div id="history-list" class="space-y-4"></div>
                 </section>
             </div>
         </main>
-        <aside id="tasks-aside" class="w-80 bg-background-sidebar border-l border-border-subtle hidden lg:flex flex-col overflow-y-auto">
+        <aside
+            id="tasks-aside"
+            class="w-80 bg-background-sidebar shadow-sm border-border-subtle hidden lg:flex flex-col overflow-y-auto"
+        >
             <div class="p-6">
                 <h3 class="text-base font-semibold text-text-main mb-6">Session Stats</h3>
-                <div class="relative flex items-center justify-center mb-8">
+                <div class="relative flex items-center justify-center mb-10">
                     <div
-                        id="stats-pie"
-                        class="w-48 h-48 rounded-full shadow-inner"
+                        class="absolute w-56 h-56 rounded-full blur-xl opacity-30"
                         style="
                             background: conic-gradient(
                                 #2563eb 0% 55%,
@@ -402,15 +207,30 @@
                         "
                     ></div>
                     <div
-                        class="absolute w-32 h-32 bg-background-sidebar rounded-full flex flex-col items-center justify-center shadow-sm"
+                        id="stats-pie"
+                        class="relative w-52 h-52 rounded-full shadow-xl ring-1 ring-black/5"
+                        style="
+                            background: conic-gradient(
+                                #2563eb 0% 55%,
+                                #a855f7 55% 80%,
+                                #f97316 80% 95%,
+                                #94a3b8 95% 100%
+                            );
+                        "
+                    ></div>
+                    <div
+                        class="absolute w-32 h-32 rounded-full flex flex-col items-center justify-center bg-white/90 backdrop-blur shadow-lg ring-1 ring-black/5"
                     >
-                        <span id="stats-total" class="text-3xl font-bold text-text-main">3h 45m</span>
-                        <span class="text-sm text-text-muted">Total of Use</span>
+                        <span id="stats-total" class="text-3xl font-semibold tracking-tight text-gray-900"></span>
+                        <span class="text-xs font-medium uppercase tracking-wide text-gray-500 mt-1">
+                            Total of use
+                        </span>
                     </div>
                 </div>
+
                 <div
                     id="stats-legend"
-                    class="space-y-3 mb-8 bg-white p-4 rounded-xl border border-border-subtle shadow-subtle"
+                    class="space-y-3 mb-8 bg-white p-4 rounded-xl shadow-sm border-border-subtle shadow-subtle"
                 >
                     <div class="flex items-center justify-between text-sm">
                         <div class="flex items-center gap-2">
@@ -442,11 +262,11 @@
                     </div>
                 </div>
                 <div class="grid grid-cols-2 gap-3">
-                    <div class="p-4 bg-white rounded-lg border border-border-subtle shadow-subtle">
+                    <div class="p-4 bg-white rounded-lg shadow-sm border-border-subtle shadow-subtle">
                         <p class="text-xs text-text-muted mb-1 font-medium uppercase tracking-wide">Sessions</p>
                         <p id="stats-sessions" class="text-2xl font-bold text-text-main">4</p>
                     </div>
-                    <div class="p-4 bg-white rounded-lg border border-border-subtle shadow-subtle">
+                    <div class="p-4 bg-white rounded-lg shadow-sm border-border-subtle shadow-subtle">
                         <p class="text-xs text-text-muted mb-1 font-medium uppercase tracking-wide">Streak</p>
                         <p id="stats-streak" class="text-2xl font-bold text-text-main">
                             12 <span class="text-xs font-normal text-gray-400">days</span>
@@ -472,50 +292,85 @@
                 </div>
             </div>
         </aside>
-        <aside id="history-aside" class="w-80 bg-background-sidebar border-l border-border-subtle hidden lg:flex flex-col overflow-y-auto">
-            <div class="p-6">
-                <h3 class="text-base font-semibold text-text-main mb-6">Historical Stats</h3>
-                <div class="relative flex items-center justify-center mb-8">
+
+        <aside
+            id="history-aside"
+            class="w-80 hidden lg:flex flex-col overflow-y-auto bg-background-sidebar border-l border-black/5"
+        >
+            <div class="p-6 space-y-8">
+                <!-- Header -->
+                <h3 class="text-base font-semibold text-text-main tracking-tight">Historical Stats</h3>
+
+                <!-- History Pie -->
+                <div class="relative flex items-center justify-center">
+                    <!-- Glow -->
                     <div
-                        id="history-pie"
-                        class="w-48 h-48 rounded-full"
+                        class="absolute w-56 h-56 rounded-full blur-xl opacity-20"
                         style="background: conic-gradient(#94a3b8 0% 100%)"
                     ></div>
+
+                    <!-- Pie -->
                     <div
-                        class="absolute w-32 h-32 bg-background-sidebar rounded-full flex flex-col items-center justify-center shadow-sm"
+                        id="history-pie"
+                        class="relative w-52 h-52 rounded-full shadow-xl ring-1 ring-black/5"
+                        style="background: conic-gradient(#94a3b8 0% 100%)"
+                    ></div>
+
+                    <!-- Center label -->
+                    <div
+                        class="absolute w-32 h-32 rounded-full flex flex-col items-center justify-center bg-white/95 backdrop-blur shadow-lg ring-1 ring-black/5"
                     >
-                        <span id="history-month-label" class="text-xl font-bold text-text-main">This Month</span>
-                        <span class="text-xs text-text-muted">Active Month</span>
+                        <span id="history-month-label" class="text-lg font-semibold tracking-tight text-black">
+                            Jan 2026
+                        </span>
+                        <span class="text-[11px] uppercase tracking-wide text-gray-500 mt-1"> Active Month </span>
                     </div>
                 </div>
+
+                <!-- Legend -->
                 <div
                     id="history-legend"
-                    class="space-y-3 mb-8 bg-white p-4 rounded-xl border border-border-subtle shadow-subtle"
+                    class="rounded-xl border border-black/5 bg-white/90 backdrop-blur shadow-sm divide-y divide-black/5"
                 ></div>
-                <div class="p-5 bg-white rounded-xl border border-border-subtle shadow-subtle mb-6">
-                    <h4 class="text-xs font-bold text-text-muted uppercase tracking-widest mb-4">Consistency Map</h4>
+
+                <!-- Consistency Map -->
+                <div class="p-5 rounded-xl border border-black/5 bg-white/90 backdrop-blur shadow-sm">
+                    <h4 class="text-[11px] font-semibold uppercase tracking-widest text-text-muted mb-4">
+                        Consistency Map
+                    </h4>
+
                     <div id="history-heatmap" class="flex flex-wrap gap-1"></div>
+
                     <div class="flex justify-between mt-3">
-                        <span id="history-heatmap-start" class="text-[10px] text-text-muted">Start</span>
-                        <span id="history-heatmap-end" class="text-[10px] text-text-muted">Today</span>
+                        <span id="history-heatmap-start" class="text-[10px] text-text-muted"> Start </span>
+                        <span id="history-heatmap-end" class="text-[10px] text-text-muted"> Today </span>
                     </div>
                 </div>
+
+                <!-- Monthly Goal -->
                 <div
-                    class="p-5 rounded-xl bg-gradient-to-br from-primary to-blue-600 text-white relative overflow-hidden shadow-lg shadow-blue-200"
+                    class="relative overflow-hidden rounded-xl bg-gradient-to-br from-primary to-blue-600 text-white shadow-lg shadow-blue-200/40"
                 >
-                    <div class="relative z-10">
-                        <h4 class="font-bold text-sm mb-1">Monthly Goal</h4>
-                        <p id="history-goal-text" class="text-xs text-blue-100 mb-4 font-medium">
-                            0h focused this month.
-                        </p>
-                        <div class="w-full bg-black/20 rounded-full h-2">
-                            <div id="history-goal-progress" class="bg-white h-2 rounded-full shadow-sm" style="width: 0%"></div>
+                    <div class="relative z-10 p-5">
+                        <h4 class="text-sm font-semibold mb-1">Monthly Goal</h4>
+
+                        <p id="history-goal-text" class="text-xs text-blue-100 font-medium mb-4"></p>
+
+                        <div class="w-full h-2 rounded-full bg-black/20">
+                            <div
+                                id="history-goal-progress"
+                                class="h-2 rounded-full bg-white shadow-sm transition-all duration-500"
+                                style="width: 0%"
+                            ></div>
                         </div>
                     </div>
+
+                    <!-- Decorative icon -->
                     <span
-                        class="material-symbols-outlined absolute -right-3 -bottom-5 text-9xl text-white opacity-10 pointer-events-none transform rotate-12"
-                        >trending_up</span
+                        class="material-symbols-outlined absolute -right-4 -bottom-6 text-[10rem] text-white/10 rotate-12 pointer-events-none"
                     >
+                        trending_up
+                    </span>
                 </div>
             </div>
         </aside>
@@ -527,7 +382,7 @@
             aria-modal="true"
             aria-hidden="true"
         >
-            <div class="w-full max-w-md rounded-2xl bg-white shadow-xl border border-border-subtle">
+            <div class="w-full max-w-md rounded-2xl bg-white shadow-xl shadow-sm border-border-subtle">
                 <div class="flex items-center justify-between px-6 py-4 border-b border-border-subtle">
                     <div>
                         <h3 class="text-lg font-semibold text-text-main">Set Focus Duration</h3>
@@ -541,7 +396,7 @@
                     <label class="block text-sm font-medium text-text-main" for="duration-modal-input">Duration</label>
                     <input
                         id="duration-modal-input"
-                        class="w-full bg-gray-50 border border-transparent focus:bg-white focus:border-border-subtle rounded-md text-base px-3 h-11 text-text-main focus:ring-1 focus:ring-primary focus:border-primary transition-all placeholder:text-gray-400"
+                        class="w-full bg-gray-50 shadow-sm shadow-smransparent focus:bg-white focus:border-border-subtle rounded-md text-base px-3 h-11 text-text-main focus:ring-1 focus:ring-primary focus:border-primary transition-all placeholder:text-gray-400"
                         placeholder="25m"
                         type="text"
                         autocomplete="off"
@@ -570,7 +425,9 @@
                         </button>
                     </div>
                 </div>
-                <div class="flex items-center justify-end gap-2 px-6 py-4 border-t border-border-subtle bg-gray-50 rounded-b-2xl">
+                <div
+                    class="flex items-center justify-end gap-2 px-6 py-4 shadow-sm border-border-subtle bg-gray-50 rounded-b-2xl"
+                >
                     <button
                         id="duration-modal-cancel"
                         class="h-10 px-4 rounded-lg text-sm font-medium text-text-muted hover:text-text-main hover:bg-white transition-colors"
@@ -596,7 +453,7 @@
             aria-modal="true"
             aria-hidden="true"
         >
-            <div class="w-full max-w-md rounded-2xl bg-white shadow-xl border border-border-subtle">
+            <div class="w-full max-w-md rounded-2xl bg-white shadow-xl shadow-sm border-border-subtle">
                 <div class="flex items-center justify-between px-6 py-4 border-b border-border-subtle">
                     <div>
                         <h3 class="text-lg font-semibold text-text-main">Anytype Settings</h3>
@@ -607,15 +464,14 @@
                     </button>
                 </div>
                 <div class="px-6 py-5 space-y-4">
-                    
-                    <div class="pt-3 border-t border-border-subtle space-y-4">
+                    <div class="pt-3 shadow-sm border-border-subtle space-y-4">
                         <div>
                             <p class="text-sm font-semibold text-text-main">Authenticate from Anytype</p>
                             <p class="text-xs text-text-muted">
                                 Create a challenge, enter the 4-digit code from Anytype, then select a space.
                             </p>
                         </div>
-                        
+
                         <div class="grid grid-cols-1 sm:grid-cols-[1fr_auto] gap-2 items-end">
                             <div class="space-y-1 hidden">
                                 <label class="block text-sm font-medium text-text-main" for="anytype-challenge-id">
@@ -623,7 +479,7 @@
                                 </label>
                                 <input
                                     id="anytype-challenge-id"
-                                    class="w-full  bg-gray-50 border border-transparent rounded-md text-base px-3 h-11 text-text-main placeholder:text-gray-400"
+                                    class="w-full bg-gray-50 shadow-sm shadow-smransparent rounded-md text-base px-3 h-11 text-text-main placeholder:text-gray-400"
                                     placeholder="challenge id"
                                     type="text"
                                     readonly
@@ -644,7 +500,7 @@
                                 </label>
                                 <input
                                     id="anytype-auth-code"
-                                    class="w-full bg-gray-50 border border-transparent focus:bg-white focus:border-border-subtle rounded-md text-base px-3 h-11 text-text-main focus:ring-1 focus:ring-primary focus:border-primary transition-all placeholder:text-gray-400"
+                                    class="w-full bg-gray-50 shadow-sm shadow-smransparent focus:bg-white focus:border-border-subtle rounded-md text-base px-3 h-11 text-text-main focus:ring-1 focus:ring-primary focus:border-primary transition-all placeholder:text-gray-400"
                                     placeholder="1234"
                                     type="text"
                                     autocomplete="off"
@@ -665,7 +521,7 @@
                             <div class="flex flex-col sm:flex-row gap-2">
                                 <select
                                     id="anytype-space-select"
-                                    class="w-full bg-gray-50 border border-transparent focus:bg-white focus:border-border-subtle rounded-md text-base px-3 h-11 text-text-main focus:ring-1 focus:ring-primary focus:border-primary transition-all"
+                                    class="w-full bg-gray-50 shadow-sm shadow-smransparent focus:bg-white focus:border-border-subtle rounded-md text-base px-3 h-11 text-text-main focus:ring-1 focus:ring-primary focus:border-primary transition-all"
                                 ></select>
                                 <button
                                     id="anytype-spaces-refresh"
@@ -686,7 +542,9 @@
                     </div>
                     <p id="anytype-config-status" class="text-xs text-text-muted"></p>
                 </div>
-                <div class="flex items-center justify-end gap-2 px-6 py-4 border-t border-border-subtle bg-gray-50 rounded-b-2xl">
+                <div
+                    class="flex items-center justify-end gap-2 px-6 py-4 shadow-sm border-border-subtle bg-gray-50 rounded-b-2xl"
+                >
                     <button
                         id="anytype-config-cancel"
                         class="h-10 px-4 rounded-lg text-sm font-medium text-text-muted hover:text-text-main hover:bg-white transition-colors"
@@ -708,4 +566,3 @@
         <script src="app.js" defer></script>
     </body>
 </html>
-

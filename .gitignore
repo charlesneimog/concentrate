@@ -11,3 +11,5 @@ perf.data.old
 perf.svg
 top50.folded
 .vscode
+python.py
+style.css

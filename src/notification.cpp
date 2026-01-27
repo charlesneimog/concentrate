@@ -48,7 +48,7 @@ void Notification::SendNotification(const std::string summary, const std::string
 
     const char *app_name = "FocusService";
     uint32_t replaces_id = 0;
-    const char *icon = "";
+    const char *icon = "dialog-warning";
     const char *body = msg.c_str();
 
     dbus_message_iter_append_basic(&args, DBUS_TYPE_STRING, &app_name);

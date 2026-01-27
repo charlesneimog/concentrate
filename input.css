@@ -1,0 +1,13 @@
+@import "tailwindcss";
+@source "./app.js";
+
+@theme {
+    --color-primary: #2563eb;
+    --color-background-light: #f6f7f8;
+    --color-background-dark: #101922;
+    --color-highlight-yellow: #fcba03;
+    --font-display: "Inter", sans-serif;
+    --radius-default: 0.25rem;
+    --radius-full: 9999px;
+    --font-sans: "Inter", sans-serif;
+}
