@@ -333,8 +333,8 @@ class FocusApp {
             bar.className = bar.className.replace(/bg-\S+/, "").trim() + ` ${barColor}`;
             bar.style.width = `${focusPercent.toFixed(1)}%`;
 
-            // Update message
-            text.textContent = `${message} (${focusPercent.toFixed(0)}% focused, ${this.formatTime(idleSeconds)} idle)`;
+            // Update message, print focused and not focused percentages
+            text.textContent = `${message} (${focusPercent.toFixed(0)}% focused, ${((unfocusedSeconds / totalSeconds) * 100).toFixed(0)}% not focused)`;
         } catch (err) {
             console.error("Failed to update daily focus", err);
         }
@@ -1004,29 +1004,19 @@ class FocusApp {
         if (!pie || !legend || !totalEl || !sessionsEl) return;
 
         const totals = new Map();
-        const todayKey = this.toLocalDateKey(new Date());
         (Array.isArray(events) ? events : []).forEach((item) => {
-            const ts = this.normalizeTimestamp(item?.end_time || item?.start_time || 0);
-            if (!ts) return;
-            const keyDate = this.toLocalDateKey(new Date(ts * 1000));
-            if (keyDate !== todayKey) return;
             const key = item.category || item.app_id || "Others";
             const prev = totals.get(key) || 0;
-            totals.set(key, prev + (Number(item.duration) || 0));
+            totals.set(key, prev + 1);  // Count sessions instead of duration
         });
 
         const rawEntries = Array.from(totals.entries()).filter(([, v]) => v > 0);
-        const total = rawEntries.reduce((sum, [, v]) => sum + v, 0);
+        const total = rawEntries.reduce((sum, [, v]) => sum + v, 0);  // Total sessions
 
-        const todayTotal = (Array.isArray(events) ? events : []).reduce((sum, event) => {
-            const ts = this.normalizeTimestamp(event?.end_time || event?.start_time || 0);
-            if (!ts) return sum;
-            const keyDate = this.toLocalDateKey(new Date(ts * 1000));
-            if (keyDate !== todayKey) return sum;
-            return sum + (Number(event?.duration) || 0);
-        }, 0);
+        const todayTotal = (Array.isArray(events) ? events : []).length;  // Total sessions
 
-        totalEl.textContent = this.fmtDuration(todayTotal);
+        totalEl.textContent = String(todayTotal);
+        console.log("Today's total duration (seconds):", todayTotal);
         const completed = Array.isArray(tasks) ? tasks.filter((t) => t.done).length : 0;
         sessionsEl.textContent = String(completed);
 
@@ -1114,6 +1104,7 @@ class FocusApp {
         });
 
         pie.style.background = `conic-gradient(${slices.join(", ")})`;
+        
     }
 
     renderHistory(history, events, tasks) {
@@ -1227,7 +1218,6 @@ class FocusApp {
         if (tasksTodayEl) tasksTodayEl.textContent = `${todayEntries} today`;
 
         this.renderHistoryStats(filtered);
-        this.renderHistoryHeatmap(filtered);
     }
 
     renderHistoryStats(items) {
@@ -1295,8 +1285,7 @@ class FocusApp {
         }
 
         if (monthLabel) {
-            const now = new Date();
-            monthLabel.textContent = now.toLocaleDateString(undefined, { month: "short", year: "numeric" });
+            monthLabel.textContent = this.fmtDuration(total);
         }
 
         if (goalText && goalProgress) {
@@ -1309,51 +1298,6 @@ class FocusApp {
             goalText.textContent = `${this.fmtDuration(monthSeconds)} focused this month. On track for your ${Math.round(goalSeconds / 3600)}h goal.`;
             goalProgress.style.width = `${pct}%`;
         }
-    }
-
-    renderHistoryHeatmap(items) {
-        const container = document.getElementById("history-heatmap");
-        const startLabel = document.getElementById("history-heatmap-start");
-        const endLabel = document.getElementById("history-heatmap-end");
-        if (!container) return;
-
-        const days = 28;
-        const today = new Date();
-        const start = new Date(today.getFullYear(), today.getMonth(), today.getDate() - (days - 1));
-        const totalsByDay = new Map();
-        items.forEach((item) => {
-            if (!item.start) return;
-            const date = new Date(item.start * 1000);
-            const key = this.toLocalDateKey(date);
-            const prev = totalsByDay.get(key) || 0;
-            totalsByDay.set(key, prev + (item.duration || 0));
-        });
-
-        container.innerHTML = "";
-        let max = 0;
-        totalsByDay.forEach((value) => {
-            if (value > max) max = value;
-        });
-
-        for (let i = 0; i < days; i += 1) {
-            const d = new Date(start.getFullYear(), start.getMonth(), start.getDate() + i);
-            const key = this.toLocalDateKey(d);
-            const total = totalsByDay.get(key) || 0;
-            let level = "heatmap-empty";
-            if (max > 0) {
-                const ratio = total / max;
-                if (ratio >= 0.66) level = "heatmap-high";
-                else if (ratio >= 0.33) level = "heatmap-mid";
-                else if (ratio > 0) level = "heatmap-low";
-            }
-            const cell = document.createElement("div");
-            cell.className = `heatmap-cell ${level}`;
-            container.appendChild(cell);
-        }
-
-        if (startLabel)
-            startLabel.textContent = start.toLocaleDateString(undefined, { month: "short", day: "numeric" });
-        if (endLabel) endLabel.textContent = today.toLocaleDateString(undefined, { month: "short", day: "numeric" });
     }
 
     // ==================== VIEW MANAGEMENT ====================

@@ -73,6 +73,16 @@ FocusService::FocusService(const unsigned port, const unsigned ping, LogLevel lo
         m_Fw = m_Window->GetFocusedWindow();
         bool is_idle = !m_Fw.valid;
 
+        // Send notification every 10 minutes if monitoring is disabled
+        if (!m_MonitoringEnabled) {
+            if (m_LastMonitoringDisabledNotification == 0) {
+                m_LastMonitoringDisabledNotification = now;  // Start the timer
+            } else if (now - m_LastMonitoringDisabledNotification >= 600) {
+                m_Notification->SendNotification("Monitoring Disabled", "Focus monitoring is currently disabled. Enable it to track your focus sessions.");
+                m_LastMonitoringDisabledNotification = now;
+            }
+        }
+
         FocusState newState;
         if (is_idle) {
             newState = IDLE;
@@ -513,6 +523,9 @@ bool FocusService::InitServer() {
                 auto j = nlohmann::json::parse(req.body);
                 bool enabled = j.at("enabled").get<bool>();
                 m_MonitoringEnabled = enabled;
+                if (enabled) {
+                    m_LastMonitoringDisabledNotification = 0;  // Reset timer when re-enabled
+                }
                 m_Secrets->SaveSecret("monitoring_enabled", enabled ? "true" : "false");
                 spdlog::info("Monitoring {}", enabled ? "enabled" : "disabled");
                 res.status = 200;

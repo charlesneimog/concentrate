@@ -52,20 +52,13 @@
                 </a>
             </nav>
             <div class="px-4 py-2">
-                <label class="flex items-center gap-2">
-                    <input type="checkbox" id="monitoring-toggle" checked class="rounded">
-                    <span class="text-sm dark:text-white">Enable Monitoring</span>
-                </label>
-            </div>
-            <div class="p-4 shadow-sm dark:shadow-md border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white">
-                <a
-                    class="flex items-center gap-3 p-2 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 hover:shadow-subtle dark:hover:shadow-md transition-all"
-                    href="#"
-                >
-                    <div class="flex flex-col min-w-0">
-                        <p class="text-sm font-medium text-gray-900 dark:text-white truncate">Charles K. Neimog</p>
-                    </div>
-                </a>
+                <div class="flex items-center justify-between">
+                    <span class="text-sm font-medium text-gray-900 dark:text-white p-4">Enable Monitoring</span>
+                    <label class="relative inline-flex items-center cursor-pointer">
+                        <input type="checkbox" id="monitoring-toggle" checked class="sr-only peer">
+                        <div class="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary/25 dark:peer-focus:ring-primary-dark/25 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-primary dark:peer-checked:bg-primary-dark"></div>
+                    </label>
+                </div>
             </div>
         </aside>
         <main class="flex-1 flex flex-col min-w-0 overflow-y-auto bg-white dark:bg-gray-900 relative">
@@ -223,13 +216,13 @@
                                 #94a3b8 95% 100%
                             );
                         "
-                    ></div>
+                    >20h20min</div>
                     <div
                         class="absolute w-32 h-32 rounded-full flex flex-col items-center justify-center bg-white/90 dark:bg-gray-900/90 backdrop-blur shadow-lg ring-1 ring-black/5 dark:ring-white/10"
                     >
                         <span id="stats-total" class="text-3xl font-semibold tracking-tight text-gray-900 dark:text-white"></span>
                         <span class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-300 mt-1">
-                            Total of use
+                            Total Sessions
                         </span>
                     </div>
                 </div>
@@ -267,18 +260,7 @@
                         <span class="font-medium text-gray-900 dark:text-white">&lt; 5%</span>
                     </div>
                 </div>
-                    <div class="grid grid-cols-2 gap-3">
-                    <div class="p-4 bg-white dark:bg-gray-800 rounded-lg shadow-sm dark:shadow-md border-gray-200 dark:border-gray-700 shadow-subtle">
-                        <p class="text-xs text-gray-500 dark:text-gray-300 mb-1 font-medium uppercase tracking-wide">Sessions</p>
-                        <p id="stats-sessions" class="text-2xl font-bold text-gray-900 dark:text-white">4</p>
-                    </div>
-                    <div class="p-4 bg-white dark:bg-gray-800 rounded-lg shadow-sm dark:shadow-md border-gray-200 dark:border-gray-700 shadow-subtle">
-                        <p class="text-xs text-gray-500 dark:text-gray-300 mb-1 font-medium uppercase tracking-wide">Streak</p>
-                        <p id="stats-streak" class="text-2xl font-bold text-gray-900 dark:text-white">
-                            12 <span class="text-xs font-normal text-gray-400 dark:text-gray-300">days</span>
-                        </p>
-                    </div>
-                </div>
+                    
                 <div
                     id="i-was-focused"
                     class="mt-6 p-5 rounded-xl bg-gradient-to-br from-primary to-blue-600 text-white relative overflow-hidden shadow-xl shadow-black/20 dark:shadow-white/10"
@@ -336,7 +318,7 @@
                             <span id="history-month-label" class="text-lg font-semibold tracking-tight text-black dark:text-white">
                                 Jan 2026
                             </span>
-                            <span class="text-[11px] uppercase tracking-wide text-gray-500 dark:text-gray-300 mt-1"> Active Month </span>
+                            <span class="text-[11px] uppercase tracking-wide text-gray-500 dark:text-gray-300 mt-1"> Total Time </span>
                         </div>
                 </div>
 
@@ -347,18 +329,7 @@
                 ></div>
 
                 <!-- Consistency Map -->
-                <div class="p-4 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-sm dark:shadow-md shadow-subtle">
-                    <h4 class="text-[11px] font-semibold uppercase tracking-widest text-gray-500 mb-4">
-                        Consistency Map
-                    </h4>
-
-                    <div id="history-heatmap" class="flex flex-wrap gap-1"></div>
-
-                    <div class="flex justify-between mt-3">
-                        <span id="history-heatmap-start" class="text-[10px] text-gray-400 dark:text-gray-300"> Start </span>
-                        <span id="history-heatmap-end" class="text-[10px] text-gray-400 dark:text-gray-300"> Today </span>
-                    </div>
-                </div>
+               
 
                 <!-- Monthly Goal -->
                 <div

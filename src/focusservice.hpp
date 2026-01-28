@@ -57,4 +57,5 @@ class FocusService {
 
     // Monitoring
     bool m_MonitoringEnabled = true;
+    double m_LastMonitoringDisabledNotification = 0;
 };
