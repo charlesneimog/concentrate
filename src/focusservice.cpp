@@ -24,7 +24,6 @@ FocusService::FocusService(const unsigned port, const unsigned ping, LogLevel lo
     }
 
     std::filesystem::path dbpath = GetDBPath();
-    InitServer();
 
     spdlog::info("Static WebSite Root, {}!", m_Root.string());
     spdlog::info("DataBase path: {}!", dbpath.string());
@@ -33,6 +32,12 @@ FocusService::FocusService(const unsigned port, const unsigned ping, LogLevel lo
     // Secrets
     m_Secrets = std::make_unique<Secrets>();
     spdlog::info("Secrets manager initialized");
+
+    // Load monitoring enabled
+    std::string monitoring_str = m_Secrets->LoadSecret("monitoring_enabled");
+    m_MonitoringEnabled = monitoring_str.empty() ? true : (monitoring_str == "true");
+
+    InitServer();
 
     // SQlite
     m_SQLite = std::make_unique<SQLite>(dbpath);
@@ -508,6 +513,7 @@ bool FocusService::InitServer() {
                 auto j = nlohmann::json::parse(req.body);
                 bool enabled = j.at("enabled").get<bool>();
                 m_MonitoringEnabled = enabled;
+                m_Secrets->SaveSecret("monitoring_enabled", enabled ? "true" : "false");
                 spdlog::info("Monitoring {}", enabled ? "enabled" : "disabled");
                 res.status = 200;
                 res.set_content(R"({"status":"ok"})", "application/json");
@@ -517,6 +523,20 @@ bool FocusService::InitServer() {
                 res.set_content(std::string(R"({"error":")") + e.what() + R"("})",
                                 "application/json");
             }
+        });
+    }
+
+    // Settings
+    {
+        m_Server.Get("/settings", [this](const httplib::Request &, httplib::Response &res) {
+            spdlog::info("Get Settings");
+            std::string current_task_id = m_Secrets->LoadSecret("current_task_id");
+            nlohmann::json j = {
+                {"monitoring_enabled", m_MonitoringEnabled},
+                {"current_task_id", current_task_id}
+            };
+            res.status = 200;
+            res.set_content(j.dump(), "application/json");
         });
     }
 

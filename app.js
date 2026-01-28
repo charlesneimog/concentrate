@@ -210,6 +210,25 @@ class FocusApp {
         }
     }
 
+    async loadSettings() {
+        try {
+            const res = await fetch("/settings", { cache: "no-store" });
+            if (res.ok) {
+                const data = await res.json();
+                this.monitoringEnabled = data.monitoring_enabled;
+                const toggle = document.getElementById("monitoring-toggle");
+                if (toggle) {
+                    toggle.checked = this.monitoringEnabled;
+                }
+                if (data.current_task_id) {
+                    this.setCurrentTaskId(data.current_task_id);
+                }
+            }
+        } catch (err) {
+            console.error("Failed to load settings", err);
+        }
+    }
+
     async loadEvents() {
         const res = await fetch("/events", { cache: "no-store" });
         if (!res.ok) return [];
@@ -2239,8 +2258,8 @@ class FocusApp {
         // Refresh everything
         this.refreshEverything();
 
-        // Load monitoring state
-        this.loadMonitoringState();
+        // Load settings
+        this.loadSettings();
 
         // Start polling
         this.startPolling();
