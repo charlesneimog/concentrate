@@ -20,6 +20,8 @@ class SQLite {
 
     bool UpsertActivityCategory(const std::string &app_id, const std::string &title,
                                 const std::string &category, std::string &error);
+    void InsertFocusState(int state, double start, double end, double duration);
+    nlohmann::json FetchTodayFocusSummary();
 
     nlohmann::json FetchEvents();
     nlohmann::json FetchTasks();

@@ -1,11 +1,12 @@
 #include "notification.hpp"
 #include <iostream>
+#include <spdlog/spdlog.h>
 
 Notification::Notification() {
     dbus_error_init(&m_Err);
     m_Conn = dbus_bus_get(DBUS_BUS_SESSION, &m_Err);
     if (dbus_error_is_set(&m_Err) || !m_Conn) {
-        std::cerr << "Failed to connect to session bus: " << m_Err.message << "\n";
+        spdlog::error("Failed to connect to session bus: {}", m_Err.message);
         dbus_error_free(&m_Err);
         return;
     }
@@ -30,7 +31,7 @@ void Notification::SendNotification(const std::string summary, const std::string
     std::chrono::time_point<std::chrono::system_clock> now = std::chrono::system_clock::now();
 
     if (now - m_LastNotification < std::chrono::milliseconds(timeout)) {
-        std::cerr << "Notification skipped: rate limit exceeded\n";
+        spdlog::debug("Notification skipped: rate limit exceeded");
         return;
     }
 
@@ -39,7 +40,7 @@ void Notification::SendNotification(const std::string summary, const std::string
                                                          "org.freedesktop.Notifications", "Notify");
 
     if (!msg_dbus) {
-        std::cerr << "Failed to create DBus message\n";
+        spdlog::error("Failed to create DBus message");
         return;
     }
 
@@ -68,7 +69,7 @@ void Notification::SendNotification(const std::string summary, const std::string
     dbus_message_iter_append_basic(&args, DBUS_TYPE_INT32, &timeout);
 
     if (!dbus_connection_send(m_Conn, msg_dbus, nullptr)) {
-        std::cerr << "Failed to send DBus message\n";
+        spdlog::error("Failed to send DBus message");
         dbus_message_unref(msg_dbus);
         return;
     }

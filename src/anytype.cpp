@@ -1,6 +1,3 @@
-#include <httplib.h>
-#include <nlohmann/json.hpp>
-
 #include "anytype.hpp"
 
 // ─────────────────────────────────────
@@ -55,19 +52,24 @@ std::string Anytype::LoginChallengeId() {
     client.set_write_timeout(30, 0);
 
     nlohmann::json body = {{"app_name", APP_NAME}};
+    spdlog::info("Anytype: Requesting login challenge for app '{}'", APP_NAME);
     auto res = client.Post("/v1/auth/challenges", body.dump(), "application/json");
 
     if (!res) {
+        spdlog::error("Anytype: Failed to connect to server for login challenge");
         throw std::runtime_error("Anytype: connection failed");
     }
 
     if (res->status < 200 || res->status >= 300) {
+        spdlog::error("Anytype: Login challenge failed with HTTP {}: {}", res->status, res->body);
         throw std::runtime_error("Anytype: HTTP " + std::to_string(res->status) + " — " +
                                  res->body);
     }
 
     auto j = nlohmann::json::parse(res->body);
-    return j.at("challenge_id").get<std::string>();
+    std::string challenge_id = j.at("challenge_id").get<std::string>();
+    spdlog::info("Anytype: Received challenge ID: {}", challenge_id);
+    return challenge_id;
 }
 
 // ─────────────────────────────────────
@@ -85,13 +87,16 @@ std::string Anytype::CreateApiKey(const std::string &challenge_id, const std::st
     client.set_write_timeout(30, 0);
 
     nlohmann::json body = {{"challenge_id", challenge_id}, {"code", code}};
+    spdlog::info("Anytype: Creating API key for challenge ID: {}", challenge_id);
     auto res = client.Post("/v1/auth/api_keys", body.dump(), "application/json");
 
     if (!res) {
+        spdlog::error("Anytype: Failed to connect to server for API key creation");
         throw std::runtime_error("Anytype: connection failed");
     }
 
     if (res->status < 200 || res->status >= 300) {
+        spdlog::error("Anytype: API key creation failed with HTTP {}: {}", res->status, res->body);
         throw std::runtime_error("Anytype: HTTP " + std::to_string(res->status) + " — " +
                                  res->body);
     }
@@ -99,6 +104,7 @@ std::string Anytype::CreateApiKey(const std::string &challenge_id, const std::st
     auto j = nlohmann::json::parse(res->body);
     std::string api_key = j.at("api_key").get<std::string>();
     m_Secrets.SaveSecret("api_key", api_key);
+    spdlog::info("Anytype: API key created and saved successfully");
     return api_key;
 }
 
@@ -119,22 +125,27 @@ nlohmann::json Anytype::GetSpaces() {
     client.set_read_timeout(30, 0);
     client.set_write_timeout(30, 0);
 
+    spdlog::info("Anytype: Fetching available spaces");
     auto res = client.Get("/v1/spaces");
 
     if (!res) {
+        spdlog::error("Anytype: Failed to connect to server for spaces");
         throw std::runtime_error("Anytype: connection failed");
     }
 
     if (res->status < 200 || res->status >= 300) {
+        spdlog::error("Anytype: Spaces fetch failed with HTTP {}: {}", res->status, res->body);
         throw std::runtime_error("Anytype: HTTP " + std::to_string(res->status) + " — " +
                                  res->body);
     }
 
+    spdlog::info("Anytype: Successfully fetched spaces");
     return nlohmann::json::parse(res->body);
 }
 // ─────────────────────────────────────
 void Anytype::SetDefaultSpace(std::string space_id) {
     m_Secrets.SaveSecret("default_space_id", space_id);
+    spdlog::info("Anytype: Set default space to: {}", space_id);
 }
 
 // ─────────────────────────────────────
@@ -147,7 +158,7 @@ nlohmann::json Anytype::GetPage(const std::string &id) {
     std::string space_id = m_Secrets.LoadSecret("default_space_id");
 
     if (api_key.empty() || space_id.empty()) {
-        spdlog::error("API key or default space ID is missing");
+        spdlog::error("Anytype: API key or default space ID is missing");
         return {};
     }
 
@@ -164,21 +175,23 @@ nlohmann::json Anytype::GetPage(const std::string &id) {
     client.set_read_timeout(30, 0);
     client.set_write_timeout(30, 0);
 
+    spdlog::debug("Anytype: Fetching page with ID: {}", id);
     if (auto res = client.Get(url.c_str())) {
         if (res->status == 200) {
             try {
                 nlohmann::json page_json = nlohmann::json::parse(res->body);
+                spdlog::debug("Anytype: Successfully fetched page: {}", id);
                 return page_json;
             } catch (const nlohmann::json::parse_error &e) {
-                spdlog::error("Failed to parse JSON response: {}", e.what());
+                spdlog::error("Anytype: Failed to parse JSON response for page {}: {}", id, e.what());
                 return {};
             }
         } else {
-            spdlog::error("Failed to fetch page, HTTP status: {}", res->status);
+            spdlog::error("Anytype: Failed to fetch page {}, HTTP status: {}", id, res->status);
             return {};
         }
     } else {
-        spdlog::error("HTTP request failed: {}", httplib::to_string(res.error()));
+        spdlog::error("Anytype: HTTP request failed for page {}: {}", id, httplib::to_string(res.error()));
         return {};
     }
 }
@@ -202,6 +215,7 @@ nlohmann::json Anytype::GetTasks() {
     client.set_read_timeout(30, 0);
     client.set_write_timeout(30, 0);
 
+    spdlog::info("Anytype: Starting task retrieval from space: {}", space_id);
     nlohmann::json tasks = nlohmann::json::array();
     int offset = 0;
     constexpr int kMaxTasks = 2000;
@@ -212,11 +226,14 @@ nlohmann::json Anytype::GetTasks() {
         body["limit"] = limit;
 
         std::string path = "/v1/spaces/" + space_id + "/search";
+        spdlog::debug("Anytype: Fetching tasks batch with offset: {}, limit: {}", offset, limit);
         auto res = client.Post(path.c_str(), body.dump(), "application/json");
         if (!res) {
+            spdlog::error("Anytype: Connection failed during task retrieval");
             return tasks;
         }
         if (res->status < 200 || res->status >= 300) {
+            spdlog::error("Anytype: Task retrieval failed with HTTP {}: {}", res->status, res->body);
             return tasks;
         }
 
@@ -227,7 +244,7 @@ nlohmann::json Anytype::GetTasks() {
             int idx = 0;
             for (const auto &obj : objects) {
                 nlohmann::json task = NormalizeTask(obj, offset + idx);
-                spdlog::debug("Page Id {}", task["id"].get<std::string>());
+                spdlog::debug("Anytype: Processing task ID: {}", task["id"].get<std::string>());
 
                 bool done = task.contains("done") && task["done"].is_boolean()
                                 ? task["done"].get<bool>()
@@ -243,6 +260,7 @@ nlohmann::json Anytype::GetTasks() {
         }
 
         if (tasks.size() >= static_cast<size_t>(kMaxTasks)) {
+            spdlog::warn("Anytype: Reached maximum task limit of {}", kMaxTasks);
             break;
         }
 
@@ -255,6 +273,7 @@ nlohmann::json Anytype::GetTasks() {
         offset += limit;
     }
 
+    spdlog::info("Anytype: Completed task retrieval, found {} active tasks", tasks.size());
     return tasks;
 }
 
@@ -383,11 +402,15 @@ nlohmann::json Anytype::NormalizeTask(const nlohmann::json &obj, int fallback_id
     }
     if (id.empty()) {
         id = "anytype-" + std::to_string(fallback_id);
+        spdlog::warn("Anytype: Task at index {} has no valid ID, generated: {}", fallback_id, id);
     }
 
     std::string title = GetString(obj, "name", "");
     if (title.empty()) {
         title = GetString(obj, "title", "(Untitled)");
+    }
+    if (title == "(Untitled)") {
+        spdlog::debug("Anytype: Task {} has no title, using default", id);
     }
 
     nlohmann::json properties =
@@ -407,6 +430,9 @@ nlohmann::json Anytype::NormalizeTask(const nlohmann::json &obj, int fallback_id
             category = "Uncategorized";
         }
     }
+    if (category == "Uncategorized") {
+        spdlog::debug("Anytype: Task {} has no category, using default", id);
+    }
 
     nlohmann::json out = nlohmann::json::object();
     out["id"] = id;
@@ -415,5 +441,7 @@ nlohmann::json Anytype::NormalizeTask(const nlohmann::json &obj, int fallback_id
     out["done"] = done;
     out["allowed_app_ids"] = ExtractArray(apps_allowed_prop);
     out["allowed_titles"] = ExtractArray(app_title_prop);
+
+    spdlog::debug("Anytype: Normalized task {}: title='{}', category='{}', done={}", id, title, category, done);
     return out;
 }

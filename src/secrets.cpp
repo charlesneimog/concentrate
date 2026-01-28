@@ -1,5 +1,6 @@
 #include "secrets.hpp"
 #include <iostream>
+#include <spdlog/spdlog.h>
 
 // ─────────────────────────────────────
 Secrets::Secrets()
@@ -21,7 +22,7 @@ bool Secrets::SaveSecret(const std::string &key, const std::string &value) {
                                    value.c_str(), nullptr, &error, "key", key.c_str(), nullptr);
 
     if (error) {
-        std::cerr << "failed to store secret: " << error->message << "\n";
+        spdlog::error("failed to store secret: {}", error->message);
         g_clear_error(&error);
         return false;
     }
@@ -41,7 +42,7 @@ std::string Secrets::LoadSecret(const std::string &key) {
         secret_password_lookup_sync(&m_Schema, nullptr, &error, "key", key.c_str(), nullptr);
 
     if (error) {
-        std::cerr << "failed to lookup secret: " << error->message << "\n";
+        spdlog::error("failed to lookup secret: {}", error->message);
         g_clear_error(&error);
         return "";
     }

@@ -2,6 +2,7 @@
 
 #include <string>
 #include <nlohmann/json.hpp>
+#include <spdlog/spdlog.h>
 
 class JsonParse {
   public:

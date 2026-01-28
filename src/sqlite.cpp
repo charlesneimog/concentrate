@@ -1,11 +1,14 @@
 #include "sqlite.hpp"
+#include <spdlog/spdlog.h>
 
 // ─────────────────────────────────────
 SQLite::SQLite(const std::string &db_path) : m_Db(nullptr), m_DbPath(db_path) {
     if (sqlite3_open(m_DbPath.c_str(), &m_Db) != SQLITE_OK) {
+        spdlog::error("unable to open database: {}", m_DbPath);
         throw std::runtime_error("unable to open database");
     }
 
+    spdlog::info("SQLite database opened: {}", m_DbPath);
     sqlite3_busy_timeout(m_Db, 2000);
     ExecIgnoringErrors("PRAGMA journal_mode=WAL");
     ExecIgnoringErrors("PRAGMA synchronous=NORMAL");
@@ -24,6 +27,8 @@ SQLite::~SQLite() {
 
 // ─────────────────────────────────────
 void SQLite::Init() {
+    spdlog::debug("Initializing SQLite database tables");
+    // Focused window events
     ExecIgnoringErrors("CREATE TABLE IF NOT EXISTS focus_events ("
                        "id INTEGER PRIMARY KEY AUTOINCREMENT,"
                        "app_id TEXT,"
@@ -33,6 +38,7 @@ void SQLite::Init() {
                        "end_time REAL,"
                        "duration REAL)");
 
+    // Tasks
     ExecIgnoringErrors("CREATE TABLE IF NOT EXISTS focus_tasks ("
                        "id INTEGER PRIMARY KEY AUTOINCREMENT,"
                        "category TEXT,"
@@ -44,18 +50,29 @@ void SQLite::Init() {
                        "excluded INTEGER DEFAULT 0,"
                        "done INTEGER DEFAULT 0)");
 
+    // Categories
     ExecIgnoringErrors("CREATE TABLE IF NOT EXISTS focus_categories ("
                        "category TEXT PRIMARY KEY,"
                        "allowed_app_ids TEXT,"
                        "allowed_titles TEXT,"
                        "updated_at REAL)");
 
+    // App/title → category mapping
     ExecIgnoringErrors("CREATE TABLE IF NOT EXISTS focus_activity_categories ("
                        "app_id TEXT,"
                        "title TEXT,"
                        "category TEXT,"
                        "updated_at REAL,"
                        "PRIMARY KEY(app_id, title))");
+
+    // Focus / Unfocus state timeline
+    ExecIgnoringErrors("CREATE TABLE IF NOT EXISTS focus_states ("
+                       "id INTEGER PRIMARY KEY AUTOINCREMENT,"
+                       "state INTEGER NOT NULL,"
+                       "start_time REAL NOT NULL,"
+                       "end_time REAL,"
+                       "duration REAL)");
+    spdlog::info("SQLite database tables initialized");
 }
 
 // ─────────────────────────────────────
@@ -80,6 +97,69 @@ void SQLite::InsertEvent(const std::string &app_id, int window_id, const std::st
 
     sqlite3_step(stmt);
     sqlite3_finalize(stmt);
+    spdlog::debug("Inserted focus event: app_id={}, title={}, duration={}", app_id, title, duration);
+}
+
+// ─────────────────────────────────────
+void SQLite::InsertFocusState(int state, double start, double end, double duration) {
+    sqlite3_stmt *stmt = nullptr;
+    const char *sql = "INSERT INTO focus_states (state, start_time, end_time, duration) "
+                      "VALUES (?, ?, ?, ?)";
+
+    if (sqlite3_prepare_v2(m_Db, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+        return;
+    }
+
+    sqlite3_bind_int(stmt, 1, state);
+    sqlite3_bind_double(stmt, 2, start);
+    sqlite3_bind_double(stmt, 3, end);
+    sqlite3_bind_double(stmt, 4, duration);
+
+    sqlite3_step(stmt);
+    sqlite3_finalize(stmt);
+    spdlog::debug("Inserted focus state: state={}, duration={}", state, duration);
+}
+
+// ─────────────────────────────────────
+nlohmann::json SQLite::FetchTodayFocusSummary() {
+    sqlite3_stmt *stmt = nullptr;
+
+    const char *sql = R"(
+        SELECT
+            state,
+            SUM(duration) AS total_duration
+        FROM focus_states
+        WHERE date(start_time, 'unixepoch', 'localtime') =
+              date('now', 'localtime')
+        GROUP BY state
+    )";
+
+    if (sqlite3_prepare_v2(m_Db, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+        spdlog::error("db prepare failed in FetchTodayFocusSummary");
+        throw std::runtime_error("db prepare failed");
+    }
+
+    double focused = 0.0;
+    double unfocused = 0.0;
+    double idle = 0.0;
+
+    while (sqlite3_step(stmt) == SQLITE_ROW) {
+        int state = sqlite3_column_int(stmt, 0);
+        double total = sqlite3_column_double(stmt, 1);
+
+        if (state == 1) {
+            focused = total;
+        } else if (state == 2) {
+            unfocused = total;
+        } else if (state == 3) {
+            idle = total;
+        }
+    }
+
+    sqlite3_finalize(stmt);
+
+    spdlog::debug("Fetched today focus summary: focused={}, unfocused={}, idle={}", focused, unfocused, idle);
+    return {{"focused_seconds", focused}, {"unfocused_seconds", unfocused}, {"idle_seconds", idle}};
 }
 
 // ─────────────────────────────────────
@@ -140,6 +220,7 @@ void SQLite::UpsertCategory(const std::string &category, const nlohmann::json &a
 
     sqlite3_step(stmt);
     sqlite3_finalize(stmt);
+    spdlog::debug("Upserted category: {}", category);
 }
 
 // ─────────────────────────────────────
@@ -160,6 +241,7 @@ bool SQLite::CreateTask(const nlohmann::json &data, std::string &error) {
         "VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
 
     if (sqlite3_prepare_v2(m_Db, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+        spdlog::error("db prepare failed in CreateTask");
         error = "db prepare failed";
         return false;
     }
@@ -179,6 +261,7 @@ bool SQLite::CreateTask(const nlohmann::json &data, std::string &error) {
     sqlite3_bind_int(stmt, 8, done);
 
     if (sqlite3_step(stmt) != SQLITE_DONE) {
+        spdlog::error("db insert failed in CreateTask");
         sqlite3_finalize(stmt);
         error = "db insert failed";
         return false;
@@ -186,6 +269,7 @@ bool SQLite::CreateTask(const nlohmann::json &data, std::string &error) {
 
     sqlite3_finalize(stmt);
     UpsertCategory(category, allowed_app_ids, allowed_titles);
+    spdlog::info("Created task: {}", task);
     return true;
 }
 
@@ -201,6 +285,7 @@ bool SQLite::UpdateTask(const nlohmann::json &data, std::string &error) {
     const char *select_sql = "SELECT * FROM focus_tasks WHERE id = ?";
 
     if (sqlite3_prepare_v2(m_Db, select_sql, -1, &select_stmt, nullptr) != SQLITE_OK) {
+        spdlog::error("db prepare failed in UpdateTask select");
         error = "db prepare failed";
         return false;
     }
@@ -252,6 +337,7 @@ bool SQLite::UpdateTask(const nlohmann::json &data, std::string &error) {
                              "WHERE id = ?";
 
     if (sqlite3_prepare_v2(m_Db, update_sql, -1, &update_stmt, nullptr) != SQLITE_OK) {
+        spdlog::error("db prepare failed in UpdateTask update");
         error = "db prepare failed";
         return false;
     }
@@ -267,6 +353,7 @@ bool SQLite::UpdateTask(const nlohmann::json &data, std::string &error) {
     sqlite3_bind_int(update_stmt, 9, task_id);
 
     if (sqlite3_step(update_stmt) != SQLITE_DONE) {
+        spdlog::error("db update failed in UpdateTask");
         sqlite3_finalize(update_stmt);
         error = "db update failed";
         return false;
@@ -274,6 +361,7 @@ bool SQLite::UpdateTask(const nlohmann::json &data, std::string &error) {
 
     sqlite3_finalize(update_stmt);
     UpsertCategory(category, allowed_app_ids, allowed_titles);
+    spdlog::info("Updated task ID: {}", task_id);
     return true;
 }
 
@@ -293,6 +381,7 @@ bool SQLite::UpsertActivityCategory(const std::string &app_id, const std::string
                       "category=excluded.category, updated_at=excluded.updated_at";
 
     if (sqlite3_prepare_v2(m_Db, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+        spdlog::error("db prepare failed in UpsertActivityCategory");
         error = "db prepare failed";
         return false;
     }
@@ -320,6 +409,7 @@ bool SQLite::UpsertActivityCategory(const std::string &app_id, const std::string
         UpsertCategory(category, apps, titles);
     }
 
+    spdlog::debug("Upserted activity category: app_id={}, title={}, category={}", app_id, title, category);
     return true;
 }
 
@@ -329,6 +419,7 @@ nlohmann::json SQLite::FetchEvents() {
     const char *sql = "SELECT * FROM focus_events ORDER BY start_time";
 
     if (sqlite3_prepare_v2(m_Db, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+        spdlog::error("db prepare failed in FetchEvents");
         throw std::runtime_error("db prepare failed");
     }
 
@@ -354,6 +445,7 @@ nlohmann::json SQLite::FetchEvents() {
     }
 
     sqlite3_finalize(stmt);
+    spdlog::debug("Fetched {} events", rows.size());
     return rows;
 }
 
@@ -377,6 +469,7 @@ nlohmann::json SQLite::FetchHistory() {
     )";
 
     if (sqlite3_prepare_v2(m_Db, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+        spdlog::error("db prepare failed in FetchHistory");
         throw std::runtime_error("db prepare failed");
     }
 
@@ -400,6 +493,7 @@ nlohmann::json SQLite::FetchHistory() {
     }
 
     sqlite3_finalize(stmt);
+    spdlog::debug("Fetched {} history entries", rows.size());
     return rows;
 }
 
@@ -412,6 +506,7 @@ nlohmann::json SQLite::FetchCategories() {
                       "ORDER BY updated_at DESC";
 
     if (sqlite3_prepare_v2(m_Db, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+        spdlog::error("db prepare failed in FetchCategories");
         throw std::runtime_error("db prepare failed");
     }
 
@@ -445,6 +540,7 @@ nlohmann::json SQLite::FetchCategories() {
     }
 
     sqlite3_finalize(stmt);
+    spdlog::debug("Fetched {} categories", rows.size());
     return rows;
 }
 
@@ -453,6 +549,7 @@ void SQLite::ExecIgnoringErrors(const std::string &sql) {
     char *errmsg = nullptr;
     sqlite3_exec(m_Db, sql.c_str(), nullptr, nullptr, &errmsg);
     if (errmsg) {
+        spdlog::warn("sqlite exec error: {}", errmsg);
         sqlite3_free(errmsg);
     }
 }

@@ -1,19 +1,25 @@
 #include "focusservice.hpp"
+
 #include <string>
 #include <limits.h>
 #include <unistd.h>
 #include <thread>
 #include <chrono>
 
-#include <httplib.h>
-
 // ─────────────────────────────────────
-FocusService::FocusService(const unsigned port, const unsigned ping) : m_Port(port), m_Ping(ping) {
-    spdlog::set_level(spdlog::level::debug);
+FocusService::FocusService(const unsigned port, const unsigned ping, LogLevel log_level)
+    : m_Port(port), m_Ping(ping) {
+    if (log_level == LOG_DEBUG) {
+        spdlog::set_level(spdlog::level::debug);
+    } else if (log_level == LOG_INFO) {
+        spdlog::set_level(spdlog::level::info);
+    } else if (log_level == LOG_OFF) {
+        spdlog::set_level(spdlog::level::off);
+    }
     // Server
     m_Root = GetBinaryPath();
     if (!std::filesystem::exists(m_Root)) {
-        std::cerr << "Root does not exists: " << m_Root << std::endl;
+        spdlog::error("Root does not exists: {}", m_Root.string());
         exit(1);
     }
 
@@ -26,19 +32,24 @@ FocusService::FocusService(const unsigned port, const unsigned ping) : m_Port(po
 
     // Secrets
     m_Secrets = std::make_unique<Secrets>();
+    spdlog::info("Secrets manager initialized");
 
     // SQlite
     m_SQLite = std::make_unique<SQLite>(dbpath);
+    spdlog::info("SQLite database initialized");
 
     // Anytype
     m_Anytype = std::make_unique<Anytype>();
+    spdlog::info("Anytype client initialized");
     UpdateAllowedApps();
 
     // Windows API (get AppID, Title)
     m_Window = std::make_unique<Window>();
+    spdlog::info("Window API initialized");
 
     // Notifications
     m_Notification = std::make_unique<Notification>();
+    spdlog::info("Notification system initialized");
 
     FocusedWindow previousWindow;
     auto currentTimePoint = std::chrono::system_clock::now();
@@ -46,39 +57,68 @@ FocusService::FocusService(const unsigned port, const unsigned ping) : m_Port(po
     std::chrono::duration<double> durationInSeconds = timeSinceEpoch;
     double lastStartTime = durationInSeconds.count();
     double unfocusedStartTime = 0;
+    FocusState prevState = IDLE;
+    double stateStartTime = lastStartTime;
+    m_CurrentState = IDLE;
 
     while (true) {
         std::this_thread::sleep_for(std::chrono::milliseconds(m_Ping * 1000));
+        auto currentTime = std::chrono::system_clock::now();
+        double now = std::chrono::duration<double>(currentTime.time_since_epoch()).count();
         m_Fw = m_Window->GetFocusedWindow();
-        bool isFocusedWindow = true;
-        if (!m_AllowedApps.empty() || !m_AllowedWindowTitles.empty()) {
-            isFocusedWindow = false;
-            for (const auto &allowedApp : m_AllowedApps) {
-                if (m_Fw.app_id.find(allowedApp) != std::string::npos) {
-                    isFocusedWindow = true;
-                    break;
-                }
-            }
+        bool is_idle = !m_Fw.valid;
 
-            if (!isFocusedWindow && !m_AllowedWindowTitles.empty()) {
-                for (const auto &allowedTitle : m_AllowedWindowTitles) {
-                    if (m_Fw.title.find(allowedTitle) != std::string::npos) {
+        FocusState newState;
+        if (is_idle) {
+            newState = IDLE;
+        } else {
+            // Check if focused window is allowed
+            bool isFocusedWindow = true;
+            if (!m_AllowedApps.empty() || !m_AllowedWindowTitles.empty()) {
+                isFocusedWindow = false;
+                for (const auto &allowedApp : m_AllowedApps) {
+                    if (m_Fw.app_id.find(allowedApp) != std::string::npos) {
                         isFocusedWindow = true;
                         break;
                     }
                 }
+
+                if (!isFocusedWindow && !m_AllowedWindowTitles.empty()) {
+                    for (const auto &allowedTitle : m_AllowedWindowTitles) {
+                        if (m_Fw.title.find(allowedTitle) != std::string::npos) {
+                            isFocusedWindow = true;
+                            break;
+                        }
+                    }
+                }
             }
+            newState = isFocusedWindow ? FOCUSED : UNFOCUSED;
         }
 
-        m_IsFocused = isFocusedWindow;
-        spdlog::debug("Focused: {}", m_IsFocused);
+        // If state changed, insert the previous state
+        if (newState != m_CurrentState) {
+            double duration = now - stateStartTime;
+            if (m_MonitoringEnabled) {
+                m_SQLite->InsertFocusState(static_cast<int>(m_CurrentState), stateStartTime, now,
+                                           duration);
+            }
+            stateStartTime = now;
+            prevState = m_CurrentState;
+            m_CurrentState = newState;
+        }
 
-        auto currentTime = std::chrono::system_clock::now();
-        auto timeSinceEpoch = currentTime.time_since_epoch();
-        std::chrono::duration<double> secondsSinceEpoch = timeSinceEpoch;
-        double now = secondsSinceEpoch.count();
+        if (is_idle) {
+            spdlog::debug("User is on idle");
+            // Reset unfocused timers while idle
+            unfocusedStartTime = 0;
+            continue; // skip the rest of the loop while idle
+        }
 
-        if (!m_IsFocused) {
+        spdlog::debug("User is active");
+        spdlog::debug("State: {}", static_cast<int>(m_CurrentState));
+
+        // Only track unfocused time if user is active
+        if (m_CurrentState == UNFOCUSED) {
             if (unfocusedStartTime == 0) {
                 unfocusedStartTime = now;
             } else {
@@ -97,9 +137,10 @@ FocusService::FocusService(const unsigned port, const unsigned ping) : m_Port(po
             unfocusedStartTime = 0;
         }
 
+        // Log window change
         if (m_Fw.app_id != previousWindow.app_id || m_Fw.title != previousWindow.title) {
             double duration = now - lastStartTime;
-            if (!previousWindow.app_id.empty()) {
+            if (m_MonitoringEnabled && !previousWindow.app_id.empty()) {
                 m_SQLite->InsertEvent(previousWindow.app_id, previousWindow.window_id,
                                       previousWindow.title, lastStartTime, now, duration);
             }
@@ -121,6 +162,7 @@ FocusService::~FocusService() {
 void FocusService::UpdateAllowedApps() {
     // Update the current task from page id
     std::string id = m_Secrets->LoadSecret("current_task_id");
+    spdlog::info("Anytype: Updating allowed apps for task ID: {}", id);
     nlohmann::json currentTaskPage = m_Anytype->GetPage(id);
     std::vector<std::string> allowedApps;
     std::vector<std::string> allowedWindowTitles;
@@ -157,8 +199,8 @@ void FocusService::UpdateAllowedApps() {
         m_AllowedApps = allowedApps;
         m_AllowedWindowTitles = allowedWindowTitles;
 
-        spdlog::info("Allowed Apps Count: {}", m_AllowedApps.size());
-        spdlog::info("Allowed Window Titles Count: {}", m_AllowedWindowTitles.size());
+        spdlog::info("Anytype: Task '{}' allows {} apps and {} window titles", m_TaskTitle,
+                     m_AllowedApps.size(), m_AllowedWindowTitles.size());
     }
 }
 
@@ -231,10 +273,12 @@ bool FocusService::InitServer() {
                           spdlog::info("Anytype Challenges");
                           try {
                               std::string challenge_id = m_Anytype->LoginChallengeId();
+                              spdlog::info("Anytype: Challenge created with ID: {}", challenge_id);
                               nlohmann::json resp = {{"challenge_id", challenge_id}};
                               res.status = 200;
                               res.set_content(resp.dump(), "application/json");
                           } catch (const std::exception &e) {
+                              spdlog::error("Anytype: Failed to create challenge: {}", e.what());
                               res.status = 502;
                               res.set_content(std::string(R"({"error":")") + e.what() + R"("})",
                                               "application/json");
@@ -249,10 +293,12 @@ bool FocusService::InitServer() {
                     const std::string challenge_id = j.at("challenge_id").get<std::string>();
                     const std::string code = j.at("code").get<std::string>();
                     std::string api_key = m_Anytype->CreateApiKey(challenge_id, code);
+                    spdlog::info("Anytype: API key created successfully");
                     nlohmann::json resp = {{"api_key", api_key}};
                     res.status = 200;
                     res.set_content(resp.dump(), "application/json");
                 } catch (const std::exception &e) {
+                    spdlog::error("Anytype: Failed to create API key: {}", e.what());
                     res.status = 400;
                     res.set_content(std::string(R"({"error":")") + e.what() + R"("})",
                                     "application/json");
@@ -263,9 +309,11 @@ bool FocusService::InitServer() {
             try {
                 spdlog::info("Get Anytype Spaces");
                 auto spaces_json = m_Anytype->GetSpaces();
+                spdlog::info("Anytype: Retrieved {} spaces", spaces_json.size());
                 res.status = 200;
                 res.set_content(spaces_json.dump(), "application/json");
             } catch (const std::exception &e) {
+                spdlog::error("Anytype: Failed to get spaces: {}", e.what());
                 res.status = 502;
                 res.set_content(std::string(R"({"error":")") + e.what() + R"("})",
                                 "application/json");
@@ -278,11 +326,13 @@ bool FocusService::InitServer() {
                 auto j = nlohmann::json::parse(req.body);
                 const std::string space_id = j.at("space_id").get<std::string>();
                 if (space_id.empty()) {
+                    spdlog::warn("Anytype: Attempted to set empty space ID");
                     res.status = 400;
                     res.set_content(R"({"error":"space_id cannot be empty"})", "application/json");
                     return;
                 }
                 m_Anytype->SetDefaultSpace(space_id);
+                spdlog::info("Anytype: Default space set to: {}", space_id);
                 res.status = 200;
                 res.set_content(R"({"status":"ok"})", "application/json");
             });
@@ -295,13 +345,16 @@ bool FocusService::InitServer() {
                     std::lock_guard<std::mutex> lock(m_GlobalMutex);
                     tasks = m_Anytype->GetTasks();
                 }
+                spdlog::info("Anytype: Retrieved {} tasks", tasks.size());
                 res.status = 200;
                 res.set_content(tasks.dump(), "application/json");
             } catch (const std::exception &e) {
+                spdlog::error("Anytype: Failed to get tasks: {}", e.what());
                 res.status = 502;
                 res.set_content(std::string(R"({"error":")") + e.what() + R"("})",
                                 "application/json");
             } catch (...) {
+                spdlog::error("Anytype: Unknown error while getting tasks");
                 res.status = 500;
                 res.set_content(R"({"error":"unknown server error"})", "application/json");
             }
@@ -370,6 +423,8 @@ bool FocusService::InitServer() {
                     }
                     std::string id = json_body["id"].get<std::string>();
                     m_Secrets->SaveSecret("current_task_id", id);
+                    spdlog::info("Anytype: Current task set to ID: {}", id);
+                    UpdateAllowedApps();
                     res.status = 200;
                     res.set_content("Task updated successfully", "text/plain");
 
@@ -420,6 +475,48 @@ bool FocusService::InitServer() {
             }
             res.status = 200;
             res.set_content(R"({"status":"ok"})", "application/json");
+        });
+
+        m_Server.Get("/focus/today", [&](const httplib::Request &, httplib::Response &res) {
+            spdlog::info("Get Today Focus Summary");
+
+            try {
+                nlohmann::json summary = m_SQLite->FetchTodayFocusSummary();
+                res.status = 200;
+                res.set_content(summary.dump(), "application/json");
+            } catch (const std::exception &e) {
+                spdlog::error("Failed to fetch today focus summary: {}", e.what());
+                res.status = 500;
+                res.set_content(std::string(R"({"error":")") + e.what() + R"("})",
+                                "application/json");
+            }
+        });
+    }
+
+    // Monitoring
+    {
+        m_Server.Get("/monitoring", [this](const httplib::Request &, httplib::Response &res) {
+            spdlog::info("Get Monitoring Status");
+            nlohmann::json j = {{"enabled", m_MonitoringEnabled}};
+            res.status = 200;
+            res.set_content(j.dump(), "application/json");
+        });
+
+        m_Server.Post("/monitoring", [this](const httplib::Request &req, httplib::Response &res) {
+            spdlog::info("Set Monitoring Status");
+            try {
+                auto j = nlohmann::json::parse(req.body);
+                bool enabled = j.at("enabled").get<bool>();
+                m_MonitoringEnabled = enabled;
+                spdlog::info("Monitoring {}", enabled ? "enabled" : "disabled");
+                res.status = 200;
+                res.set_content(R"({"status":"ok"})", "application/json");
+            } catch (const std::exception &e) {
+                spdlog::error("Failed to set monitoring: {}", e.what());
+                res.status = 400;
+                res.set_content(std::string(R"({"error":")") + e.what() + R"("})",
+                                "application/json");
+            }
         });
     }
 

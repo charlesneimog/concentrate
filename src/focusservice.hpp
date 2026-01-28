@@ -20,7 +20,7 @@
 
 class FocusService {
   public:
-    FocusService(const unsigned port, const unsigned ping);
+    FocusService(const unsigned port, const unsigned ping, LogLevel log_level);
     ~FocusService();
 
   private:
@@ -53,5 +53,8 @@ class FocusService {
     std::vector<std::string> m_AllowedApps;
     std::vector<std::string> m_AllowedWindowTitles;
     std::string m_TaskTitle;
-    bool m_IsFocused;
+    FocusState m_CurrentState;
+
+    // Monitoring
+    bool m_MonitoringEnabled = true;
 };
