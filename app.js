@@ -19,6 +19,7 @@ class FocusApp {
         this.lastPageActive = this.isPageActive();
         this.anytypeError = null;
         this.amIFocused = false;
+        this.monitoringEnabled = true;
 
         // Set default filter mode
         window.historyFilterMode = "month";
@@ -111,6 +112,19 @@ class FocusApp {
         return `${start.toLocaleTimeString(undefined, opts)} — ${end.toLocaleTimeString(undefined, opts)}`;
     }
 
+    formatTime(seconds) {
+        const hours = Math.floor(seconds / 3600);
+        const minutes = Math.floor((seconds % 3600) / 60);
+        const secs = Math.floor(seconds % 60);
+        if (hours > 0) {
+            return `${hours}h ${minutes}m`;
+        } else if (minutes > 0) {
+            return `${minutes}m ${secs}s`;
+        } else {
+            return `${secs}s`;
+        }
+    }
+
     truncateText(value, maxLength) {
         const text = String(value || "");
         if (text.length <= maxLength) return text;
@@ -180,6 +194,22 @@ class FocusApp {
         return Object.keys(cur || {}).length ? cur : null;
     }
 
+    async loadMonitoringState() {
+        try {
+            const res = await fetch("/monitoring", { cache: "no-store" });
+            if (res.ok) {
+                const data = await res.json();
+                this.monitoringEnabled = data.enabled;
+                const toggle = document.getElementById("monitoring-toggle");
+                if (toggle) {
+                    toggle.checked = this.monitoringEnabled;
+                }
+            }
+        } catch (err) {
+            console.error("Failed to load monitoring state", err);
+        }
+    }
+
     async loadEvents() {
         const res = await fetch("/events", { cache: "no-store" });
         if (!res.ok) return [];
@@ -220,6 +250,74 @@ class FocusApp {
             });
         } catch (err) {
             console.warn("Failed to update focus rules", err);
+        }
+    }
+
+    async updateDailyFocus() {
+        try {
+            const res = await fetch("/focus/today");
+            if (!res.ok) return;
+
+            const data = await res.json();
+
+            const focusedSeconds = data.focused_seconds || 0;
+            const unfocusedSeconds = data.unfocused_seconds || 0;
+            const idleSeconds = data.idle_seconds || 0;
+            const totalSeconds = focusedSeconds + unfocusedSeconds;
+
+            if (totalSeconds === 0) return;
+
+            const focusPercent = Math.min(100, (focusedSeconds / totalSeconds) * 100);
+
+            // Elements (stable selectors)
+            const container = document.getElementById("i-was-focused");
+            const bar = document.getElementById("focus-progress-bar");
+            if (!container || !bar) return;
+
+            const text = container.querySelector("p");
+            if (!text) return;
+
+            // ─────────────────────────────────────
+            // Focus levels
+            let gradient = "";
+            let barColor = "";
+            let message = "";
+
+            if (focusPercent < 20) {
+                gradient = "from-red-600 to-red-800";
+                barColor = "bg-red-300";
+                message = "You were not focused today";
+            } else if (focusPercent < 40) {
+                gradient = "from-orange-500 to-orange-700";
+                barColor = "bg-orange-200";
+                message = "You were less focused today";
+            } else if (focusPercent < 60) {
+                gradient = "from-yellow-400 to-yellow-600";
+                barColor = "bg-yellow-100";
+                message = "Your focus was inconsistent today";
+            } else if (focusPercent < 80) {
+                gradient = "from-green-400 to-green-600";
+                barColor = "bg-green-100";
+                message = "You were mostly focused today";
+            } else {
+                gradient = "from-emerald-500 to-emerald-700";
+                barColor = "bg-emerald-100";
+                message = "You were very focused today";
+            }
+
+            // ─────────────────────────────────────
+            // Apply gradient to container
+            container.className =
+                container.className.replace(/from-\S+ to-\S+/, "").trim() + ` bg-gradient-to-br ${gradient}`;
+
+            // Apply bar color + width
+            bar.className = bar.className.replace(/bg-\S+/, "").trim() + ` ${barColor}`;
+            bar.style.width = `${focusPercent.toFixed(1)}%`;
+
+            // Update message
+            text.textContent = `${message} (${focusPercent.toFixed(0)}% focused, ${this.formatTime(idleSeconds)} idle)`;
+        } catch (err) {
+            console.error("Failed to update daily focus", err);
         }
     }
 
@@ -317,11 +415,11 @@ class FocusApp {
         items.forEach((c) => {
             const row = document.createElement("button");
             row.type = "button";
-            row.className = "w-full text-left px-3 py-2 text-sm hover:bg-gray-50";
+            row.className = "w-full text-left px-3 py-2 text-sm hover:bg-gray-50 dark:hover:bg-gray-700";
             row.textContent = c.category;
             if (c.category === "(no categories)") {
                 row.disabled = true;
-                row.className = "w-full text-left px-3 py-2 text-sm text-text-muted";
+                row.className = "w-full text-left px-3 py-2 text-sm text-gray-400 dark:text-gray-500";
             } else {
                 row.addEventListener("click", () => {
                     const input = document.getElementById("task-category");
@@ -356,7 +454,7 @@ class FocusApp {
             this.allowedApps.forEach((app, idx) => {
                 const chip = document.createElement("button");
                 chip.type = "button";
-                chip.className = "px-2 py-1 rounded-full text-xs bg-gray-100 shadow-sm text-gray-700";
+                chip.className = "px-2 py-1 rounded-full text-xs bg-gray-100 dark:bg-gray-700 shadow-sm text-gray-700 dark:text-gray-200";
                 chip.innerHTML = `${this.escapeHtml(app)} <span class="ml-1">×</span>`;
                 chip.addEventListener("click", () => {
                     this.allowedApps = this.allowedApps.filter((_, i) => i !== idx);
@@ -370,7 +468,7 @@ class FocusApp {
             this.allowedTitles.forEach((title, idx) => {
                 const chip = document.createElement("button");
                 chip.type = "button";
-                chip.className = "px-2 py-1 rounded-full text-xs bg-gray-100 shadow-sm text-gray-700";
+                chip.className = "px-2 py-1 rounded-full text-xs bg-gray-100 dark:bg-gray-700 shadow-sm text-gray-700 dark:text-gray-200";
                 chip.innerHTML = `${this.escapeHtml(title)} <span class="ml-1">×</span>`;
                 chip.addEventListener("click", () => {
                     this.allowedTitles = this.allowedTitles.filter((_, i) => i !== idx);
@@ -400,7 +498,7 @@ class FocusApp {
 
         if (!tasks.length) {
             const empty = document.createElement("div");
-            empty.className = "text-sm text-gray-400";
+            empty.className = "text-sm text-gray-400 dark:text-gray-500";
             empty.textContent = this.anytypeError ? this.anytypeError : "No tasks yet.";
             container.appendChild(empty);
             return;
@@ -412,7 +510,7 @@ class FocusApp {
             section.className = "flex flex-col gap-2";
 
             const title = document.createElement("h2");
-            title.className = "text-xs font-semibold uppercase tracking-wider text-gray-500 pl-1";
+            title.className = "text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 pl-1";
             title.textContent = category;
             section.appendChild(title);
 
@@ -423,18 +521,18 @@ class FocusApp {
                 const done = !!task.done;
                 const isCurrent = this.currentTaskId && String(task.id) === String(this.currentTaskId);
                 const li = document.createElement("li");
-                li.className = "flex flex-col gap-1 bg-white shadow-sm rounded-lg px-3 py-2";
+                li.className = "flex flex-col gap-1 bg-white dark:bg-gray-800 shadow-sm rounded-lg px-3 py-2";
                 li.dataset.taskId = task.id; // Use data-task-id instead of id
 
                 const row = document.createElement("div");
                 row.className = "flex items-center gap-2";
 
                 const mark = document.createElement("span");
-                mark.className = `font-mono text-xs ${done ? "text-emerald-600" : "text-gray-400"}`;
+                mark.className = `font-mono text-xs ${done ? "text-emerald-600 dark:text-emerald-400" : "text-gray-400 dark:text-gray-500"}`;
                 mark.textContent = done ? "[x]" : "[ ]";
 
                 const text = document.createElement("span");
-                text.className = `text-sm font-medium ${done ? "text-gray-400 line-through" : "text-gray-800"}`;
+                text.className = `text-sm font-medium ${done ? "text-gray-400 dark:text-gray-500 line-through" : "text-gray-800 dark:text-white"}`;
                 text.textContent = task.title || "(task)";
 
                 const spacer = document.createElement("span");
@@ -442,7 +540,7 @@ class FocusApp {
 
                 const currentBtn = document.createElement("button");
                 currentBtn.type = "button";
-                currentBtn.className = `h-7 w-7 rounded shadow-sm ${isCurrent ? "bg-emerald-500 border-emerald-500 text-white" : "border-gray-200 text-gray-400 hover:text-emerald-500"} flex items-center justify-center transition-all`;
+                currentBtn.className = `h-7 w-7 rounded shadow-sm ${isCurrent ? "bg-emerald-500 border-emerald-500 text-white" : "border-gray-200 dark:border-gray-600 text-gray-400 dark:text-gray-500 hover:text-emerald-500"} flex items-center justify-center transition-all`;
                 currentBtn.title = isCurrent ? "Current task" : "Set as current";
                 currentBtn.innerHTML = `<span class="material-symbols-outlined text-[16px]">${isCurrent ? "radio_button_checked" : "radio_button_unchecked"}</span>`;
 
@@ -481,23 +579,23 @@ class FocusApp {
                 row.appendChild(currentBtn);
 
                 const debug = document.createElement("div");
-                debug.className = "text-[10px] text-gray-500 flex flex-wrap gap-2";
+                debug.className = "text-[10px] text-gray-500 dark:text-gray-400 flex flex-wrap gap-2";
                 const allowedApps = this.normalizeAllowList(task.allowed_app_ids);
                 const allowedTitles = this.normalizeAllowList(task.allowed_titles);
                 const appLabel = allowedApps.length ? allowedApps.join(", ") : "Any";
                 const titleLabel = allowedTitles.length ? allowedTitles.join(", ") : "Any";
 
                 const allowedChip = document.createElement("span");
-                allowedChip.className = "px-2 py-0.5 rounded bg-gray-50 border border-gray-100";
+                allowedChip.className = "px-2 py-0.5 rounded bg-gray-50 dark:bg-gray-700 border border-gray-100 dark:border-gray-600";
                 allowedChip.textContent = `Allowed apps: ${appLabel}`;
 
                 const titleChip = document.createElement("span");
-                titleChip.className = "px-2 py-0.5 rounded bg-gray-50 border border-gray-100";
+                titleChip.className = "px-2 py-0.5 rounded bg-gray-50 dark:bg-gray-700 border border-gray-100 dark:border-gray-600";
                 titleChip.textContent = `Allowed titles: ${titleLabel}`;
 
                 const focusChip = document.createElement("span");
                 const focusAllowed = this.isFocusAllowed(this.lastCurrentFocus, task);
-                focusChip.className = `px-2 py-0.5 rounded border ${focusAllowed ? "bg-emerald-50 border-emerald-200 text-emerald-700" : "bg-rose-50 border-rose-200 text-rose-700"}`;
+                focusChip.className = `px-2 py-0.5 rounded border ${focusAllowed ? "bg-emerald-50 dark:bg-emerald-900/20 border-emerald-200 dark:border-emerald-700 text-emerald-700 dark:text-emerald-300" : "bg-rose-50 dark:bg-rose-900/20 border-rose-200 dark:border-rose-700 text-rose-700 dark:text-rose-300"}`;
                 focusChip.textContent = focusAllowed ? "Current app: allowed" : "Current app: NOT allowed";
 
                 debug.appendChild(allowedChip);
@@ -553,7 +651,7 @@ class FocusApp {
 
         // Create and append the markdown container
         const markdownContainer = document.createElement("div");
-        markdownContainer.className = "task-markdown-container mt-3 pt-3 border-t border-gray-100";
+        markdownContainer.className = "task-markdown-container mt-3 pt-3 border-t border-gray-100 dark:border-gray-700";
         markdownContainer.innerHTML = html;
         taskElement.appendChild(markdownContainer);
     }
@@ -581,7 +679,7 @@ class FocusApp {
             // Unescape any remaining escaped characters in code
             const unescapedCode = code.replace(/\\_/g, "_").replace(/\\\*/g, "*").replace(/\\`/g, "`");
             const escapedCode = this.escapeHtml(unescapedCode);
-            return `<code class="bg-gray-100 px-1 py-0.5 rounded text-sm font-mono">${escapedCode}</code>`;
+            return `<code class="bg-gray-100 dark:bg-gray-700 px-1 py-0.5 rounded text-sm font-mono">${escapedCode}</code>`;
         });
 
         // Then process multiline code blocks (triple backticks)
@@ -589,7 +687,7 @@ class FocusApp {
             // Unescape any remaining escaped characters in code blocks
             const unescapedCode = code.replace(/\\_/g, "_").replace(/\\\*/g, "*").replace(/\\`/g, "`");
             const escapedCode = this.escapeHtml(unescapedCode.trim());
-            return `<pre class="bg-gray-50 p-3 rounded-lg overflow-x-auto my-2"><code class="text-sm font-mono">${escapedCode}</code></pre>`;
+            return `<pre class="bg-gray-50 dark:bg-gray-800 p-3 rounded-lg overflow-x-auto my-2"><code class="text-sm font-mono">${escapedCode}</code></pre>`;
         });
 
         // Process headers (h1, h2, h3)
@@ -600,7 +698,7 @@ class FocusApp {
                 /(?<!<\/?code[^>]*>)(?<!<\/?strong[^>]*>)(?<!<\/?em[^>]*>)[^<>]+/g,
                 (text) => this.escapeHtml(text),
             );
-            return `<h3 class="text-sm font-semibold text-gray-800 mt-3 mb-1">${processedContent}</h3>`;
+            return `<h3 class="text-sm font-semibold text-gray-800 dark:text-gray-200 mt-3 mb-1">${processedContent}</h3>`;
         });
 
         html = html.replace(/^## (.*$)/gm, (match, content) => {
@@ -608,7 +706,7 @@ class FocusApp {
                 /(?<!<\/?code[^>]*>)(?<!<\/?strong[^>]*>)(?<!<\/?em[^>]*>)[^<>]+/g,
                 (text) => this.escapeHtml(text),
             );
-            return `<h2 class="text-base font-bold text-gray-900 mt-4 mb-2">${processedContent}</h2>`;
+            return `<h2 class="text-base font-bold text-gray-900 dark:text-white mt-4 mb-2">${processedContent}</h2>`;
         });
 
         html = html.replace(/^# (.*$)/gm, (match, content) => {
@@ -616,7 +714,7 @@ class FocusApp {
                 /(?<!<\/?code[^>]*>)(?<!<\/?strong[^>]*>)(?<!<\/?em[^>]*>)[^<>]+/g,
                 (text) => this.escapeHtml(text),
             );
-            return `<h1 class="text-lg font-bold text-gray-900 mt-5 mb-3">${processedContent}</h1>`;
+            return `<h1 class="text-lg font-bold text-gray-900 dark:text-white mt-5 mb-3">${processedContent}</h1>`;
         });
 
         // Process bold text (**text** or __text__) - but only if not inside code blocks
@@ -665,7 +763,7 @@ class FocusApp {
                 contentHtml = this.escapeHtml(unescapedContent.trim());
             }
 
-            return `<li class="ml-4 pl-1 text-sm text-gray-700 flex items-start">${checkboxHtml}<span class="flex-1">${contentHtml}</span></li>`;
+            return `<li class="ml-4 pl-1 text-sm text-gray-700 dark:text-gray-300 flex items-start">${checkboxHtml}<span class="flex-1">${contentHtml}</span></li>`;
         });
 
         // Wrap consecutive list items in <ul>
@@ -713,7 +811,7 @@ class FocusApp {
                             .replace(/\\\*/g, "*")
                             .replace(/\\`/g, "`");
                         const escapedText = this.escapeHtml(unescapedText);
-                        processedLines.push(`<p class="text-sm text-gray-700 my-2">${escapedText}</p>`);
+                        processedLines.push(`<p class="text-sm text-gray-700 dark:text-gray-300 my-2">${escapedText}</p>`);
                     } else {
                         processedLines.push(paragraphText);
                     }
@@ -731,7 +829,7 @@ class FocusApp {
                             .replace(/\\\*/g, "*")
                             .replace(/\\`/g, "`");
                         const escapedText = this.escapeHtml(unescapedText);
-                        processedLines.push(`<p class="text-sm text-gray-700 my-2">${escapedText}</p>`);
+                        processedLines.push(`<p class="text-sm text-gray-700 dark:text-gray-300 my-2">${escapedText}</p>`);
                     } else {
                         processedLines.push(paragraphText);
                     }
@@ -749,7 +847,7 @@ class FocusApp {
             if (!paragraphText.startsWith("<")) {
                 const unescapedText = paragraphText.replace(/\\_/g, "_").replace(/\\\*/g, "*").replace(/\\`/g, "`");
                 const escapedText = this.escapeHtml(unescapedText);
-                processedLines.push(`<p class="text-sm text-gray-700 my-2">${escapedText}</p>`);
+                processedLines.push(`<p class="text-sm text-gray-700 dark:text-gray-300 my-2">${escapedText}</p>`);
             } else {
                 processedLines.push(paragraphText);
             }
@@ -934,7 +1032,7 @@ class FocusApp {
                     break;
                 }
             }
-            streakEl.innerHTML = `${streak} <span class="text-xs font-normal text-gray-400">days</span>`;
+            streakEl.innerHTML = `${streak} <span class="text-xs font-normal text-gray-400 dark:text-gray-300">days</span>`;
         }
 
         legend.innerHTML = "";
@@ -944,9 +1042,9 @@ class FocusApp {
                 <div class="flex items-center justify-between text-sm">
                     <div class="flex items-center gap-2">
                         <span class="w-3 h-3 rounded-full bg-slate-400 shadow-sm"></span>
-                        <span class="text-gray-600">No data</span>
+                        <span class="text-gray-600 dark:text-gray-400">No data</span>
                     </div>
-                    <span class="font-medium text-gray-900">100%</span>
+                    <span class="font-medium text-gray-900 dark:text-white">100%</span>
                 </div>
             `;
             return;
@@ -988,9 +1086,9 @@ class FocusApp {
             row.innerHTML = `
                 <div class="flex items-center gap-2">
                     <span class="w-3 h-3 rounded-full" style="background:${color}"></span>
-                    <span class="text-gray-600">${this.escapeHtml(label)}</span>
+                    <span class="text-gray-600 dark:text-gray-400">${this.escapeHtml(label)}</span>
                 </div>
-                <span class="font-medium text-gray-900">${Math.round(percent)}%</span>
+                <span class="font-medium text-gray-900 dark:text-white">${Math.round(percent)}%</span>
             `;
             legend.appendChild(row);
             return slice;
@@ -1026,7 +1124,7 @@ class FocusApp {
 
         if (!keys.length) {
             const empty = document.createElement("div");
-            empty.className = "text-sm text-gray-400";
+            empty.className = "text-sm text-gray-400 dark:text-gray-500";
             empty.textContent = "No history available yet.";
             list.appendChild(empty);
         }
@@ -1041,24 +1139,24 @@ class FocusApp {
 
             const card = document.createElement("div");
             card.className =
-                "bg-white shadow-sm rounded-xl overflow-hidden shadow-subtle hover:border-primary/30 transition-all";
+                "bg-white dark:bg-gray-800 shadow-sm rounded-xl overflow-hidden shadow-subtle hover:border-primary/30 transition-all";
             card.style.opacity = String(opacity);
 
             const header = document.createElement("div");
-            header.className = "bg-gray-50 px-5 py-3 shadow-sm flex justify-between items-center";
+            header.className = "bg-gray-50 dark:bg-gray-700 px-5 py-3 shadow-sm flex justify-between items-center";
             header.innerHTML = `
                 <div class="flex items-center gap-4">
                     <div class="flex flex-col">
-                        <span class="text-sm font-bold text-text-main">${this.escapeHtml(this.formatDayLabel(dayDate))}</span>
-                        <span class="text-xs text-text-muted">${this.escapeHtml(this.formatTimeRange(new Date(start * 1000), new Date(end * 1000)))}</span>
+                        <span class="text-sm font-bold text-gray-900 dark:text-white">${this.escapeHtml(this.formatDayLabel(dayDate))}</span>
+                        <span class="text-xs text-gray-500 dark:text-gray-400">${this.escapeHtml(this.formatTimeRange(new Date(start * 1000), new Date(end * 1000)))}</span>
                     </div>
-                    <div class="h-8 w-px bg-gray-200"></div>
+                    <div class="h-8 w-px bg-gray-200 dark:bg-gray-600"></div>
                     <div class="flex items-center gap-1.5">
                         <span class="material-symbols-outlined text-primary text-lg">timer</span>
                         <span class="text-sm font-bold text-primary">${this.escapeHtml(this.fmtDuration(totalDuration))}</span>
                     </div>
                 </div>
-                <button class="text-gray-400 hover:text-text-main" type="button"><span class="material-symbols-outlined">more_horiz</span></button>
+                <button class="text-gray-400 dark:text-gray-500 hover:text-gray-900 dark:hover:text-white" type="button"><span class="material-symbols-outlined">more_horiz</span></button>
             `;
 
             const body = document.createElement("div");
@@ -1071,11 +1169,11 @@ class FocusApp {
                 const displayLabel = this.truncateText(label, 32);
                 const badgeLabel = item.app_id || "Unknown app";
                 const badgeStyle = this.appIdBadgeStyle(badgeLabel);
-                row.className = "flex items-center justify-between gap-3 p-3 rounded-lg shadow-sm bg-white";
+                row.className = "flex items-center justify-between gap-3 p-3 rounded-lg shadow-sm bg-white dark:bg-gray-700";
                 row.innerHTML = `
                     <div class="flex items-center gap-3 min-w-0 flex-1">
                         <span class="material-symbols-outlined text-emerald-500 text-sm">check_circle</span>
-                        <span class="text-sm text-text-main truncate" title="${this.escapeHtml(label)}">${this.escapeHtml(displayLabel)}</span>
+                        <span class="text-sm text-gray-800 dark:text-white truncate" title="${this.escapeHtml(label)}">${this.escapeHtml(displayLabel)}</span>
                     </div>
                     <span class="px-2 py-0.5 rounded text-[10px] font-bold border max-w-[160px] truncate shrink-0" title="${this.escapeHtml(badgeLabel)}" style="background:${badgeStyle.background};color:${badgeStyle.color};border-color:${badgeStyle.borderColor}">${this.escapeHtml(this.truncateText(badgeLabel, 24))}</span>
                 `;
@@ -1139,9 +1237,9 @@ class FocusApp {
                 <div class="flex items-center justify-between text-sm">
                     <div class="flex items-center gap-2">
                         <span class="w-3 h-3 rounded-full bg-slate-400 shadow-sm"></span>
-                        <span class="text-gray-600">No data</span>
+                        <span class="text-gray-600 dark:text-gray-400">No data</span>
                     </div>
-                    <span class="font-medium text-gray-900">100%</span>
+                    <span class="font-medium text-gray-900 dark:text-white">100%</span>
                 </div>
             `;
         } else {
@@ -1167,9 +1265,9 @@ class FocusApp {
                 row.innerHTML = `
                     <div class="flex items-center gap-2">
                         <span class="w-3 h-3 rounded-full" style="background:${color}"></span>
-                        <span class="text-gray-600">${this.escapeHtml(label)}</span>
+                        <span class="text-gray-600 dark:text-gray-400">${this.escapeHtml(label)}</span>
                     </div>
-                    <span class="font-medium text-gray-900">${Math.round(percent)}%</span>
+                    <span class="font-medium text-gray-900 dark:text-white">${Math.round(percent)}%</span>
                 `;
                 legend.appendChild(row);
                 return slice;
@@ -1257,10 +1355,19 @@ class FocusApp {
             link.classList.toggle("bg-primary/10", isActive);
             link.classList.toggle("text-primary", isActive);
             link.classList.toggle("font-semibold", isActive);
-            link.classList.toggle("text-text-muted", !isActive);
-            link.classList.toggle("hover:bg-white", !isActive);
-            link.classList.toggle("hover:text-text-main", !isActive);
-            link.classList.toggle("hover:shadow-subtle", !isActive);
+            if (!isActive) {
+                link.classList.add("text-gray-500", "dark:text-gray-400");
+                link.classList.add("hover:bg-gray-50", "dark:hover:bg-gray-700");
+                link.classList.add("hover:text-gray-900", "dark:hover:text-white");
+                link.classList.remove("hover:bg-primary/20");
+                link.classList.remove("hover:text-primary");
+            } else {
+                link.classList.remove("text-gray-500", "dark:text-gray-400");
+                link.classList.remove("hover:bg-gray-50", "dark:hover:bg-gray-700");
+                link.classList.remove("hover:text-gray-900", "dark:hover:text-white");
+                link.classList.add("hover:bg-primary/20");
+                link.classList.add("hover:text-primary");
+            }
         });
 
         // this.refreshAll();
@@ -1277,6 +1384,7 @@ class FocusApp {
             this.lastCurrentFocus = current;
             this.renderCurrentStatus(current);
             this.updateFocusWarning(current, this.lastTasks);
+            this.updateDailyFocus();
         } catch (err) {
             console.error("Failed to load current focus", err);
         }
@@ -1957,19 +2065,19 @@ class FocusApp {
         document.getElementById("history-filter-month")?.addEventListener("click", () => {
             window.historyFilterMode = "month";
             document.getElementById("history-filter-month")?.classList.add("text-primary");
-            document.getElementById("history-filter-month")?.classList.remove("text-text-muted");
+            document.getElementById("history-filter-month")?.classList.remove("text-gray-500", "dark:text-gray-400");
             document.getElementById("history-filter-all")?.classList.remove("text-primary");
-            document.getElementById("history-filter-all")?.classList.add("text-text-muted");
+            document.getElementById("history-filter-all")?.classList.add("text-gray-500", "dark:text-gray-400");
             this.refreshAll();
         });
 
         document.getElementById("history-filter-all")?.addEventListener("click", () => {
             window.historyFilterMode = "all";
             document.getElementById("history-filter-all")?.classList.add("text-primary");
-            document.getElementById("history-filter-all")?.classList.remove("text-text-muted");
+            document.getElementById("history-filter-all")?.classList.remove("text-gray-500", "dark:text-gray-400");
             document.getElementById("history-filter-month")?.classList.remove("text-primary");
-            document.getElementById("history-filter-month")?.classList.remove("text-text-muted");
-            document.getElementById("history-filter-month")?.classList.add("text-text-muted");
+            document.getElementById("history-filter-month")?.classList.remove("text-gray-500", "dark:text-gray-400");
+            document.getElementById("history-filter-month")?.classList.add("text-gray-500", "dark:text-gray-400");
             this.refreshAll();
         });
 
@@ -2069,6 +2177,26 @@ class FocusApp {
         document.getElementById("timer-min")?.addEventListener("click", this.openDurationModal);
         document.getElementById("timer-sec")?.addEventListener("click", this.openDurationModal);
 
+        // Monitoring toggle
+        document.getElementById("monitoring-toggle")?.addEventListener("change", async (e) => {
+            const enabled = e.target.checked;
+            try {
+                const res = await fetch("/monitoring", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ enabled })
+                });
+                if (res.ok) {
+                    this.monitoringEnabled = enabled;
+                } else {
+                    e.target.checked = this.monitoringEnabled; // revert
+                }
+            } catch (err) {
+                console.error("Failed to toggle monitoring", err);
+                e.target.checked = this.monitoringEnabled; // revert
+            }
+        });
+
         // Page visibility and focus
         window.addEventListener("focus", this.handlePageFocus);
         document.addEventListener("visibilitychange", this.handlePageVisibility);
@@ -2110,6 +2238,9 @@ class FocusApp {
 
         // Refresh everything
         this.refreshEverything();
+
+        // Load monitoring state
+        this.loadMonitoringState();
 
         // Start polling
         this.startPolling();
