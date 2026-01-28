@@ -183,7 +183,8 @@ nlohmann::json Anytype::GetPage(const std::string &id) {
                 spdlog::debug("Anytype: Successfully fetched page: {}", id);
                 return page_json;
             } catch (const nlohmann::json::parse_error &e) {
-                spdlog::error("Anytype: Failed to parse JSON response for page {}: {}", id, e.what());
+                spdlog::error("Anytype: Failed to parse JSON response for page {}: {}", id,
+                              e.what());
                 return {};
             }
         } else {
@@ -191,7 +192,8 @@ nlohmann::json Anytype::GetPage(const std::string &id) {
             return {};
         }
     } else {
-        spdlog::error("Anytype: HTTP request failed for page {}: {}", id, httplib::to_string(res.error()));
+        spdlog::error("Anytype: HTTP request failed for page {}: {}", id,
+                      httplib::to_string(res.error()));
         return {};
     }
 }
@@ -233,7 +235,8 @@ nlohmann::json Anytype::GetTasks() {
             return tasks;
         }
         if (res->status < 200 || res->status >= 300) {
-            spdlog::error("Anytype: Task retrieval failed with HTTP {}: {}", res->status, res->body);
+            spdlog::error("Anytype: Task retrieval failed with HTTP {}: {}", res->status,
+                          res->body);
             return tasks;
         }
 
@@ -419,6 +422,7 @@ nlohmann::json Anytype::NormalizeTask(const nlohmann::json &obj, int fallback_id
     nlohmann::json category_prop = PropertyByKey(properties, "category");
     nlohmann::json apps_allowed_prop = PropertyByKey(properties, "apps_allowed");
     nlohmann::json app_title_prop = PropertyByKey(properties, "app_title");
+    nlohmann::json priority_key = PropertyByKey(properties, "priority");
 
     bool done = done_prop.contains("checkbox") && done_prop["checkbox"].is_boolean()
                     ? done_prop["checkbox"].get<bool>()
@@ -439,9 +443,11 @@ nlohmann::json Anytype::NormalizeTask(const nlohmann::json &obj, int fallback_id
     out["title"] = title;
     out["category"] = category;
     out["done"] = done;
+    out["priority"] = priority_key["select"]; //["name"];
     out["allowed_app_ids"] = ExtractArray(apps_allowed_prop);
     out["allowed_titles"] = ExtractArray(app_title_prop);
 
-    spdlog::debug("Anytype: Normalized task {}: title='{}', category='{}', done={}", id, title, category, done);
+    spdlog::debug("Anytype: Normalized task {}: title='{}', category='{}', done={}", id, title,
+                  category, done);
     return out;
 }

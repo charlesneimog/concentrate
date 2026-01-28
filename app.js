@@ -189,6 +189,11 @@ class FocusApp {
     }
 
     async loadCurrent() {
+        if (!this.isPageActive) {
+            console.warn("Page is not active");
+            return;
+        }
+
         const res = await fetch("/current", { cache: "no-store" });
         if (!res.ok) return null;
         const cur = await res.json();
@@ -381,14 +386,25 @@ class FocusApp {
         return titleMatch;
     }
 
-    groupTasksByCategory(tasks) {
+    groupTasksByPriority(tasks) {
         const grouped = new Map();
+
         (Array.isArray(tasks) ? tasks : []).forEach((task) => {
-            const key = (task.category || "Uncategorized").trim() || "Uncategorized";
+            const raw = typeof task.priority.name === "string" ? task.priority.name.trim() : "";
+            const key = /^P\d+$/.test(raw) ? raw : "No priority";
+
             if (!grouped.has(key)) grouped.set(key, []);
             grouped.get(key).push(task);
         });
-        return grouped;
+
+        // sort by numeric part: P0, P1, P2...
+        return new Map(
+            [...grouped.entries()].sort(([a], [b]) => {
+                if (a === "No priority") return 1;
+                if (b === "No priority") return -1;
+                return parseInt(a.slice(1), 10) - parseInt(b.slice(1), 10);
+            }),
+        );
     }
 
     normalizeHistoryItems(history, events) {
@@ -526,13 +542,18 @@ class FocusApp {
             return;
         }
 
-        const grouped = this.groupTasksByCategory(tasks);
+        const grouped = this.groupTasksByPriority(tasks);
         for (const [category, items] of grouped.entries()) {
             const section = document.createElement("div");
             section.className = "flex flex-col gap-2";
 
-            const title = document.createElement("h2");
-            title.className = "text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 pl-1";
+            const title = document.createElement("h1");
+            title.className = "text-lg font-bold uppercase tracking-wide text-gray-800 dark:text-gray-100 pl-1";
+            const color = items[0].category?.color;
+            if (color) {
+                title.style.color = color;
+            }
+
             title.textContent = category;
             section.appendChild(title);
 
@@ -628,6 +649,14 @@ class FocusApp {
 
                 li.appendChild(row);
                 li.appendChild(debug);
+
+                const priorityColor = task.priority?.color;
+
+                if (priorityColor) {
+                    li.style.setProperty("--p", priorityColor);
+                    li.classList.add("bg-[color:var(--p)]/15", "dark:bg-[color:var(--p)]/15");
+                    li.classList.add("border-l-4", "border-[color:var(--p)]");
+                }
 
                 // Only render markdown if this is the current task
                 if (isCurrent && task.markdown) {
@@ -1332,7 +1361,7 @@ class FocusApp {
     }
 
     isPageActive() {
-        return document.visibilityState === "visible";
+        return document.visibilityState === "visible" && document.hasFocus();
     }
 
     async refreshFocusOnly() {
@@ -1345,6 +1374,7 @@ class FocusApp {
     }
 
     async refreshAll() {
+        if (!this.isPageActive()) return;
         if (this.currentView === "history") {
             const [tasks, current, categories, history, events] = await Promise.all([
                 this.loadTasks(),
@@ -1818,7 +1848,6 @@ class FocusApp {
 
     // ==================== EVENT HANDLERS ====================
     handleFocus() {
-        console.log("refreshAll");
         if (!this.wasFocused) {
             this.refreshAll();
         }

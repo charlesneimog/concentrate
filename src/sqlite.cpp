@@ -106,7 +106,9 @@ void SQLite::InsertFocusState(int state, double start, double end, double durati
     const char *sql = "INSERT INTO focus_states (state, start_time, end_time, duration) "
                       "VALUES (?, ?, ?, ?)";
 
-    if (sqlite3_prepare_v2(m_Db, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+    int rc = sqlite3_prepare_v2(m_Db, sql, -1, &stmt, nullptr);
+    if (rc != SQLITE_OK) {
+        spdlog::error("db prepare failed in InsertFocusState: {}", sqlite3_errmsg(m_Db));
         return;
     }
 
@@ -115,9 +117,14 @@ void SQLite::InsertFocusState(int state, double start, double end, double durati
     sqlite3_bind_double(stmt, 3, end);
     sqlite3_bind_double(stmt, 4, duration);
 
-    sqlite3_step(stmt);
+    rc = sqlite3_step(stmt);
+    if (rc != SQLITE_DONE) {
+        spdlog::error("db step failed in InsertFocusState: rc={}, err={}", rc, sqlite3_errmsg(m_Db));
+    } else {
+        spdlog::info("Inserted focus state: state={}, start={}, end={}, duration={}", state, start, end, duration);
+    }
+
     sqlite3_finalize(stmt);
-    spdlog::debug("Inserted focus state: state={}, duration={}", state, duration);
 }
 
 // ─────────────────────────────────────

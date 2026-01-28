@@ -17,6 +17,8 @@
 #include "common.hpp"
 
 #define ONFOCUSWARNINGAFTER 15 // seconds
+// Register current focus state periodically if it persists this long
+#define REGISTER_STATE_AFTER 30 // seconds
 
 class FocusService {
   public:
@@ -34,6 +36,11 @@ class FocusService {
     const unsigned m_Ping;
     std::filesystem::path m_Root;
     std::mutex m_GlobalMutex;
+    double m_StateStartTime;                     // When current focus state started
+    double m_LastStartTime;                      // When current window started
+    double m_UnfocusedStartTime;                 // When unfocused state started
+    double m_LastMonitoringDisabledNotification; // Last notification time
+    FocusState m_PrevState;                      // Previous focus state
 
     // Parts
     std::unique_ptr<Anytype> m_Anytype;
@@ -57,5 +64,4 @@ class FocusService {
 
     // Monitoring
     bool m_MonitoringEnabled = true;
-    double m_LastMonitoringDisabledNotification = 0;
 };
