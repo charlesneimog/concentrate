@@ -29,8 +29,10 @@ class FocusApp {
         this.refreshAll = this.refreshAll.bind(this);
         this.setView = this.setView.bind(this);
         this.handleKeyDown = this.handleKeyDown.bind(this);
-        this.handlePageVisibility = this.handlePageVisibility.bind(this);
-        this.handlePageFocus = this.handlePageFocus.bind(this);
+        // this.handlePageVisibility = this.handlePageVisibility.bind(this);
+        // this.handlePageFocus = this.handlePageFocus.bind(this);
+        this.handleFocus = this.handleFocus.bind(this);
+        this.handleBlur = this.handleBlur.bind(this);
 
         // Bind methods used as event handlers
         this.submitTask = this.submitTask.bind(this);
@@ -52,7 +54,6 @@ class FocusApp {
     }
 
     // ==================== UTILITY METHODS ====================
-
     escapeHtml(str) {
         return String(str || "").replace(
             /[&<>'"]/g,
@@ -473,7 +474,8 @@ class FocusApp {
             this.allowedApps.forEach((app, idx) => {
                 const chip = document.createElement("button");
                 chip.type = "button";
-                chip.className = "px-2 py-1 rounded-full text-xs bg-gray-100 dark:bg-gray-700 shadow-sm text-gray-700 dark:text-gray-200";
+                chip.className =
+                    "px-2 py-1 rounded-full text-xs bg-gray-100 dark:bg-gray-700 shadow-sm text-gray-700 dark:text-gray-200";
                 chip.innerHTML = `${this.escapeHtml(app)} <span class="ml-1">×</span>`;
                 chip.addEventListener("click", () => {
                     this.allowedApps = this.allowedApps.filter((_, i) => i !== idx);
@@ -487,7 +489,8 @@ class FocusApp {
             this.allowedTitles.forEach((title, idx) => {
                 const chip = document.createElement("button");
                 chip.type = "button";
-                chip.className = "px-2 py-1 rounded-full text-xs bg-gray-100 dark:bg-gray-700 shadow-sm text-gray-700 dark:text-gray-200";
+                chip.className =
+                    "px-2 py-1 rounded-full text-xs bg-gray-100 dark:bg-gray-700 shadow-sm text-gray-700 dark:text-gray-200";
                 chip.innerHTML = `${this.escapeHtml(title)} <span class="ml-1">×</span>`;
                 chip.addEventListener("click", () => {
                     this.allowedTitles = this.allowedTitles.filter((_, i) => i !== idx);
@@ -605,11 +608,13 @@ class FocusApp {
                 const titleLabel = allowedTitles.length ? allowedTitles.join(", ") : "Any";
 
                 const allowedChip = document.createElement("span");
-                allowedChip.className = "px-2 py-0.5 rounded bg-gray-50 dark:bg-gray-700 border border-gray-100 dark:border-gray-600";
+                allowedChip.className =
+                    "px-2 py-0.5 rounded bg-gray-50 dark:bg-gray-700 border border-gray-100 dark:border-gray-600";
                 allowedChip.textContent = `Allowed apps: ${appLabel}`;
 
                 const titleChip = document.createElement("span");
-                titleChip.className = "px-2 py-0.5 rounded bg-gray-50 dark:bg-gray-700 border border-gray-100 dark:border-gray-600";
+                titleChip.className =
+                    "px-2 py-0.5 rounded bg-gray-50 dark:bg-gray-700 border border-gray-100 dark:border-gray-600";
                 titleChip.textContent = `Allowed titles: ${titleLabel}`;
 
                 const focusChip = document.createElement("span");
@@ -830,7 +835,9 @@ class FocusApp {
                             .replace(/\\\*/g, "*")
                             .replace(/\\`/g, "`");
                         const escapedText = this.escapeHtml(unescapedText);
-                        processedLines.push(`<p class="text-sm text-gray-700 dark:text-gray-300 my-2">${escapedText}</p>`);
+                        processedLines.push(
+                            `<p class="text-sm text-gray-700 dark:text-gray-300 my-2">${escapedText}</p>`,
+                        );
                     } else {
                         processedLines.push(paragraphText);
                     }
@@ -848,7 +855,9 @@ class FocusApp {
                             .replace(/\\\*/g, "*")
                             .replace(/\\`/g, "`");
                         const escapedText = this.escapeHtml(unescapedText);
-                        processedLines.push(`<p class="text-sm text-gray-700 dark:text-gray-300 my-2">${escapedText}</p>`);
+                        processedLines.push(
+                            `<p class="text-sm text-gray-700 dark:text-gray-300 my-2">${escapedText}</p>`,
+                        );
                     } else {
                         processedLines.push(paragraphText);
                     }
@@ -1001,7 +1010,7 @@ class FocusApp {
         const totalEl = document.getElementById("stats-total");
         // const sessionsEl = document.getElementById("stats-sessions");
         //const streakEl = document.getElementById("stats-streak");
-        if (!pie || !legend || !totalEl ) return;
+        if (!pie || !legend || !totalEl) return;
 
         const totals = new Map();
         const todayKey = this.toLocalDateKey(new Date());
@@ -1027,10 +1036,8 @@ class FocusApp {
         }, 0);
 
         totalEl.textContent = this.fmtDuration(todayTotal);
-        const completed = Array.isArray(tasks) ? tasks.filter((t) => t.done).length : 0;
-        //sessionsEl.textContent = String(completed);
-
-        
+        // const completed = Array.isArray(tasks) ? tasks.filter((t) => t.done).length : 0;
+        // sessionsEl.textContent = String(completed);
 
         legend.innerHTML = "";
         if (!rawEntries.length || total <= 0) {
@@ -1093,7 +1100,6 @@ class FocusApp {
 
         pie.style.background = `conic-gradient(${slices.join(", ")})`;
     }
-
 
     renderHistory(history, events, tasks) {
         const list = document.getElementById("history-list");
@@ -1167,7 +1173,8 @@ class FocusApp {
                 const displayLabel = this.truncateText(label, 32);
                 const badgeLabel = item.app_id || "Unknown app";
                 const badgeStyle = this.appIdBadgeStyle(badgeLabel);
-                row.className = "flex items-center justify-between gap-3 p-3 rounded-lg shadow-sm bg-white dark:bg-gray-700";
+                row.className =
+                    "flex items-center justify-between gap-3 p-3 rounded-lg shadow-sm bg-white dark:bg-gray-700";
                 row.innerHTML = `
                     <div class="flex items-center gap-3 min-w-0 flex-1">
                         <span class="material-symbols-outlined text-emerald-500 text-sm">check_circle</span>
@@ -1330,46 +1337,23 @@ class FocusApp {
 
     async refreshFocusOnly() {
         if (!this.isPageActive()) return;
-        try {
-            const current = await this.loadCurrent();
-            this.lastCurrentFocus = current;
-            this.renderCurrentStatus(current);
-            this.updateFocusWarning(current, this.lastTasks);
-            this.updateDailyFocus();
-        } catch (err) {
-            console.error("Failed to load current focus", err);
-        }
+        const current = await this.loadCurrent();
+        this.lastCurrentFocus = current;
+        this.renderCurrentStatus(current);
+        this.updateFocusWarning(current, this.lastTasks);
+        this.updateDailyFocus();
     }
 
     async refreshAll() {
-        try {
-            if (this.currentView === "history") {
-                const [tasks, current, categories, history, events] = await Promise.all([
-                    this.loadTasks(),
-                    this.loadCurrent(),
-                    this.loadCategories(),
-                    this.loadHistory(),
-                    this.loadEvents(),
-                ]);
-
-                this.lastTasks = Array.isArray(tasks) ? tasks : [];
-                this.lastCurrentFocus = current;
-                this.renderTasks(tasks);
-                this.updateAnytypeWarning();
-                this.renderCurrentStatus(current);
-                this.renderCurrentTask(tasks);
-                this.updateFocusWarning(current, tasks);
-                this.updateCategorySuggestions(categories);
-                this.renderStats(history, events, tasks);
-                this.renderHistory(history, events, tasks);
-                return;
-            }
-
-            const [tasks, current, categories] = await Promise.all([
+        if (this.currentView === "history") {
+            const [tasks, current, categories, history, events] = await Promise.all([
                 this.loadTasks(),
                 this.loadCurrent(),
                 this.loadCategories(),
+                this.loadHistory(),
+                this.loadEvents(),
             ]);
+
             this.lastTasks = Array.isArray(tasks) ? tasks : [];
             this.lastCurrentFocus = current;
             this.renderTasks(tasks);
@@ -1378,9 +1362,27 @@ class FocusApp {
             this.renderCurrentTask(tasks);
             this.updateFocusWarning(current, tasks);
             this.updateCategorySuggestions(categories);
-        } catch (err) {
-            console.error("Failed to load data", err);
+            this.renderStats(history, events, tasks);
+            this.renderHistory(history, events, tasks);
+            return;
         }
+
+        const [tasks, current, categories] = await Promise.all([
+            this.loadTasks(),
+            this.loadCurrent(),
+            this.loadCategories(),
+        ]);
+        this.lastTasks = Array.isArray(tasks) ? tasks : [];
+        this.lastCurrentFocus = current;
+        this.renderTasks(tasks);
+        this.updateAnytypeWarning();
+        this.renderCurrentStatus(current);
+        this.renderCurrentTask(tasks);
+        this.updateFocusWarning(current, tasks);
+        this.updateCategorySuggestions(categories);
+        // } catch (err) {
+        //     console.error("Failed to load data", err);
+        // }
     }
 
     async refreshEverything() {
@@ -1815,6 +1817,17 @@ class FocusApp {
     }
 
     // ==================== EVENT HANDLERS ====================
+    handleFocus() {
+        console.log("refreshAll");
+        if (!this.wasFocused) {
+            this.refreshAll();
+        }
+        this.wasFocused = true;
+    }
+
+    handleBlur() {
+        this.wasFocused = false;
+    }
 
     handleKeyDown(event) {
         if (event.key === "Enter") {
@@ -1823,29 +1836,7 @@ class FocusApp {
         }
     }
 
-    handlePageVisibility() {
-        const active = this.isPageActive();
-        if (active && !this.lastPageActive) {
-            this.lastPageActive = true;
-            if (this.currentView === "tasks") {
-                this.refreshAll();
-            }
-        } else if (!active) {
-            this.lastPageActive = false;
-        }
-    }
-
-    handlePageFocus() {
-        if (!this.lastPageActive && this.isPageActive()) {
-            this.lastPageActive = true;
-            if (this.currentView === "tasks") {
-                this.refreshAll();
-            }
-        }
-    }
-
     // ==================== INITIALIZATION ====================
-
     setupEventListeners() {
         // Task submission
         document.getElementById("task-submit")?.addEventListener("click", this.submitTask);
@@ -1872,10 +1863,6 @@ class FocusApp {
                 await this.refreshAll();
                 return;
             }
-        });
-
-        window.addEventListener("focus", () => {
-            this.handlePageFocus();
         });
 
         // Task double-click
@@ -2135,7 +2122,7 @@ class FocusApp {
                 const res = await fetch("/monitoring", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ enabled })
+                    body: JSON.stringify({ enabled }),
                 });
                 if (res.ok) {
                     this.monitoringEnabled = enabled;
@@ -2148,9 +2135,9 @@ class FocusApp {
             }
         });
 
-        // Page visibility and focus
-        window.addEventListener("focus", this.handlePageFocus);
-        document.addEventListener("visibilitychange", this.handlePageVisibility);
+        // blur
+        window.addEventListener("focus", this.handleFocus);
+        window.addEventListener("blur", this.handleBlur);
     }
 
     startPolling() {
