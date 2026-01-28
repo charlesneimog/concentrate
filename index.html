@@ -187,106 +187,81 @@
                 </section>
             </div>
         </main>
+        
+        
         <aside
-            id="tasks-aside"
-            class="w-80 bg-white dark:bg-gray-800 shadow-sm dark:shadow-md border-gray-200 dark:border-gray-700 hidden lg:flex flex-col overflow-y-auto"
+    id="tasks-aside"
+    class="w-80 hidden lg:flex flex-col overflow-y-auto bg-white dark:bg-gray-800 border-l border-gray-200 dark:border-gray-700"
+>
+    <div class="p-6 space-y-8 bg-white dark:bg-gray-800">
+        <!-- Header -->
+        <h3 class="text-base font-semibold text-gray-900 dark:text-white tracking-tight">Session Stats</h3>
+
+        <!-- Stats Pie -->
+        <div class="relative flex items-center justify-center">
+            <!-- Glow -->
+            <div
+                class="absolute w-56 h-56 rounded-full blur-xl opacity-30"
+                style="
+                    background: conic-gradient(
+                        #2563eb 0% 55%,
+                        #a855f7 55% 80%,
+                        #f97316 80% 95%,
+                        #94a3b8 95% 100%
+                    );
+                "
+            ></div>
+
+            <!-- Pie -->
+            <div
+                id="stats-pie"
+                class="relative w-52 h-52 rounded-full shadow-xl dark:shadow-2xl ring-1 ring-black/5 dark:ring-white/10"
+            ></div>
+
+            <!-- Center label -->
+            <div
+                class="absolute w-32 h-32 rounded-full flex flex-col items-center justify-center bg-white/95 dark:bg-gray-900/95 backdrop-blur shadow-lg ring-1 ring-black/5 dark:ring-white/10"
+            >
+                <span id="stats-total" class="text-lg font-semibold tracking-tight text-black dark:text-white"></span>
+                <span class="text-[11px] uppercase tracking-wide text-gray-500 dark:text-gray-300 mt-1"> Total Time </span>
+
+            </div>
+        </div>
+
+        <!-- Legend -->
+        <div
+            id="stats-legend"
+            class="space-y-3 bg-white dark:bg-gray-800 p-4 rounded-xl shadow-sm dark:shadow-md border-gray-200 dark:border-gray-700 shadow-subtle"
         >
-                <div class="p-6 bg-white dark:bg-gray-800">
-                <h3 class="text-base font-semibold text-gray-900 dark:text-white mb-6">Session Stats</h3>
-                <div class="relative flex items-center justify-center mb-10">
+            
+        </div>
+
+        <!-- Daily Focus -->
+        <div
+            id="i-was-focused"
+            class="relative overflow-hidden rounded-xl bg-gradient-to-br from-primary to-blue-600 text-white shadow-lg shadow-blue-200/40 dark:shadow-blue-900/40"
+        >
+            <div class="relative z-10 p-5">
+                <h4 class="text-sm font-semibold mb-1">Daily Focus</h4>
+                <p class="text-xs text-blue-100 dark:text-blue-200 mb-4 font-medium">Loading focus data…</p>
+                <div class="w-full h-2 rounded-full bg-black/20 dark:bg-white/20">
                     <div
-                        class="absolute w-56 h-56 rounded-full blur-xl opacity-30"
-                        style="
-                            background: conic-gradient(
-                                #2563eb 0% 55%,
-                                #a855f7 55% 80%,
-                                #f97316 80% 95%,
-                                #94a3b8 95% 100%
-                            );
-                        "
+                        id="focus-progress-bar"
+                        class="h-2 rounded-full bg-white dark:bg-primary-dark shadow-sm transition-all duration-500"
+                        style="width: 0%"
                     ></div>
-                    <div
-                        id="stats-pie"
-                        class="relative w-52 h-52 rounded-full shadow-xl dark:shadow-2xl ring-1 ring-black/5 dark:ring-white/10"
-                        style="
-                            background: conic-gradient(
-                                #2563eb 0% 55%,
-                                #a855f7 55% 80%,
-                                #f97316 80% 95%,
-                                #94a3b8 95% 100%
-                            );
-                        "
-                    >20h20min</div>
-                    <div
-                        class="absolute w-32 h-32 rounded-full flex flex-col items-center justify-center bg-white/90 dark:bg-gray-900/90 backdrop-blur shadow-lg ring-1 ring-black/5 dark:ring-white/10"
-                    >
-                        <span id="stats-total" class="text-3xl font-semibold tracking-tight text-gray-900 dark:text-white"></span>
-                        <span class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-300 mt-1">
-                            Total Sessions
-                        </span>
-                    </div>
-                </div>
-
-                <div
-                    id="stats-legend"
-                    class="space-y-3 mb-8 bg-white dark:bg-gray-800 p-4 rounded-xl shadow-sm dark:shadow-md border-gray-200 dark:border-gray-700 shadow-subtle"
-                >
-                    <div class="flex items-center justify-between text-sm">
-                        <div class="flex items-center gap-2">
-                            <span class="w-3 h-3 rounded-full bg-primary dark:bg-primary-dark shadow-sm"></span>
-                            <span class="text-gray-600 dark:text-gray-300">Deep Work</span>
-                        </div>
-                        <span class="font-medium text-gray-900 dark:text-white">55%</span>
-                    </div>
-                    <div class="flex items-center justify-between text-sm">
-                        <div class="flex items-center gap-2">
-                            <span class="w-3 h-3 rounded-full bg-purple-500 dark:bg-purple-400 shadow-sm"></span>
-                            <span class="text-gray-600 dark:text-gray-300">Meetings</span>
-                        </div>
-                        <span class="font-medium text-gray-900 dark:text-white">25%</span>
-                    </div>
-                    <div class="flex items-center justify-between text-sm">
-                        <div class="flex items-center gap-2">
-                            <span class="w-3 h-3 rounded-full bg-orange-500 dark:bg-orange-400 shadow-sm"></span>
-                            <span class="text-gray-600 dark:text-gray-300">Marketing</span>
-                        </div>
-                        <span class="font-medium text-gray-900 dark:text-white">15%</span>
-                    </div>
-                    <div class="flex items-center justify-between text-sm">
-                        <div class="flex items-center gap-2">
-                            <span class="w-3 h-3 rounded-full bg-slate-400 dark:bg-slate-500 shadow-sm"></span>
-                            <span class="text-gray-600 dark:text-gray-300">Others</span>
-                        </div>
-                        <span class="font-medium text-gray-900 dark:text-white">&lt; 5%</span>
-                    </div>
-                </div>
-                    
-                <div
-                    id="i-was-focused"
-                    class="mt-6 p-5 rounded-xl bg-gradient-to-br from-primary to-blue-600 text-white relative overflow-hidden shadow-xl shadow-black/20 dark:shadow-white/10"
-                >
-                    <div class="relative z-10">
-                        <h4 class="font-bold text-sm mb-1">Daily Focus</h4>
-
-                        <p class="text-xs text-blue-100 dark:text-blue-200 mb-4 font-medium">Loading focus data…</p>
-
-                            <div class="w-full bg-black/20 dark:bg-white/20 rounded-full h-2">
-                            <div
-                                id="focus-progress-bar"
-                                class="h-2 rounded-full shadow-sm bg-white dark:bg-primary-dark transition-all duration-500"
-                                style="width: 0%"
-                            ></div>
-                        </div>
-                    </div>
-
-                    <span
-                        class="material-symbols-outlined absolute -right-3 -bottom-5 text-9xl text-white dark:text-white/20 opacity-10 pointer-events-none transform rotate-12"
-                    >
-                        emoji_events
-                    </span>
                 </div>
             </div>
-        </aside>
+
+            <!-- Decorative icon -->
+            <span
+                class="material-symbols-outlined absolute -right-4 -bottom-6 text-[10rem] text-white/10 rotate-12 pointer-events-none"
+            >
+                emoji_events
+            </span>
+        </div>
+    </div>
+</aside>
 
         <aside
             id="history-aside"
@@ -300,15 +275,21 @@
                 <div class="relative flex items-center justify-center">
                     <!-- Glow -->
                     <div
-                        class="absolute w-56 h-56 rounded-full blur-xl opacity-20"
-                        style="background: conic-gradient(#94a3b8 0% 100%)"
+                        class="absolute w-56 h-56 rounded-full blur-xl opacity-30"
+                        style="
+                            background: conic-gradient(
+                                #2563eb 0% 55%,
+                                #a855f7 55% 80%,
+                                #f97316 80% 95%,
+                                #94a3b8 95% 100%
+                            );
+                        "
                     ></div>
 
                     <!-- Pie -->
                     <div
                         id="history-pie"
-                        class="relative w-52 h-52 rounded-full shadow-xl ring-1 ring-black/5"
-                        style="background: conic-gradient(#94a3b8 0% 100%)"
+                        class="relative w-52 h-52 rounded-full shadow-xl dark:shadow-2xl ring-1 ring-black/5 dark:ring-white/10"
                     ></div>
 
                     <!-- Center label -->

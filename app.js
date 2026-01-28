@@ -999,50 +999,38 @@ class FocusApp {
         const pie = document.getElementById("stats-pie");
         const legend = document.getElementById("stats-legend");
         const totalEl = document.getElementById("stats-total");
-        const sessionsEl = document.getElementById("stats-sessions");
-        const streakEl = document.getElementById("stats-streak");
-        if (!pie || !legend || !totalEl || !sessionsEl) return;
+        // const sessionsEl = document.getElementById("stats-sessions");
+        //const streakEl = document.getElementById("stats-streak");
+        if (!pie || !legend || !totalEl ) return;
 
         const totals = new Map();
+        const todayKey = this.toLocalDateKey(new Date());
         (Array.isArray(events) ? events : []).forEach((item) => {
+            const ts = this.normalizeTimestamp(item?.end_time || item?.start_time || 0);
+            if (!ts) return;
+            const keyDate = this.toLocalDateKey(new Date(ts * 1000));
+            if (keyDate !== todayKey) return;
             const key = item.category || item.app_id || "Others";
             const prev = totals.get(key) || 0;
-            totals.set(key, prev + 1);  // Count sessions instead of duration
+            totals.set(key, prev + (Number(item.duration) || 0));
         });
 
         const rawEntries = Array.from(totals.entries()).filter(([, v]) => v > 0);
-        const total = rawEntries.reduce((sum, [, v]) => sum + v, 0);  // Total sessions
+        const total = rawEntries.reduce((sum, [, v]) => sum + v, 0);
 
-        const todayTotal = (Array.isArray(events) ? events : []).length;  // Total sessions
+        const todayTotal = (Array.isArray(events) ? events : []).reduce((sum, event) => {
+            const ts = this.normalizeTimestamp(event?.end_time || event?.start_time || 0);
+            if (!ts) return sum;
+            const keyDate = this.toLocalDateKey(new Date(ts * 1000));
+            if (keyDate !== todayKey) return sum;
+            return sum + (Number(event?.duration) || 0);
+        }, 0);
 
-        totalEl.textContent = String(todayTotal);
-        console.log("Today's total duration (seconds):", todayTotal);
+        totalEl.textContent = this.fmtDuration(todayTotal);
         const completed = Array.isArray(tasks) ? tasks.filter((t) => t.done).length : 0;
-        sessionsEl.textContent = String(completed);
+        //sessionsEl.textContent = String(completed);
 
-        if (streakEl) {
-            const goalSeconds = Math.round(4.5 * 3600);
-            const byDay = new Map();
-            events.forEach((e) => {
-                const ts = Number(e.end_time || e.start_time || 0);
-                if (!ts) return;
-                const day = new Date(ts * 1000).toISOString().slice(0, 10);
-                const prev = byDay.get(day) || 0;
-                byDay.set(day, prev + (Number(e.duration) || 0));
-            });
-            const days = Array.from(byDay.keys()).sort();
-            let streak = 0;
-            for (let i = days.length - 1; i >= 0; i -= 1) {
-                const day = days[i];
-                const totalDay = byDay.get(day) || 0;
-                if (totalDay >= goalSeconds) {
-                    streak += 1;
-                } else {
-                    break;
-                }
-            }
-            streakEl.innerHTML = `${streak} <span class="text-xs font-normal text-gray-400 dark:text-gray-300">days</span>`;
-        }
+        
 
         legend.innerHTML = "";
         if (!rawEntries.length || total <= 0) {
@@ -1104,8 +1092,8 @@ class FocusApp {
         });
 
         pie.style.background = `conic-gradient(${slices.join(", ")})`;
-        
     }
+
 
     renderHistory(history, events, tasks) {
         const list = document.getElementById("history-list");
