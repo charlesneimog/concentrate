@@ -49,8 +49,341 @@ class FocusApp {
         this.saveAnytypeSpace = this.saveAnytypeSpace.bind(this);
         this.saveAnytypeConfig = this.saveAnytypeConfig.bind(this);
         this.refreshAnytypeCache = this.refreshAnytypeCache.bind(this);
+        // this.openMeetingsEditor = this.openMeetingsEditor.bind(this);
 
-        console.log("FocusApp initialized");
+        // Meeting app token storage (persisted)
+        this.meetingAppIds = JSON.parse(localStorage.getItem("meetingAppIds") || "[]");
+        this.meetingAppTitles = JSON.parse(localStorage.getItem("meetingAppTitles") || "[]");
+        // Email app token storage (persisted)
+        this.emailAppIds = JSON.parse(localStorage.getItem("emailAppIds") || "[]");
+        this.emailAppTitles = JSON.parse(localStorage.getItem("emailAppTitles") || "[]");
+    }
+
+    openMeetingsEditor(event) {
+        event.stopPropagation();
+        document.getElementById("category-editor").classList.remove("hidden");
+    }
+
+    // ==================== MEETING APP TOKEN INPUTS & MODAL ====================
+    openAddMeetingAppModal() {
+        console.log("openAddMeetingAppModal()");
+        const modal = document.getElementById("addMeetingAppModal");
+        if (modal) modal.classList.remove("hidden");
+        // populate token fields from stored arrays
+        const idsEl = document.getElementById("meetingAppIds");
+        const titlesEl = document.getElementById("meetingAppTitles");
+        if (idsEl) this._renderTokenField(idsEl, this.meetingAppIds);
+        if (titlesEl) this._renderTokenField(titlesEl, this.meetingAppTitles);
+
+        const el = document.getElementById("meetingAppIds");
+        if (el) {
+            this.ensureCursor(el);
+            el.focus();
+            setTimeout(() => {
+                const cursor = el.querySelector("[data-cursor]");
+                if (cursor) this.placeCaretAtCursor(cursor);
+            }, 0);
+        }
+    }
+
+    // ==================== EMAIL APP TOKEN INPUTS & MODAL ====================
+    openAddEmailAppModal() {
+        console.log("openAddEmailAppModal()");
+        const modal = document.getElementById("addEmailAppModal");
+        if (modal) modal.classList.remove("hidden");
+        const idsEl = document.getElementById("emailAppIds");
+        const titlesEl = document.getElementById("emailAppTitles");
+        if (idsEl) this._renderTokenField(idsEl, this.emailAppIds);
+        if (titlesEl) this._renderTokenField(titlesEl, this.emailAppTitles);
+
+        const el = document.getElementById("emailAppIds");
+        if (el) {
+            this.ensureCursor(el);
+            el.focus();
+            setTimeout(() => {
+                const cursor = el.querySelector("[data-cursor]");
+                if (cursor) this.placeCaretAtCursor(cursor);
+            }, 0);
+        }
+    }
+
+    closeAddEmailAppModal() {
+        const modal = document.getElementById("addEmailAppModal");
+        if (modal) modal.classList.add("hidden");
+    }
+
+    saveEmailApp() {
+        const idsEl = document.getElementById("emailAppIds");
+        const titlesEl = document.getElementById("emailAppTitles");
+        const ids = this.readTokens(idsEl)
+            .map((s) => String(s || "").trim())
+            .filter(Boolean);
+        const titles = this.readTokens(titlesEl)
+            .map((s) => String(s || "").trim())
+            .filter(Boolean);
+
+        if (!ids.length && idsEl && idsEl.innerText) {
+            ids.push(
+                ...idsEl.innerText
+                    .split(/[\n,;]+/)
+                    .map((s) => s.trim())
+                    .filter(Boolean),
+            );
+        }
+        if (!titles.length && titlesEl && titlesEl.innerText) {
+            titles.push(
+                ...titlesEl.innerText
+                    .split(/[\n,;]+/)
+                    .map((s) => s.trim())
+                    .filter(Boolean),
+            );
+        }
+
+        if (!ids.length && !titles.length) return;
+
+        ids.forEach((id) => {
+            if (!this.emailAppIds.includes(id)) this.emailAppIds.push(id);
+        });
+        titles.forEach((t) => {
+            if (!this.emailAppTitles.includes(t)) this.emailAppTitles.push(t);
+        });
+
+        try {
+            localStorage.setItem("emailAppIds", JSON.stringify(this.emailAppIds));
+            localStorage.setItem("emailAppTitles", JSON.stringify(this.emailAppTitles));
+        } catch (e) {
+            console.warn("Failed to persist email apps to localStorage", e);
+        }
+
+        console.log("Saved email apps:", { ids: this.emailAppIds, titles: this.emailAppTitles });
+
+        if (idsEl) this._renderTokenField(idsEl, this.emailAppIds);
+        if (titlesEl) this._renderTokenField(titlesEl, this.emailAppTitles);
+
+        this.closeAddEmailAppModal();
+    }
+
+    closeAddMeetingAppModal() {
+        const modal = document.getElementById("addMeetingAppModal");
+        if (modal) modal.classList.add("hidden");
+    }
+
+    saveMeetingApp() {
+        const idsEl = document.getElementById("meetingAppIds");
+        const titlesEl = document.getElementById("meetingAppTitles");
+        const ids = this.readTokens(idsEl)
+            .map((s) => String(s || "").trim())
+            .filter(Boolean);
+        const titles = this.readTokens(titlesEl)
+            .map((s) => String(s || "").trim())
+            .filter(Boolean);
+
+        // fallback: split innerText if user pasted plain text
+        if (!ids.length && idsEl && idsEl.innerText) {
+            ids.push(
+                ...idsEl.innerText
+                    .split(/[\n,;]+/)
+                    .map((s) => s.trim())
+                    .filter(Boolean),
+            );
+        }
+        if (!titles.length && titlesEl && titlesEl.innerText) {
+            titles.push(
+                ...titlesEl.innerText
+                    .split(/[\n,;]+/)
+                    .map((s) => s.trim())
+                    .filter(Boolean),
+            );
+        }
+
+        if (!ids.length && !titles.length) return;
+
+        // Merge into stored arrays (avoid duplicates)
+        ids.forEach((id) => {
+            if (!this.meetingAppIds.includes(id)) this.meetingAppIds.push(id);
+        });
+        titles.forEach((t) => {
+            if (!this.meetingAppTitles.includes(t)) this.meetingAppTitles.push(t);
+        });
+
+        // persist
+        try {
+            localStorage.setItem("meetingAppIds", JSON.stringify(this.meetingAppIds));
+            localStorage.setItem("meetingAppTitles", JSON.stringify(this.meetingAppTitles));
+        } catch (e) {
+            console.warn("Failed to persist meeting apps to localStorage", e);
+        }
+
+        // Debug
+        console.log("Saved meeting apps:", { ids: this.meetingAppIds, titles: this.meetingAppTitles });
+
+        // Re-render fields so tokens are visible and cursor is present
+        if (idsEl) this._renderTokenField(idsEl, this.meetingAppIds);
+        if (titlesEl) this._renderTokenField(titlesEl, this.meetingAppTitles);
+
+        this.closeAddMeetingAppModal();
+    }
+
+    setupTokenInput(el) {
+        if (!el) return;
+        this.ensureCursor(el);
+
+        // Place caret at cursor when focusing
+        el.addEventListener("focus", () => {
+            this.ensureCursor(el);
+            const cursor = el.querySelector("[data-cursor]");
+            if (cursor) setTimeout(() => this.placeCaretAtCursor(cursor), 0);
+        });
+
+        // Redirect clicks inside tokens to the cursor position
+        el.addEventListener("click", (ev) => {
+            const target = ev.target;
+            // if clicked inside a token (span without data-cursor), move caret to cursor
+            if (
+                target &&
+                target.nodeType === 1 &&
+                !target.hasAttribute("data-cursor") &&
+                target.tagName.toLowerCase() === "span"
+            ) {
+                const cursor = el.querySelector("[data-cursor]");
+                if (cursor) {
+                    ev.preventDefault();
+                    this.placeCaretAtCursor(cursor);
+                }
+            }
+        });
+
+        el.addEventListener("keydown", (e) => {
+            if (e.key === ";") {
+                e.preventDefault();
+
+                const cursor = el.querySelector("[data-cursor]");
+                const value = cursor ? cursor.innerText.trim() : "";
+                if (!value) return;
+
+                const tag = document.createElement("span");
+                tag.textContent = value;
+                tag.contentEditable = "false";
+                tag.className =
+                    "mr-1 p-2 mb-1 px-2 py-0.5 rounded bg-primary/10 text-primary text-xs font-mono inline-block";
+
+                el.insertBefore(tag, cursor);
+                if (cursor) cursor.innerText = "\u00A0";
+
+                if (cursor) this.placeCaretAtCursor(cursor);
+            }
+        });
+    }
+
+    ensureCursor(el) {
+        if (!el) return;
+        let cursor = el.querySelector("[data-cursor]");
+        if (!cursor) {
+            cursor = document.createElement("span");
+            cursor.dataset.cursor = "true";
+            cursor.className = "outline-none min-w-[2px] inline-block";
+            cursor.contentEditable = "true";
+            cursor.innerHTML = "\u00A0";
+            el.appendChild(cursor);
+        } else {
+            if (!cursor.innerHTML || cursor.innerHTML.trim() === "") cursor.innerHTML = "\u00A0";
+            cursor.contentEditable = "true";
+        }
+        // ensure cursor is last child so typing appends after tokens
+        if (el.lastChild !== cursor) el.appendChild(cursor);
+        return cursor;
+    }
+
+    placeCaretAtCursor(cursor) {
+        const range = document.createRange();
+        range.selectNodeContents(cursor);
+        range.collapse(false);
+
+        const sel = window.getSelection();
+        sel.removeAllRanges();
+        sel.addRange(range);
+    }
+
+    readTokens(el) {
+        if (!el) return [];
+        return [...el.querySelectorAll("span:not([data-cursor])")].map((s) => s.textContent);
+    }
+
+    _createTokenSpan(value) {
+        const tag = document.createElement("span");
+        tag.textContent = value;
+        tag.contentEditable = "false";
+        tag.className = "mr-1 mb-1 px-2 py-0.5 rounded bg-primary/10 text-primary text-xs font-mono inline-block";
+        return tag;
+    }
+
+    _renderTokenField(el, tokens) {
+        if (!el) return;
+        el.innerHTML = "";
+        (Array.isArray(tokens) ? tokens : []).forEach((t) => {
+            const span = this._createTokenSpan(t);
+            el.appendChild(span);
+        });
+        // ensure cursor at end
+        this.ensureCursor(el);
+    }
+
+    attachCategoryEditors() {
+        const rules = {
+            meetings: [],
+            email: [],
+        };
+
+        let activeCategory = null;
+        const editor = document.getElementById("category-editor");
+        const titleEl = document.getElementById("editor-title");
+        const appIdInput = document.getElementById("editor-appid");
+        const titleInput = document.getElementById("editor-title-input");
+        const rulesList = document.getElementById("editor-rules");
+
+        function open(category) {
+            activeCategory = category;
+            titleEl.textContent = `Rules for ${category}`;
+            editor.classList.remove("hidden");
+            render();
+        }
+
+        function close() {
+            editor.classList.add("hidden");
+            activeCategory = null;
+        }
+
+        function render() {
+            rulesList.innerHTML = "";
+            rules[activeCategory].forEach((r) => {
+                const li = document.createElement("li");
+                li.textContent =
+                    `${r.app_id ? `app_id: ${r.app_id}` : ""}` +
+                    `${r.app_id && r.title ? " | " : ""}` +
+                    `${r.title ? `title: ${r.title}` : ""}`;
+                rulesList.appendChild(li);
+            });
+        }
+
+        document.querySelector('[data-action="edit-meet-apps"]')?.addEventListener("click", () => open("meetings"));
+        document.querySelector('[data-action="edit-email-apps"]')?.addEventListener("click", () => open("email"));
+        document.getElementById("editor-close").onclick = close;
+        document.getElementById("editor-add").onclick = () => {
+            if (!activeCategory) return;
+
+            const app_id = appIdInput.value.trim();
+            const title = titleInput.value.trim();
+            if (!app_id && !title) return;
+
+            rules[activeCategory].push({
+                app_id: app_id || null,
+                title: title || null,
+            });
+
+            appIdInput.value = "";
+            titleInput.value = "";
+            render();
+        };
     }
 
     // ==================== UTILITY METHODS ====================
@@ -189,11 +522,6 @@ class FocusApp {
     }
 
     async loadCurrent() {
-        if (!this.isPageActive) {
-            console.warn("Page is not active");
-            return;
-        }
-
         const res = await fetch("/current", { cache: "no-store" });
         if (!res.ok) return null;
         const cur = await res.json();
@@ -279,71 +607,153 @@ class FocusApp {
     }
 
     async updateDailyFocus() {
-        try {
-            const res = await fetch("/focus/today");
-            if (!res.ok) return;
-
-            const data = await res.json();
-
-            const focusedSeconds = data.focused_seconds || 0;
-            const unfocusedSeconds = data.unfocused_seconds || 0;
-            const idleSeconds = data.idle_seconds || 0;
-            const totalSeconds = focusedSeconds + unfocusedSeconds;
-
-            if (totalSeconds === 0) return;
-
-            const focusPercent = Math.min(100, (focusedSeconds / totalSeconds) * 100);
-
-            // Elements (stable selectors)
-            const container = document.getElementById("i-was-focused");
-            const bar = document.getElementById("focus-progress-bar");
-            if (!container || !bar) return;
-
-            const text = container.querySelector("p");
-            if (!text) return;
-
-            // ─────────────────────────────────────
-            // Focus levels
-            let gradient = "";
-            let barColor = "";
-            let message = "";
-
-            if (focusPercent < 20) {
-                gradient = "from-red-600 to-red-800";
-                barColor = "bg-red-300";
-                message = "You were not focused today";
-            } else if (focusPercent < 40) {
-                gradient = "from-orange-500 to-orange-700";
-                barColor = "bg-orange-200";
-                message = "You were less focused today";
-            } else if (focusPercent < 60) {
-                gradient = "from-yellow-400 to-yellow-600";
-                barColor = "bg-yellow-100";
-                message = "Your focus was inconsistent today";
-            } else if (focusPercent < 80) {
-                gradient = "from-green-400 to-green-600";
-                barColor = "bg-green-100";
-                message = "You were mostly focused today";
-            } else {
-                gradient = "from-emerald-500 to-emerald-700";
-                barColor = "bg-emerald-100";
-                message = "You were very focused today";
-            }
-
-            // ─────────────────────────────────────
-            // Apply gradient to container
-            container.className =
-                container.className.replace(/from-\S+ to-\S+/, "").trim() + ` bg-gradient-to-br ${gradient}`;
-
-            // Apply bar color + width
-            bar.className = bar.className.replace(/bg-\S+/, "").trim() + ` ${barColor}`;
-            bar.style.width = `${focusPercent.toFixed(1)}%`;
-
-            // Update message, print focused and not focused percentages
-            text.textContent = `${message} (${focusPercent.toFixed(0)}% focused, ${((unfocusedSeconds / totalSeconds) * 100).toFixed(0)}% not focused)`;
-        } catch (err) {
-            console.error("Failed to update daily focus", err);
+        const res = await fetch("/focus/today");
+        if (!res.ok) {
+            console.error("API '/focus/today' not returned ok");
+            return;
         }
+
+        const data = await res.json();
+
+        const focusedSeconds = data.focused_seconds ?? 0;
+        const unfocusedSeconds = data.unfocused_seconds ?? 0;
+        const totalSeconds = focusedSeconds + unfocusedSeconds;
+
+        // ─────────────────────────────────────
+        // Elements
+        const container = document.getElementById("i-was-focused");
+        const bar = document.getElementById("focus-progress-bar");
+        const text = container?.querySelector("p");
+        const pie = document.getElementById("stats-pie");
+        const legend = document.getElementById("stats-legend");
+        const totalEl = document.getElementById("stats-total");
+        const totalText = document.getElementById("stats-text");
+        const loadingEl = document.getElementById("stats-pie-loading");
+
+        if (!container || !bar || !text || !pie || !legend || !totalEl || !totalText) return;
+
+        totalText.textContent = "Total Time";
+
+        if (loadingEl) loadingEl.style.display = "block";
+
+        // ─────────────────────────────────────
+        // ZERO DATA STATE
+        if (totalSeconds === 0) {
+            // Bar
+            bar.style.width = "0%";
+            bar.className = bar.className.replace(/bg-\S+/, "").trim() + " bg-gray-300";
+
+            // Container gradient (neutral)
+            container.className =
+                container.className.replace(/from-\S+ to-\S+/, "").trim() +
+                " bg-gradient-to-br from-gray-200 to-gray-300";
+
+            // Text
+            text.textContent = "No focus data for today";
+
+            // Pie (empty)
+            pie.style.background = "#e5e7eb"; // gray-200
+
+            // Total
+            totalEl.textContent = this.fmtDuration(0);
+
+            // Legend
+            legend.innerHTML = `
+            <div class="flex items-center justify-between text-sm">
+                <div class="flex items-center gap-2">
+                    <span class="w-3 h-3 rounded-full bg-gray-400"></span>
+                    <span class="text-gray-600 dark:text-gray-400">Focused</span>
+                </div>
+                <span class="font-medium text-gray-900 dark:text-white">0%</span>
+            </div>
+            <div class="flex items-center justify-between text-sm">
+                <div class="flex items-center gap-2">
+                    <span class="w-3 h-3 rounded-full bg-gray-400"></span>
+                    <span class="text-gray-600 dark:text-gray-400">Not Focused</span>
+                </div>
+                <span class="font-medium text-gray-900 dark:text-white">0%</span>
+            </div>
+        `;
+
+            if (loadingEl) loadingEl.style.display = "none";
+            return;
+        }
+
+        // ─────────────────────────────────────
+        // NORMAL STATE
+        const focusPercent = Math.min(100, (focusedSeconds / totalSeconds) * 100);
+
+        let gradient = "";
+        let barColor = "";
+        let message = "";
+
+        if (focusPercent < 20) {
+            gradient = "from-red-600 to-red-800";
+            barColor = "bg-red-300";
+            message = "You were not focused today";
+        } else if (focusPercent < 40) {
+            gradient = "from-orange-500 to-orange-700";
+            barColor = "bg-orange-200";
+            message = "You were less focused today";
+        } else if (focusPercent < 60) {
+            gradient = "from-yellow-400 to-yellow-600";
+            barColor = "bg-yellow-100";
+            message = "Your focus was inconsistent today";
+        } else if (focusPercent < 80) {
+            gradient = "from-green-400 to-green-600";
+            barColor = "bg-green-100";
+            message = "You were mostly focused today";
+        } else {
+            gradient = "from-emerald-500 to-emerald-700";
+            barColor = "bg-emerald-100";
+            message = "You were very focused today";
+        }
+
+        container.className =
+            container.className.replace(/from-\S+ to-\S+/, "").trim() + ` bg-gradient-to-br ${gradient}`;
+
+        bar.className = bar.className.replace(/bg-\S+/, "").trim() + ` ${barColor}`;
+        bar.style.width = `${focusPercent.toFixed(1)}%`;
+
+        text.textContent =
+            `${message} (${focusPercent.toFixed(0)}% focused, ` +
+            `${((unfocusedSeconds / totalSeconds) * 100).toFixed(0)}% not focused)`;
+
+        // ─────────────────────────────────────
+        // Pie + legend
+        const slicesData = [
+            { label: "Focused", value: focusedSeconds, color: "#10b981" },
+            { label: "Not Focused", value: unfocusedSeconds, color: "#ef4444" },
+        ];
+
+        totalEl.textContent = this.fmtDuration(totalSeconds);
+
+        legend.innerHTML = "";
+        slicesData.forEach(({ label, value, color }) => {
+            const percent = (value / totalSeconds) * 100;
+            const row = document.createElement("div");
+            row.className = "flex items-center justify-between text-sm";
+            row.innerHTML = `
+            <div class="flex items-center gap-2">
+                <span class="w-3 h-3 rounded-full" style="background:${color}"></span>
+                <span class="text-gray-600 dark:text-gray-400">${label}</span>
+            </div>
+            <span class="font-medium text-gray-900 dark:text-white">${Math.round(percent)}%</span>
+        `;
+            legend.appendChild(row);
+        });
+
+        let offset = 0;
+        pie.style.background = `conic-gradient(${slicesData
+            .map(({ value, color }) => {
+                const percent = (value / totalSeconds) * 100;
+                const start = offset;
+                offset += percent;
+                return `${color} ${start}% ${offset}%`;
+            })
+            .join(", ")})`;
+
+        if (loadingEl) loadingEl.style.display = "none";
     }
 
     // ==================== STATE MANAGEMENT ====================
@@ -533,14 +943,6 @@ class FocusApp {
         const container = document.getElementById("tasks-container");
         if (!container) return;
         container.innerHTML = "";
-
-        if (!tasks.length) {
-            const empty = document.createElement("div");
-            empty.className = "text-sm text-gray-400 dark:text-gray-500";
-            empty.textContent = this.anytypeError ? this.anytypeError : "No tasks yet.";
-            container.appendChild(empty);
-            return;
-        }
 
         const grouped = this.groupTasksByPriority(tasks);
         for (const [category, items] of grouped.entries()) {
@@ -1033,213 +1435,168 @@ class FocusApp {
         const key = `${task.id}:${current.app_id || ""}:${current.title || ""}`;
     }
 
-    renderStats(history, events, tasks) {
-        const pie = document.getElementById("stats-pie");
-        const legend = document.getElementById("stats-legend");
-        const totalEl = document.getElementById("stats-total");
-        // const sessionsEl = document.getElementById("stats-sessions");
-        //const streakEl = document.getElementById("stats-streak");
-        if (!pie || !legend || !totalEl) return;
-
-        const totals = new Map();
-        const todayKey = this.toLocalDateKey(new Date());
-        (Array.isArray(events) ? events : []).forEach((item) => {
-            const ts = this.normalizeTimestamp(item?.end_time || item?.start_time || 0);
-            if (!ts) return;
-            const keyDate = this.toLocalDateKey(new Date(ts * 1000));
-            if (keyDate !== todayKey) return;
-            const key = item.category || item.app_id || "Others";
-            const prev = totals.get(key) || 0;
-            totals.set(key, prev + (Number(item.duration) || 0));
-        });
-
-        const rawEntries = Array.from(totals.entries()).filter(([, v]) => v > 0);
-        const total = rawEntries.reduce((sum, [, v]) => sum + v, 0);
-
-        const todayTotal = (Array.isArray(events) ? events : []).reduce((sum, event) => {
-            const ts = this.normalizeTimestamp(event?.end_time || event?.start_time || 0);
-            if (!ts) return sum;
-            const keyDate = this.toLocalDateKey(new Date(ts * 1000));
-            if (keyDate !== todayKey) return sum;
-            return sum + (Number(event?.duration) || 0);
-        }, 0);
-
-        totalEl.textContent = this.fmtDuration(todayTotal);
-        // const completed = Array.isArray(tasks) ? tasks.filter((t) => t.done).length : 0;
-        // sessionsEl.textContent = String(completed);
-
-        legend.innerHTML = "";
-        if (!rawEntries.length || total <= 0) {
-            pie.style.background = "conic-gradient(#94a3b8 0% 100%)";
-            legend.innerHTML = `
-                <div class="flex items-center justify-between text-sm">
-                    <div class="flex items-center gap-2">
-                        <span class="w-3 h-3 rounded-full bg-slate-400 shadow-sm"></span>
-                        <span class="text-gray-600 dark:text-gray-400">No data</span>
-                    </div>
-                    <span class="font-medium text-gray-900 dark:text-white">100%</span>
-                </div>
-            `;
-            return;
-        }
-
-        const filtered = [];
-        let othersTotal = 0;
-        rawEntries.forEach(([label, value]) => {
-            if (total > 0 && value / total < 0.02) {
-                othersTotal += value;
-            } else {
-                filtered.push([label, value]);
-            }
-        });
-        if (othersTotal > 0) {
-            filtered.push(["Others", othersTotal]);
-        }
-
-        const colors = [
-            "#2563EB",
-            "#A855F7",
-            "#F97316",
-            "#10b981",
-            "#f59e0b",
-            "#06b6d4",
-            "#ef4444",
-            "#3b82f6",
-            "#94a3b8",
-        ];
-
-        let offset = 0;
-        const slices = filtered.map(([label, value], idx) => {
-            const percent = (value / total) * 100;
-            const color = colors[idx % colors.length];
-            const slice = `${color} ${offset}% ${offset + percent}%`;
-            offset += percent;
-            const row = document.createElement("div");
-            row.className = "flex items-center justify-between text-sm";
-            row.innerHTML = `
-                <div class="flex items-center gap-2">
-                    <span class="w-3 h-3 rounded-full" style="background:${color}"></span>
-                    <span class="text-gray-600 dark:text-gray-400">${this.escapeHtml(label)}</span>
-                </div>
-                <span class="font-medium text-gray-900 dark:text-white">${Math.round(percent)}%</span>
-            `;
-            legend.appendChild(row);
-            return slice;
-        });
-
-        pie.style.background = `conic-gradient(${slices.join(", ")})`;
-    }
+    // const filterMode = window.historyFilterMode || "month";
+    // const filtered = items.filter((item) => {
+    //     if (filterMode === "all") return true;
+    //     const startDate = item.start ? new Date(item.start * 1000) : null;
+    //     return startDate ? startDate >= startOfMonth : false;
+    // });
 
     renderHistory(history, events, tasks) {
         const list = document.getElementById("history-list");
         if (!list) return;
 
         const items = this.normalizeHistoryItems(history, events).sort((a, b) => (b.start || 0) - (a.start || 0));
+
         const filterMode = window.historyFilterMode || "month";
         const now = new Date();
         const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+
         const filtered = items.filter((item) => {
             if (filterMode === "all") return true;
             const startDate = item.start ? new Date(item.start * 1000) : null;
             return startDate ? startDate >= startOfMonth : false;
         });
 
-        const grouped = new Map();
+        // ── Group by day ─────────────────────────────────────
+        const groupedByDay = new Map();
         filtered.forEach((item) => {
             const date = new Date((item.start || item.end || 0) * 1000);
             const key = this.toLocalDateKey(date);
-            if (!grouped.has(key)) grouped.set(key, []);
-            grouped.get(key).push(item);
+            if (!groupedByDay.has(key)) groupedByDay.set(key, []);
+            groupedByDay.get(key).push(item);
         });
 
-        const keys = Array.from(grouped.keys()).sort((a, b) => (a < b ? 1 : -1));
+        const dayKeys = Array.from(groupedByDay.keys()).sort((a, b) => (a < b ? 1 : -1));
         list.innerHTML = "";
 
-        if (!keys.length) {
+        if (!dayKeys.length) {
             const empty = document.createElement("div");
             empty.className = "text-sm text-gray-400 dark:text-gray-500";
             empty.textContent = "No history available yet.";
             list.appendChild(empty);
+            return;
         }
 
-        keys.forEach((key, index) => {
-            const entries = grouped.get(key) || [];
+        // ── Render days ──────────────────────────────────────
+        dayKeys.forEach((key, index) => {
+            const entries = groupedByDay.get(key);
             const dayDate = new Date(key + "T00:00:00");
-            const start = entries.reduce((min, item) => Math.min(min, item.start || min), entries[0]?.start || 0);
-            const end = entries.reduce((max, item) => Math.max(max, item.end || max), entries[0]?.end || 0);
-            const totalDuration = entries.reduce((sum, item) => sum + (item.duration || 0), 0);
+
+            const start = entries.reduce((m, i) => Math.min(m, i.start || m), entries[0]?.start || 0);
+            const end = entries.reduce((m, i) => Math.max(m, i.end || m), entries[0]?.end || 0);
+            const totalDuration = entries.reduce((s, i) => s + (i.duration || 0), 0);
+
+            // ── Group by app_id → title ───────────────────────
+            const byApp = new Map();
+
+            entries.forEach((item) => {
+                const appId = item.app_id || "Unknown app";
+                const title = item.task || item.title || "Session";
+                const duration = item.duration || 0;
+
+                if (!byApp.has(appId)) {
+                    byApp.set(appId, { total: 0, titles: new Map() });
+                }
+
+                const appGroup = byApp.get(appId);
+                appGroup.total += duration;
+
+                if (!appGroup.titles.has(title)) {
+                    appGroup.titles.set(title, 0);
+                }
+                appGroup.titles.set(title, appGroup.titles.get(title) + duration);
+            });
+
             const opacity = Math.max(0.7, 1 - index * 0.05);
 
+            // ── Card ──────────────────────────────────────────
             const card = document.createElement("div");
             card.className =
                 "bg-white dark:bg-gray-800 shadow-sm rounded-xl overflow-hidden shadow-subtle hover:border-primary/30 transition-all";
             card.style.opacity = String(opacity);
 
+            // ── Header ────────────────────────────────────────
             const header = document.createElement("div");
             header.className = "bg-gray-50 dark:bg-gray-700 px-5 py-3 shadow-sm flex justify-between items-center";
-            header.innerHTML = `
-                <div class="flex items-center gap-4">
-                    <div class="flex flex-col">
-                        <span class="text-sm font-bold text-gray-900 dark:text-white">${this.escapeHtml(this.formatDayLabel(dayDate))}</span>
-                        <span class="text-xs text-gray-500 dark:text-gray-400">${this.escapeHtml(this.formatTimeRange(new Date(start * 1000), new Date(end * 1000)))}</span>
-                    </div>
-                    <div class="h-8 w-px bg-gray-200 dark:bg-gray-600"></div>
-                    <div class="flex items-center gap-1.5">
-                        <span class="material-symbols-outlined text-primary text-lg">timer</span>
-                        <span class="text-sm font-bold text-primary">${this.escapeHtml(this.fmtDuration(totalDuration))}</span>
-                    </div>
-                </div>
-                <button class="text-gray-400 dark:text-gray-500 hover:text-gray-900 dark:hover:text-white" type="button"><span class="material-symbols-outlined">more_horiz</span></button>
-            `;
 
+            header.innerHTML = `
+            <div class="flex items-center gap-4">
+                <div class="flex flex-col">
+                    <span class="text-sm font-bold text-gray-900 dark:text-white">
+                        ${this.escapeHtml(this.formatDayLabel(dayDate))}
+                    </span>
+                    <span class="text-xs text-gray-500 dark:text-gray-400">
+                        ${this.escapeHtml(this.formatTimeRange(new Date(start * 1000), new Date(end * 1000)))}
+                    </span>
+                </div>
+                <div class="h-8 w-px bg-gray-200 dark:bg-gray-600"></div>
+                <div class="flex items-center gap-1.5">
+                    <span class="material-symbols-outlined text-primary text-lg">timer</span>
+                    <span class="text-sm font-bold text-primary">
+                        ${this.escapeHtml(this.fmtDuration(totalDuration))}
+                    </span>
+                </div>
+            </div>
+        `;
+
+            // ── Body ──────────────────────────────────────────
             const body = document.createElement("div");
             body.className = "p-5";
-            const grid = document.createElement("div");
-            grid.className = "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3";
-            entries.forEach((item) => {
-                const row = document.createElement("div");
-                const label = item.task || item.title || item.app_id || "Session";
-                const displayLabel = this.truncateText(label, 32);
-                const badgeLabel = item.app_id || "Unknown app";
-                const badgeStyle = this.appIdBadgeStyle(badgeLabel);
-                row.className =
-                    "flex items-center justify-between gap-3 p-3 rounded-lg shadow-sm bg-white dark:bg-gray-700";
-                row.innerHTML = `
-                    <div class="flex items-center gap-3 min-w-0 flex-1">
-                        <span class="material-symbols-outlined text-emerald-500 text-sm">check_circle</span>
-                        <span class="text-sm text-gray-800 dark:text-white truncate" title="${this.escapeHtml(label)}">${this.escapeHtml(displayLabel)}</span>
-                    </div>
-                    <span class="px-2 py-0.5 rounded text-[10px] font-bold border max-w-[160px] truncate shrink-0" title="${this.escapeHtml(badgeLabel)}" style="background:${badgeStyle.background};color:${badgeStyle.color};border-color:${badgeStyle.borderColor}">${this.escapeHtml(this.truncateText(badgeLabel, 24))}</span>
-                `;
-                grid.appendChild(row);
-            });
-            body.appendChild(grid);
 
+            const grid = document.createElement("div");
+            grid.className = "grid grid-cols-1 sm:grid-cols-2 gap-3";
+
+            byApp.forEach((appData, appId) => {
+                const badgeStyle = this.appIdBadgeStyle(appId);
+
+                const appBlock = document.createElement("div");
+                appBlock.className =
+                    "rounded-lg border border-gray-200 dark:border-gray-600 p-3 bg-gray-50 dark:bg-gray-800";
+
+                appBlock.innerHTML = `
+                <div class="flex items-center justify-between mb-2">
+                    <span class="px-2 py-0.5 rounded text-[11px] font-bold border"
+                        style="background:${badgeStyle.background};
+                               color:${badgeStyle.color};
+                               border-color:${badgeStyle.borderColor}">
+                        ${this.escapeHtml(appId)}
+                    </span>
+                    <span class="text-xs font-bold text-primary">
+                        ${this.escapeHtml(this.fmtDuration(appData.total))}
+                    </span>
+                </div>
+            `;
+
+                const titleList = document.createElement("div");
+                titleList.className = "flex flex-col gap-1 pl-2";
+
+                appData.titles.forEach((time, title) => {
+                    if (time < 60) return;
+                    const row = document.createElement("div");
+                    row.className = "flex justify-between text-sm text-gray-700 dark:text-gray-200";
+
+                    row.innerHTML = `
+                    <span class="truncate" title="${this.escapeHtml(title)}">
+                        ${this.escapeHtml(this.truncateText(title, 36))}
+                    </span>
+                    <span class="text-xs font-mono text-gray-500 dark:text-gray-400">
+                        ${this.escapeHtml(this.fmtDuration(time))}
+                    </span>
+                `;
+
+                    titleList.appendChild(row);
+                });
+
+                appBlock.appendChild(titleList);
+                grid.appendChild(appBlock);
+            });
+
+            body.appendChild(grid);
             card.appendChild(header);
             card.appendChild(body);
             list.appendChild(card);
         });
-
-        const weeklyTotalEl = document.getElementById("history-weekly-total");
-        const avgSessionEl = document.getElementById("history-avg-session");
-        const tasksCompletedEl = document.getElementById("history-tasks-completed");
-        const tasksTodayEl = document.getElementById("history-tasks-today");
-
-        const weekStart = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 6);
-        const weeklyTotal = items
-            .filter((item) => item.start && new Date(item.start * 1000) >= weekStart)
-            .reduce((sum, item) => sum + (item.duration || 0), 0);
-        if (weeklyTotalEl) weeklyTotalEl.textContent = this.fmtDuration(weeklyTotal);
-
-        const avg = items.length ? items.reduce((sum, item) => sum + (item.duration || 0), 0) / items.length : 0;
-        if (avgSessionEl) avgSessionEl.textContent = this.fmtDuration(avg);
-
-        const completedTasks = Array.isArray(tasks) ? tasks.filter((t) => t.done).length : 0;
-        if (tasksCompletedEl) tasksCompletedEl.textContent = String(completedTasks);
-
-        const todayKey = this.toLocalDateKey(now);
-        const todayEntries = (grouped.get(todayKey) || []).length;
-        if (tasksTodayEl) tasksTodayEl.textContent = `${todayEntries} today`;
 
         this.renderHistoryStats(filtered);
     }
@@ -1293,16 +1650,29 @@ class FocusApp {
                 const color = colors[idx % colors.length];
                 const slice = `${color} ${offset}% ${offset + percent}%`;
                 offset += percent;
+
                 const row = document.createElement("div");
-                row.className = "flex items-center justify-between text-sm";
+                row.className = "flex items-start justify-between text-sm";
                 row.innerHTML = `
-                    <div class="flex items-center gap-2">
-                        <span class="w-3 h-3 rounded-full" style="background:${color}"></span>
-                        <span class="text-gray-600 dark:text-gray-400">${this.escapeHtml(label)}</span>
-                    </div>
-                    <span class="font-medium text-gray-900 dark:text-white">${Math.round(percent)}%</span>
-                `;
+    <div class="flex items-start gap-2">
+        <span class="w-3 h-3 rounded-full mt-1" style="background:${color}"></span>
+
+        <div class="flex flex-col leading-tight">
+            <span class="text-gray-600 dark:text-gray-400">
+                ${this.escapeHtml(label)}
+            </span>
+            <span class="text-xs text-gray-400 dark:text-gray-500">
+                ${this.fmtDuration(value)}
+            </span>
+        </div>
+    </div>
+
+    <span class="font-medium text-gray-900 dark:text-white">
+        ${Math.round(percent)}%
+    </span>
+`;
                 legend.appendChild(row);
+
                 return slice;
             });
             pie.style.background = `conic-gradient(${slices.join(", ")})`;
@@ -1374,7 +1744,6 @@ class FocusApp {
     }
 
     async refreshAll() {
-        if (!this.isPageActive()) return;
         if (this.currentView === "history") {
             const [tasks, current, categories, history, events] = await Promise.all([
                 this.loadTasks(),
@@ -1384,24 +1753,22 @@ class FocusApp {
                 this.loadEvents(),
             ]);
 
+            this.updateDailyFocus();
             this.lastTasks = Array.isArray(tasks) ? tasks : [];
             this.lastCurrentFocus = current;
-            this.renderTasks(tasks);
             this.updateAnytypeWarning();
             this.renderCurrentStatus(current);
             this.renderCurrentTask(tasks);
             this.updateFocusWarning(current, tasks);
             this.updateCategorySuggestions(categories);
-            this.renderStats(history, events, tasks);
             this.renderHistory(history, events, tasks);
             return;
         }
 
-        const [tasks, current, categories] = await Promise.all([
-            this.loadTasks(),
-            this.loadCurrent(),
-            this.loadCategories(),
-        ]);
+        const tasks = await this.loadTasks();
+        const current = await this.loadCurrent();
+        const categories = await this.loadCategories();
+
         this.lastTasks = Array.isArray(tasks) ? tasks : [];
         this.lastCurrentFocus = current;
         this.renderTasks(tasks);
@@ -1410,32 +1777,25 @@ class FocusApp {
         this.renderCurrentTask(tasks);
         this.updateFocusWarning(current, tasks);
         this.updateCategorySuggestions(categories);
-        // } catch (err) {
-        //     console.error("Failed to load data", err);
-        // }
     }
 
     async refreshEverything() {
-        try {
-            const tasks = await this.loadTasks();
-            const current = await this.loadCurrent();
-            const categories = await this.loadCategories();
-            const history = await this.loadHistory();
-            const events = await this.loadEvents();
+        const tasks = await this.loadTasks();
+        const current = await this.loadCurrent();
+        const categories = await this.loadCategories();
+        const history = await this.loadHistory();
+        const events = await this.loadEvents();
 
-            this.lastTasks = Array.isArray(tasks) ? tasks : [];
-            this.lastCurrentFocus = current;
-            this.renderTasks(tasks);
-            this.updateAnytypeWarning();
-            this.renderCurrentStatus(current);
-            this.renderCurrentTask(tasks);
-            this.updateFocusWarning(current, tasks);
-            this.updateCategorySuggestions(categories);
-            this.renderStats(history, events, tasks);
-            this.renderHistory(history, events, tasks);
-        } catch (err) {
-            console.error("Failed to load data", err);
-        }
+        this.lastTasks = Array.isArray(tasks) ? tasks : [];
+        this.lastCurrentFocus = current;
+        this.renderTasks(tasks);
+        this.updateAnytypeWarning();
+        this.renderCurrentStatus(current);
+        this.renderCurrentTask(tasks);
+        this.updateFocusWarning(current, tasks);
+        this.updateCategorySuggestions(categories);
+        // this.renderStats(history, events, tasks);
+        this.renderHistory(history, events, tasks);
     }
 
     // ==================== TASK MANAGEMENT ====================
@@ -1973,6 +2333,42 @@ class FocusApp {
             });
         }
 
+        // Meeting app modal and token inputs
+        document.querySelector('[data-action="add-meeting-app"]')?.addEventListener("click", (e) => {
+            e.preventDefault();
+            console.log("add-meeting-app clicked");
+            this.openAddMeetingAppModal();
+        });
+
+        document.getElementById("meeting-cancel-button")?.addEventListener("click", (e) => {
+            e.preventDefault();
+            this.closeAddMeetingAppModal();
+        });
+
+        document.getElementById("meeting-add-button")?.addEventListener("click", (e) => {
+            e.preventDefault();
+            console.log("meeting-add-button clicked");
+            this.saveMeetingApp();
+        });
+
+        // Email app modal and token inputs
+        document.querySelector('[data-action="add-email-app"]')?.addEventListener("click", (e) => {
+            e.preventDefault();
+            console.log("add-email-app clicked");
+            this.openAddEmailAppModal();
+        });
+
+        document.getElementById("email-cancel-button")?.addEventListener("click", (e) => {
+            e.preventDefault();
+            this.closeAddEmailAppModal();
+        });
+
+        document.getElementById("email-add-button")?.addEventListener("click", (e) => {
+            e.preventDefault();
+            console.log("email-add-button clicked");
+            this.saveEmailApp();
+        });
+
         // Allowed apps/titles
         document.getElementById("allowed-app-add")?.addEventListener("click", () => {
             const input = document.getElementById("allowed-app-input");
@@ -2167,6 +2563,9 @@ class FocusApp {
         // blur
         window.addEventListener("focus", this.handleFocus);
         window.addEventListener("blur", this.handleBlur);
+
+        const meetCategory = document.getElementById("edit-meet-apps");
+        // window.addEventListener("click", this.openMeetingsEditor);
     }
 
     startPolling() {
@@ -2192,13 +2591,15 @@ class FocusApp {
     }
 
     init() {
-        console.log("FocusApp initializing...");
-
-        // Setup activity indicator
+        // console.trace();
         this.setActivityIndicator(true);
 
         // Setup event listeners
         this.setupEventListeners();
+
+        // Setup token inputs for meeting app autocompletion
+        this.setupTokenInput(document.getElementById("meetingAppIds"));
+        this.setupTokenInput(document.getElementById("meetingAppTitles"));
 
         // Set initial view
         this.setView("tasks");
@@ -2214,8 +2615,6 @@ class FocusApp {
 
         // refreshAll
         this.refreshAll();
-
-        console.log("FocusApp initialized successfully");
     }
 }
 

@@ -30,17 +30,14 @@ class FocusService {
     std::filesystem::path GetDBPath();
     void UpdateAllowedApps();
     bool InitServer();
+    FocusState AmIFocused(FocusedWindow Fw);
+    double ToUnixTime(std::chrono::steady_clock::time_point steady_tp);
 
   private:
     const unsigned m_Port;
     const unsigned m_Ping;
     std::filesystem::path m_Root;
     std::mutex m_GlobalMutex;
-    double m_StateStartTime;                     // When current focus state started
-    double m_LastStartTime;                      // When current window started
-    double m_UnfocusedStartTime;                 // When unfocused state started
-    double m_LastMonitoringDisabledNotification; // Last notification time
-    FocusState m_PrevState;                      // Previous focus state
 
     // Parts
     std::unique_ptr<Anytype> m_Anytype;
@@ -56,12 +53,15 @@ class FocusService {
     std::string m_AppJs;
     FocusedWindow m_Fw;
 
-    // Current Task
-    std::vector<std::string> m_AllowedApps;
-    std::vector<std::string> m_AllowedWindowTitles;
+    // Window
     std::string m_TaskTitle;
     FocusState m_CurrentState;
 
-    // Monitoring
+    // Current Task
+    std::vector<std::string> m_AllowedApps;
+    std::vector<std::string> m_AllowedWindowTitles;
+
+    // Monitoring Notification
+    std::chrono::system_clock m_LastMonitoringDisabledNotification;
     bool m_MonitoringEnabled = true;
 };

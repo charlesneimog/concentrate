@@ -20,12 +20,16 @@
         <link rel="icon" type="image/svg+xml" href="/favicon.svg" sizes="any" />
         <link rel="stylesheet" href="/style.css" />
     </head>
-    <body class="font-display bg-white dark:bg-gray-900 text-gray-900 dark:text-white antialiased overflow-hidden h-screen flex">
+    <body
+        class="font-display bg-white dark:bg-gray-900 text-gray-900 dark:text-white antialiased overflow-hidden h-screen flex"
+    >
         <aside
             class="w-64 shadow-sm dark:shadow-md border-gray-200 dark:border-gray-700 flex-shrink-0 flex flex-col bg-white dark:bg-gray-800 z-20 hidden md:flex"
         >
-           <div class="p-6 flex items-center gap-3 bg-white text-gray-900 dark:bg-gray-800 dark:text-white">
-                <div class="h-8 w-8 rounded-lg bg-primary dark:bg-primary-dark flex items-center justify-center shadow-sm dark:shadow-md">
+            <div class="p-6 flex items-center gap-3 bg-white text-gray-900 dark:bg-gray-800 dark:text-white">
+                <div
+                    class="h-8 w-8 rounded-lg bg-primary dark:bg-primary-dark flex items-center justify-center shadow-sm dark:shadow-md"
+                >
                     <span class="material-symbols-outlined text-white" style="font-size: 20px">bolt</span>
                 </div>
                 <h1 class="text-lg font-bold tracking-tight text-gray-900 dark:text-white">FocusService</h1>
@@ -36,7 +40,9 @@
                     href="#"
                     data-view="tasks"
                 >
-                    <span class="material-symbols-outlined dark:text-primary-dark" style="font-variation-settings: &quot;FILL&quot; 1"
+                    <span
+                        class="material-symbols-outlined dark:text-primary-dark"
+                        style="font-variation-settings: &quot;FILL&quot; 1"
                         >dashboard</span
                     >
                     <span class="text-sm dark:text-white">Tasks View</span>
@@ -55,18 +61,24 @@
                 <div class="flex items-center justify-between">
                     <span class="text-sm font-medium text-gray-900 dark:text-white p-4">Enable Monitoring</span>
                     <label class="relative inline-flex items-center cursor-pointer">
-                        <input type="checkbox" id="monitoring-toggle" checked class="sr-only peer">
-                        <div class="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary/25 dark:peer-focus:ring-primary-dark/25 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-primary dark:peer-checked:bg-primary-dark"></div>
+                        <input type="checkbox" id="monitoring-toggle" checked class="sr-only peer" />
+                        <div
+                            class="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary/25 dark:peer-focus:ring-primary-dark/25 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-primary dark:peer-checked:bg-primary-dark"
+                        ></div>
                     </label>
                 </div>
             </div>
         </aside>
         <main class="flex-1 flex flex-col min-w-0 overflow-y-auto bg-white dark:bg-gray-900 relative">
             <div id="view-tasks" class="flex flex-col min-w-0">
-                <header class="pt-8 pb-6 px-8 flex flex-col gap-6 bg-white dark:bg-gray-900 text-gray-900 dark:text-white">
+                <header
+                    class="pt-8 pb-6 px-8 flex flex-col gap-6 bg-white dark:bg-gray-900 text-gray-900 dark:text-white"
+                >
                     <div class="flex justify-between items-end">
                         <div>
-                            <h2 class="text-3xl font-bold text-gray-900 dark:text-white tracking-tight">Focus Session</h2>
+                            <h2 class="text-3xl font-bold text-gray-900 dark:text-white tracking-tight">
+                                Focus Session
+                            </h2>
                             <div class="flex items-center gap-2 mt-2">
                                 <span id="activity-indicator-active" class="relative flex h-2.5 w-2.5 hidden">
                                     <span
@@ -77,10 +89,17 @@
                                 <span id="activity-indicator-idle" class="relative flex h-2.5 w-2.5">
                                     <span class="relative inline-flex rounded-full h-2.5 w-2.5 bg-red-500"></span>
                                 </span>
-                                <p id="current-status" class="text-sm text-gray-500 dark:text-gray-300">Ready to focus</p>
+                                <p id="current-status" class="text-sm text-gray-500 dark:text-gray-300">
+                                    Ready to focus
+                                </p>
                             </div>
-                            <p id="current-task" class="text-xs text-gray-500 dark:text-gray-300 mt-2">Current task: None</p>
-                            <div id="focus-warning" class="hidden mt-2 text-xs font-semibold text-rose-600 dark:text-rose-400">
+                            <p id="current-task" class="text-xs text-gray-500 dark:text-gray-300 mt-2">
+                                Current task: None
+                            </p>
+                            <div
+                                id="focus-warning"
+                                class="hidden mt-2 text-xs font-semibold text-rose-600 dark:text-rose-400"
+                            >
                                 Not focused: current app is not allowed for this task.
                             </div>
                         </div>
@@ -103,17 +122,248 @@
                         </div>
                     </div>
                 </header>
-                <section class="px-8 pb-12 flex-1 flex flex-col gap-6 bg-white dark:bg-gray-900 text-gray-900 dark:text-white">
+
+                <!-- Shared editor -->
+                <div
+                    id="category-editor"
+                    class="hidden fixed inset-0 bg-black/40 flex items-center justify-center z-50"
+                >
+                    <div class="bg-white dark:bg-gray-800 w-full max-w-md p-4 rounded-lg shadow-lg">
+                        <h4 id="editor-title" class="text-sm font-semibold mb-3"></h4>
+
+                        <input
+                            id="editor-appid"
+                            placeholder="app_id (e.g. zoom, outlook)"
+                            class="w-full mb-2 px-2 py-1 text-sm border rounded"
+                        />
+
+                        <input
+                            id="editor-title-input"
+                            placeholder="window title (e.g. Google Meet)"
+                            class="w-full mb-3 px-2 py-1 text-sm border rounded"
+                        />
+
+                        <div class="flex justify-between">
+                            <button id="editor-close" class="text-xs text-gray-500">Cancel</button>
+
+                            <button id="editor-add" class="px-3 py-1 text-xs rounded bg-blue-600 text-white">
+                                Add rule
+                            </button>
+                        </div>
+
+                        <ul id="editor-rules" class="mt-3 text-xs space-y-1"></ul>
+                    </div>
+                </div>
+
+                <!--  Auto Tracking Section-->
+                <section
+                    class="px-8 pb-12 flex-1 flex flex-col gap-6 bg-white text-gray-900 dark:bg-gray-900 dark:text-gray-100"
+                >
+                    <div class="flex flex-col gap-2 mt-4">
+                        <div class="flex items-center justify-between mb-1 pl-1">
+                            <h3 class="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
+                                Logged Activities
+                            </h3>
+                        </div>
+
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                            <!-- Card -->
+
+                            <div
+                                class="flex items-center justify-between p-3 rounded-lg bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 shadow-sm hover:shadow-md transition-all"
+                            >
+                                <div class="flex items-center gap-3 min-w-0">
+                                    <div
+                                        class="h-8 w-8 rounded bg-blue-50 text-blue-600 dark:bg-blue-500/10 dark:text-blue-400 flex items-center justify-center"
+                                    >
+                                        <span class="material-symbols-outlined text-[20px]">videocam</span>
+                                    </div>
+
+                                    <div class="min-w-0">
+                                        <p class="text-sm font-medium truncate text-gray-800 dark:text-gray-100">
+                                            Meetings
+                                        </p>
+                                        <p
+                                            class="text-[10px] uppercase font-bold tracking-tight text-gray-400 dark:text-gray-500"
+                                        >
+                                            External Call
+                                        </p>
+                                    </div>
+                                </div>
+
+                                <div class="flex items-center gap-2">
+                                    <span
+                                        class="text-xs font-mono text-primary bg-primary/5 dark:bg-primary/10 px-2 py-1 rounded border border-primary/10 dark:border-primary/20"
+                                    >
+                                        0m
+                                    </span>
+
+                                    <!-- Add AppID -->
+                                    <button
+                                        data-action="add-meeting-app"
+                                        title="Add App"
+                                        class="h-7 w-7 flex items-center justify-center rounded border border-gray-200 dark:border-gray-600 text-gray-500 hover:text-primary hover:border-primary transition"
+                                    >
+                                        <span class="material-symbols-outlined text-[16px]">add</span>
+                                    </button>
+                                </div>
+                            </div>
+
+                            <!-- Auto Meetting App -->
+                            <div
+                                id="addMeetingAppModal"
+                                class="fixed inset-0 z-50 hidden flex items-center justify-center bg-black/40"
+                            >
+                                <div
+                                    class="w-full max-w-sm rounded-lg bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 shadow-lg p-4"
+                                >
+                                    <h3 class="text-sm font-semibold text-gray-800 dark:text-gray-100 mb-4">
+                                        Add Meeting App
+                                    </h3>
+
+                                    <div class="flex flex-col gap-3">
+                                        <div
+                                            id="meetingAppIds"
+                                            contenteditable
+                                            class="min-h-[40px] w-full rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 px-2 py-1 text-sm text-gray-800 dark:text-gray-100 focus:outline-none focus:ring-1 focus:ring-primary flex flex-wrap items-center"
+                                        ></div>
+
+                                        <div
+                                            id="meetingAppTitles"
+                                            contenteditable
+                                            class="min-h-[40px] w-full rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 px-2 py-1 text-sm text-gray-800 dark:text-gray-100 focus:outline-none focus:ring-1 focus:ring-primary flex flex-wrap items-center"
+                                        ></div>
+                                    </div>
+
+                                    <div class="mt-4 flex justify-end gap-2">
+                                        <button
+                                            id="meeting-cancel-button"
+                                            class="px-3 py-1.5 text-sm rounded border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+                                        >
+                                            Cancel
+                                        </button>
+
+                                        <button
+                                            id="meeting-add-button"
+                                            class="px-3 py-1.5 text-sm rounded bg-primary text-white hover:opacity-90"
+                                        >
+                                            Add
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Auto Email App Modal -->
+                            <div
+                                id="addEmailAppModal"
+                                class="fixed inset-0 z-50 hidden flex items-center justify-center bg-black/40"
+                            >
+                                <div
+                                    class="w-full max-w-sm rounded-lg bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 shadow-lg p-4"
+                                >
+                                    <h3 class="text-sm font-semibold text-gray-800 dark:text-gray-100 mb-4">Add Email App</h3>
+
+                                    <div class="flex flex-col gap-3">
+                                        <div
+                                            id="emailAppIds"
+                                            contenteditable
+                                            class="min-h-[40px] w-full rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 px-2 py-1 text-sm text-gray-800 dark:text-gray-100 focus:outline-none focus:ring-1 focus:ring-primary flex flex-wrap items-center"
+                                        ></div>
+
+                                        <div
+                                            id="emailAppTitles"
+                                            contenteditable
+                                            class="min-h-[40px] w-full rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 px-2 py-1 text-sm text-gray-800 dark:text-gray-100 focus:outline-none focus:ring-1 focus:ring-primary flex flex-wrap items-center"
+                                        ></div>
+                                    </div>
+
+                                    <div class="mt-4 flex justify-end gap-2">
+                                        <button
+                                            id="email-cancel-button"
+                                            class="px-3 py-1.5 text-sm rounded border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+                                        >
+                                            Cancel
+                                        </button>
+
+                                        <button
+                                            id="email-add-button"
+                                            class="px-3 py-1.5 text-sm rounded bg-primary text-white hover:opacity-90"
+                                        >
+                                            Add
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Card -->
+                            <div
+                                class="flex items-center justify-between p-3 rounded-lg bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 shadow-sm hover:shadow-md transition-all"
+                            >
+                                <div class="flex items-center gap-3 min-w-0">
+                                    <div
+                                        class="h-8 w-8 rounded bg-pink-50 text-pink-600 dark:bg-pink-500/10 dark:text-pink-400 flex items-center justify-center"
+                                    >
+                                        <span class="material-symbols-outlined text-[20px]"> mail </span>
+                                    </div>
+
+                                    <div class="min-w-0">
+                                        <p class="text-sm font-medium truncate text-gray-800 dark:text-gray-100">
+                                            Email
+                                        </p>
+                                        <p
+                                            class="text-[10px] uppercase font-bold tracking-tight text-gray-400 dark:text-gray-500"
+                                        >
+                                            Communication
+                                        </p>
+                                    </div>
+                                </div>
+
+                                <div class="flex items-center gap-3">
+                                    <span
+                                        class="text-xs font-mono text-gray-600 dark:text-gray-300 bg-gray-50 dark:bg-gray-700 px-2 py-1 rounded border border-gray-200 dark:border-gray-600"
+                                    >
+                                        0m
+                                    </span>
+
+                                    <button
+                                        data-action="add-email-app"
+                                        title="Add App"
+                                        class="h-7 w-7 flex items-center justify-center rounded border border-gray-200 dark:border-gray-600 text-gray-500 hover:text-primary hover:border-primary transition"
+                                    >
+                                        <span class="material-symbols-outlined text-[16px]">add</span>
+                                    </button>
+
+                                    <button
+                                        class="text-gray-300 hover:text-gray-500 dark:text-gray-500 dark:hover:text-gray-300 transition-colors"
+                                    >
+                                        <span class="material-symbols-outlined text-[18px]"> more_vert </span>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <!--  Current Tasks -->
+                <section
+                    class="px-8 pb-12 flex-1 flex flex-col gap-6 bg-white dark:bg-gray-900 text-gray-900 dark:text-white"
+                >
                     <h2 class="text-3xl font-bold text-gray-900 dark:text-white tracking-tight">Current Tasks</h2>
                     <div id="tasks-container" class="flex flex-col gap-6">Loading...</div>
                 </section>
             </div>
             <div id="view-history" class="flex flex-col min-w-0 hidden">
-                <header class="pt-8 pb-6 px-8 flex flex-col gap-6 bg-white dark:bg-gray-900 text-gray-900 dark:text-white">
+                <header
+                    class="pt-8 pb-6 px-8 flex flex-col gap-6 bg-white dark:bg-gray-900 text-gray-900 dark:text-white"
+                >
                     <div class="flex justify-between items-end">
                         <div>
-                            <h2 class="text-3xl font-bold text-gray-900 dark:text-white tracking-tight">Focus History</h2>
-                            <p class="text-sm text-gray-500 dark:text-gray-300 mt-1">Review your past performance and sessions</p>
+                            <h2 class="text-3xl font-bold text-gray-900 dark:text-white tracking-tight">
+                                Focus History
+                            </h2>
+                            <p class="text-sm text-gray-500 dark:text-gray-300 mt-1">
+                                Review your past performance and sessions
+                            </p>
                         </div>
                         <div class="flex gap-2">
                             <button
@@ -127,13 +377,19 @@
                         </div>
                     </div>
                     <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                        <div class="bg-white dark:bg-gray-800 p-5 rounded-xl shadow-sm dark:shadow-md flex flex-col gap-1">
+                        <div
+                            class="bg-white dark:bg-gray-800 p-5 rounded-xl shadow-sm dark:shadow-md flex flex-col gap-1"
+                        >
                             <span class="text-xs font-semibold text-gray-500 uppercase tracking-wider"
                                 >Weekly Total</span
                             >
                             <div class="flex items-end gap-2">
-                                <span id="history-weekly-total" class="text-2xl font-bold text-gray-900 dark:text-white">0m</span>
-                                <span id="history-weekly-note" class="text-xs text-gray-400 dark:text-gray-300 pb-1">Last 7 days</span>
+                                <span id="history-weekly-total" class="text-2xl font-bold text-gray-900 dark:text-white"
+                                    >0m</span
+                                >
+                                <span id="history-weekly-note" class="text-xs text-gray-400 dark:text-gray-300 pb-1"
+                                    >Last 7 days</span
+                                >
                             </div>
                         </div>
                         <div
@@ -143,19 +399,10 @@
                                 >Average Session</span
                             >
                             <div class="flex items-end gap-2">
-                                <span id="history-avg-session" class="text-2xl font-bold text-gray-900 dark:text-white">0m</span>
+                                <span id="history-avg-session" class="text-2xl font-bold text-gray-900 dark:text-white"
+                                    >0m</span
+                                >
                                 <span class="text-xs text-gray-400 dark:text-gray-300 pb-1">Per session</span>
-                            </div>
-                        </div>
-                        <div
-                            class="bg-white dark:bg-gray-800 p-5 rounded-xl shadow-sm dark:shadow-md border-gray-200 dark:border-gray-700 shadow-subtle flex flex-col gap-1 sm:col-span-2 lg:col-span-1"
-                        >
-                            <span class="text-xs font-semibold text-gray-500 uppercase tracking-wider"
-                                >Tasks Completed</span
-                            >
-                            <div class="flex items-end gap-2">
-                                <span id="history-tasks-completed" class="text-2xl font-bold text-gray-900 dark:text-white">0</span>
-                                <span id="history-tasks-today" class="text-xs text-gray-400 dark:text-gray-300 pb-1">0 today</span>
                             </div>
                         </div>
                     </div>
@@ -187,81 +434,92 @@
                 </section>
             </div>
         </main>
-        
-        
+
         <aside
-    id="tasks-aside"
-    class="w-80 hidden lg:flex flex-col overflow-y-auto bg-white dark:bg-gray-800 border-l border-gray-200 dark:border-gray-700"
->
-    <div class="p-6 space-y-8 bg-white dark:bg-gray-800">
-        <!-- Header -->
-        <h3 class="text-base font-semibold text-gray-900 dark:text-white tracking-tight">Session Stats</h3>
-
-        <!-- Stats Pie -->
-        <div class="relative flex items-center justify-center">
-            <!-- Glow -->
-            <div
-                class="absolute w-56 h-56 rounded-full blur-xl opacity-30"
-                style="
-                    background: conic-gradient(
-                        #2563eb 0% 55%,
-                        #a855f7 55% 80%,
-                        #f97316 80% 95%,
-                        #94a3b8 95% 100%
-                    );
-                "
-            ></div>
-
-            <!-- Pie -->
-            <div
-                id="stats-pie"
-                class="relative w-52 h-52 rounded-full shadow-xl dark:shadow-2xl ring-1 ring-black/5 dark:ring-white/10"
-            ></div>
-
-            <!-- Center label -->
-            <div
-                class="absolute w-32 h-32 rounded-full flex flex-col items-center justify-center bg-white/95 dark:bg-gray-900/95 backdrop-blur shadow-lg ring-1 ring-black/5 dark:ring-white/10"
-            >
-                <span id="stats-total" class="text-lg font-semibold tracking-tight text-black dark:text-white"></span>
-                <span class="text-[11px] uppercase tracking-wide text-gray-500 dark:text-gray-300 mt-1"> Total Time </span>
-
-            </div>
-        </div>
-
-        <!-- Legend -->
-        <div
-            id="stats-legend"
-            class="space-y-3 bg-white dark:bg-gray-800 p-4 rounded-xl shadow-sm dark:shadow-md border-gray-200 dark:border-gray-700 shadow-subtle"
+            id="tasks-aside"
+            class="w-80 hidden lg:flex flex-col overflow-y-auto bg-white dark:bg-gray-800 border-l border-gray-200 dark:border-gray-700"
         >
-            
-        </div>
+            <div class="p-6 space-y-8 bg-white dark:bg-gray-800">
+                <!-- Header -->
+                <h3 class="text-base font-semibold text-gray-900 dark:text-white tracking-tight">Session Stats</h3>
 
-        <!-- Daily Focus -->
-        <div
-            id="i-was-focused"
-            class="relative overflow-hidden rounded-xl bg-gradient-to-br from-primary to-blue-600 text-white shadow-lg shadow-blue-200/40 dark:shadow-blue-900/40"
-        >
-            <div class="relative z-10 p-5">
-                <h4 class="text-sm font-semibold mb-1">Daily Focus</h4>
-                <p class="text-xs mb-4 font-medium">Loading focus data…</p>
-                <div class="w-full h-2 rounded-full bg-black/20 dark:bg-white/20">
+                <!-- Stats Pie -->
+                <div class="relative flex items-center justify-center">
+                    <!-- Glow -->
                     <div
-                        id="focus-progress-bar"
-                        class="h-2 rounded-full bg-white dark:bg-primary-dark shadow-sm transition-all duration-500"
-                        style="width: 0%"
+                        class="absolute w-56 h-56 rounded-full blur-xl opacity-30"
+                        style="
+                            background: conic-gradient(
+                                #2563eb 0% 55%,
+                                #a855f7 55% 80%,
+                                #f97316 80% 95%,
+                                #94a3b8 95% 100%
+                            );
+                        "
                     ></div>
+
+                    <!-- Pie -->
+                    <div
+                        id="stats-pie"
+                        class="relative w-52 h-52 rounded-full shadow-xl dark:shadow-2xl ring-1 ring-black/5 dark:ring-white/10 flex items-center justify-center"
+                    >
+                        <span
+                            id="stats-pie-loading"
+                            class="text-gray-500 dark:text-gray-400 transition-opacity duration-500"
+                        >
+                            Loading...
+                        </span>
+                    </div>
+
+                    <!-- Center label -->
+                    <div
+                        class="absolute w-32 h-32 rounded-full flex flex-col items-center justify-center bg-white/95 dark:bg-gray-900/95 backdrop-blur shadow-lg ring-1 ring-black/5 dark:ring-white/10"
+                    >
+                        <span
+                            id="stats-total"
+                            class="text-lg font-semibold tracking-tight text-black dark:text-white"
+                        ></span>
+                        <span
+                            id="stats-text"
+                            class="text-[11px] uppercase tracking-wide text-gray-500 dark:text-gray-300 mt-1"
+                        >
+                            Loading...
+                        </span>
+                    </div>
+                </div>
+
+                <!-- Legend -->
+                <div
+                    id="stats-legend"
+                    class="space-y-3 bg-white dark:bg-gray-800 p-4 rounded-xl shadow-sm dark:shadow-md border-gray-200 dark:border-gray-700 shadow-subtle"
+                ></div>
+
+                <!-- Daily Focus -->
+                <div
+                    id="i-was-focused"
+                    class="relative overflow-hidden rounded-xl bg-gradient-to-br from-primary to-blue-600 text-white shadow-lg shadow-blue-200/40 dark:shadow-blue-900/40"
+                >
+                    <div class="relative z-10 p-5">
+                        <h4 class="text-sm font-semibold mb-1">Daily Focus</h4>
+                        <p class="text-xs mb-4 font-medium">Loading focus data…</p>
+                        <div class="w-full h-2 rounded-full bg-black/20 dark:bg-white/20">
+                            <div
+                                id="focus-progress-bar"
+                                class="h-2 rounded-full bg-white dark:bg-primary-dark shadow-sm transition-all duration-500"
+                                style="width: 0%"
+                            ></div>
+                        </div>
+                    </div>
+
+                    <!-- Decorative icon -->
+                    <span
+                        class="material-symbols-outlined absolute -right-4 -bottom-6 text-[10rem] text-white/10 rotate-12 pointer-events-none"
+                    >
+                        emoji_events
+                    </span>
                 </div>
             </div>
-
-            <!-- Decorative icon -->
-            <span
-                class="material-symbols-outlined absolute -right-4 -bottom-6 text-[10rem] text-white/10 rotate-12 pointer-events-none"
-            >
-                emoji_events
-            </span>
-        </div>
-    </div>
-</aside>
+        </aside>
 
         <aside
             id="history-aside"
@@ -293,14 +551,19 @@
                     ></div>
 
                     <!-- Center label -->
-                        <div
-                            class="absolute w-32 h-32 rounded-full flex flex-col items-center justify-center bg-white/95 dark:bg-gray-900/95 backdrop-blur shadow-lg ring-1 ring-black/5 dark:ring-white/10"
+                    <div
+                        class="absolute w-32 h-32 rounded-full flex flex-col items-center justify-center bg-white/95 dark:bg-gray-900/95 backdrop-blur shadow-lg ring-1 ring-black/5 dark:ring-white/10"
+                    >
+                        <span
+                            id="history-month-label"
+                            class="text-lg font-semibold tracking-tight text-black dark:text-white"
                         >
-                            <span id="history-month-label" class="text-lg font-semibold tracking-tight text-black dark:text-white">
-                                Jan 2026
-                            </span>
-                            <span class="text-[11px] uppercase tracking-wide text-gray-500 dark:text-gray-300 mt-1"> Total Time </span>
-                        </div>
+                            Jan 2026
+                        </span>
+                        <span class="text-[11px] uppercase tracking-wide text-gray-500 dark:text-gray-300 mt-1">
+                            Total Time
+                        </span>
+                    </div>
                 </div>
 
                 <!-- Legend -->
@@ -310,7 +573,6 @@
                 ></div>
 
                 <!-- Consistency Map -->
-               
 
                 <!-- Monthly Goal -->
                 <div
@@ -347,18 +609,26 @@
             aria-modal="true"
             aria-hidden="true"
         >
-            <div class="w-full max-w-md rounded-2xl bg-white dark:bg-gray-900 shadow-xl dark:shadow-2xl shadow-sm border-gray-200 dark:border-gray-700">
+            <div
+                class="w-full max-w-md rounded-2xl bg-white dark:bg-gray-900 shadow-xl dark:shadow-2xl shadow-sm border-gray-200 dark:border-gray-700"
+            >
                 <div class="flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-gray-700">
                     <div>
                         <h3 class="text-lg font-semibold text-gray-900 dark:text-white">Set Focus Duration</h3>
                         <p class="text-xs text-gray-500 dark:text-gray-300">Use formats like 25m, 1h, or 90s</p>
                     </div>
-                    <button id="duration-modal-close" class="text-gray-500 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white hover:cursor-pointer" type="button">
+                    <button
+                        id="duration-modal-close"
+                        class="text-gray-500 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white hover:cursor-pointer"
+                        type="button"
+                    >
                         <span class="material-symbols-outlined text-[20px]">close</span>
                     </button>
                 </div>
                 <div class="px-6 py-5 space-y-4">
-                    <label class="block text-sm font-medium text-gray-900 dark:text-white" for="duration-modal-input">Duration</label>
+                    <label class="block text-sm font-medium text-gray-900 dark:text-white" for="duration-modal-input"
+                        >Duration</label
+                    >
                     <input
                         id="duration-modal-input"
                         class="w-full bg-gray-50 dark:bg-gray-800 shadow-sm shadow-smransparent focus:bg-white dark:focus:bg-gray-800 focus:border-gray-200 rounded-md text-base px-3 h-11 text-gray-900 dark:text-white focus:ring-1 focus:ring-primary focus:border-primary transition-all placeholder:text-gray-400 dark:placeholder:text-gray-500"
@@ -418,13 +688,19 @@
             aria-modal="true"
             aria-hidden="true"
         >
-            <div class="w-full max-w-md rounded-2xl bg-white dark:bg-gray-900 shadow-xl dark:shadow-2xl shadow-sm border-gray-200 dark:border-gray-700">
+            <div
+                class="w-full max-w-md rounded-2xl bg-white dark:bg-gray-900 shadow-xl dark:shadow-2xl shadow-sm border-gray-200 dark:border-gray-700"
+            >
                 <div class="flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-gray-700">
                     <div>
                         <h3 class="text-lg font-semibold text-gray-900 dark:text-white">Anytype Settings</h3>
                         <p class="text-xs text-gray-500 dark:text-gray-300">Store API credentials locally</p>
                     </div>
-                    <button id="anytype-config-close" class="text-gray-500 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white hover:cursor-pointer" type="button">
+                    <button
+                        id="anytype-config-close"
+                        class="text-gray-500 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white hover:cursor-pointer"
+                        type="button"
+                    >
                         <span class="material-symbols-outlined text-[20px]">close</span>
                     </button>
                 </div>
@@ -439,7 +715,10 @@
 
                         <div class="grid grid-cols-1 sm:grid-cols-[1fr_auto] gap-2 items-end">
                             <div class="space-y-1 hidden">
-                                <label class="block text-sm font-medium text-gray-900 dark:text-white" for="anytype-challenge-id">
+                                <label
+                                    class="block text-sm font-medium text-gray-900 dark:text-white"
+                                    for="anytype-challenge-id"
+                                >
                                     Challenge ID
                                 </label>
                                 <input
@@ -460,7 +739,10 @@
                         </div>
                         <div class="grid grid-cols-1 sm:grid-cols-[1fr_auto] gap-2 items-end">
                             <div class="space-y-1">
-                                <label class="block text-sm font-medium text-gray-900 dark:text-white" for="anytype-auth-code">
+                                <label
+                                    class="block text-sm font-medium text-gray-900 dark:text-white"
+                                    for="anytype-auth-code"
+                                >
                                     4-Digit Code
                                 </label>
                                 <input
@@ -480,7 +762,10 @@
                             </button>
                         </div>
                         <div class="space-y-2">
-                            <label class="block text-sm font-medium text-gray-900 dark:text-white" for="anytype-space-select">
+                            <label
+                                class="block text-sm font-medium text-gray-900 dark:text-white"
+                                for="anytype-space-select"
+                            >
                                 Space
                             </label>
                             <div class="flex flex-col sm:flex-row gap-2">

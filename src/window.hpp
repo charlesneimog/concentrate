@@ -10,7 +10,7 @@
 class Window {
   public:
     Window();
-    // ~Window();
+    ~Window();
     FocusedWindow GetFocusedWindow();
     void setLastActivity(std::chrono::steady_clock::time_point lastActivity);
     enum WM { NIRI, SWAY, HYPRLAND, GNOME, KDE };
@@ -18,4 +18,6 @@ class Window {
   private:
     FocusedWindow GetNiriFocusedWindow();
     WM m_WM;
+    std::string m_NiriSocket;
+    int m_NiriSockfd = -1;
 };

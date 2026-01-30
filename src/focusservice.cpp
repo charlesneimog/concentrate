@@ -8,9 +8,7 @@
 
 // ─────────────────────────────────────
 FocusService::FocusService(const unsigned port, const unsigned ping, LogLevel log_level)
-    : m_Port(port), m_Ping(ping), m_StateStartTime(0), m_LastStartTime(0), m_UnfocusedStartTime(0),
-      m_LastMonitoringDisabledNotification(0), m_PrevState(IDLE), m_CurrentState(IDLE),
-      m_MonitoringEnabled(true) {
+    : m_Port(port), m_Ping(ping) {
 
     if (log_level == LOG_DEBUG) {
         spdlog::set_level(spdlog::level::debug);
@@ -37,10 +35,7 @@ FocusService::FocusService(const unsigned port, const unsigned ping, LogLevel lo
     m_Secrets = std::make_unique<Secrets>();
     spdlog::info("Secrets manager initialized");
 
-    // Load monitoring enabled
-    std::string monitoring_str = m_Secrets->LoadSecret("monitoring_enabled");
-    m_MonitoringEnabled = monitoring_str.empty() ? true : (monitoring_str == "true");
-
+    // Server
     InitServer();
 
     // SQlite
@@ -60,167 +55,121 @@ FocusService::FocusService(const unsigned port, const unsigned ping, LogLevel lo
     m_Notification = std::make_unique<Notification>();
     spdlog::info("Notification system initialized");
 
-    // Initialize timing variables
-    auto currentTimePoint = std::chrono::system_clock::now();
-    auto timeSinceEpoch = currentTimePoint.time_since_epoch();
-    std::chrono::duration<double> durationInSeconds = timeSinceEpoch;
-    double initialTime = durationInSeconds.count();
+    // Time
+    std::string monitoring_str = m_Secrets->LoadSecret("monitoring_enabled");
+    m_MonitoringEnabled = monitoring_str.empty() ? true : (monitoring_str == "true");
+    auto now = std::chrono::system_clock::now();
 
-    m_LastStartTime = initialTime;
-    m_StateStartTime = initialTime;
-    m_UnfocusedStartTime = 0;
-    m_PrevState = IDLE;
-    m_CurrentState = IDLE;
+    // monitoring
+    if (!m_MonitoringEnabled) {
+        m_Notification->SendNotification("dialog-warning", "FocusService",
+                                         "Apps monitoring is off");
+    }
+    auto lastMonitoringNotification = std::chrono::steady_clock::now() - std::chrono::minutes(10);
 
-    FocusedWindow previousWindow;
+    FocusState lastState{};
+    auto stateSince = std::chrono::steady_clock::now();
+    auto lastRecord = stateSince;
+    std::string lastAppId;
+    std::string lastTitle;
 
     while (true) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(m_Ping * 1000));
-        auto currentTime = std::chrono::system_clock::now();
-        double now = std::chrono::duration<double>(currentTime.time_since_epoch()).count();
-        m_Fw = m_Window->GetFocusedWindow();
-        bool is_idle = !m_Fw.valid;
+        auto now = std::chrono::steady_clock::now();
 
-        // Send notification every 10 minutes if monitoring is disabled
+        // Notify if monitoring is disabled every 10 minutes
+        if (!m_MonitoringEnabled && now - lastMonitoringNotification >= std::chrono::minutes(5)) {
+            m_Notification->SendNotification("dialog-warning", "FocusService",
+                                             "Application monitoring is currently disabled.");
+            lastMonitoringNotification = now;
+        }
+
         if (!m_MonitoringEnabled) {
-            if (m_LastMonitoringDisabledNotification == 0) {
-                m_LastMonitoringDisabledNotification = now; 
-            } else if (now - m_LastMonitoringDisabledNotification >= 600) {
-                m_Notification->SendNotification("Monitoring Disabled",
-                                                 "Focus monitoring is currently disabled. Enable "
-                                                 "it to track your focus sessions.");
-                m_LastMonitoringDisabledNotification = now;
-            }
+            lastState = IDLE;
+            lastRecord = now;
+            stateSince = now;
+            lastAppId.clear();
+            lastTitle.clear();
+            std::this_thread::sleep_for(std::chrono::seconds(m_Ping));
             continue;
         }
 
-        FocusState newState;
-        if (is_idle) {
-            newState = IDLE;
-            spdlog::debug("New state: IDLE");
-        } else {
-            // Check if focused window is allowed
-            bool isFocusedWindow = true;
-            if (!m_AllowedApps.empty() || !m_AllowedWindowTitles.empty()) {
-                isFocusedWindow = false;
-                spdlog::debug("Checking allowed apps/titles. App ID: {}, Title: {}", m_Fw.app_id,
-                              m_Fw.title);
+        // Get focused window and current state
+        m_Fw = m_Window->GetFocusedWindow();
+        FocusState currentState = AmIFocused(m_Fw);
 
-                for (const auto &allowedApp : m_AllowedApps) {
-                    if (m_Fw.app_id.find(allowedApp) != std::string::npos) {
-                        isFocusedWindow = true;
-                        spdlog::debug("Window matches allowed app: {}", allowedApp);
-                        break;
-                    }
-                }
+        // IDLE: close nothing, record nothing, reset clocks
+        if (currentState == IDLE) {
+            lastState = IDLE;
+            lastRecord = now;
+            stateSince = now;
+            lastAppId.clear();
+            lastTitle.clear();
 
-                if (!isFocusedWindow && !m_AllowedWindowTitles.empty()) {
-                    for (const auto &allowedTitle : m_AllowedWindowTitles) {
-                        if (m_Fw.title.find(allowedTitle) != std::string::npos) {
-                            isFocusedWindow = true;
-                            spdlog::debug("Window matches allowed title: {}", allowedTitle);
-                            break;
-                        }
-                    }
-                }
-            }
-            newState = isFocusedWindow ? FOCUSED : UNFOCUSED;
-            spdlog::debug("New state: {}", newState == FOCUSED ? "FOCUSED" : "UNFOCUSED");
+            std::this_thread::sleep_for(std::chrono::seconds(m_Ping));
+            continue;
         }
 
-        // Insert focus state only on state changes (new focused/unfocused periods)
-        // m_StateStartTime is updated when the state changes below.
+        // Compute slice: ALWAYS from lastRecord -> now
+        double startUnix = ToUnixTime(lastRecord);
+        double endUnix = ToUnixTime(now);
+        double duration = endUnix - startUnix;
 
-        // If state changed, insert the previous state
-        if (newState != m_CurrentState) {
-            double duration = now - m_StateStartTime;
-            spdlog::debug("State changed from {} to {}, duration: {} seconds",
-                          static_cast<int>(m_CurrentState), static_cast<int>(newState), duration);
+        if (duration <= 0.0) {
+            std::this_thread::sleep_for(std::chrono::seconds(m_Ping));
+            continue;
+        }
 
-            if (m_MonitoringEnabled && duration > 0 && m_CurrentState != IDLE) {
-                // DEBUG: Show what will be inserted
-                spdlog::debug(
-                    "Inserting focus state on change: State={}, Start={}, End={}, Duration={}",
-                    static_cast<int>(m_CurrentState), m_StateStartTime, now, duration);
+        bool stateChanged = (currentState != lastState);
+        bool appChanged = (m_Fw.app_id != lastAppId) || (m_Fw.title != lastTitle);
 
-                m_SQLite->InsertFocusState(static_cast<int>(m_CurrentState), m_StateStartTime, now,
+        // Close previous interval if needed
+        if ((stateChanged || appChanged) && lastState != IDLE) {
+            m_SQLite->InsertFocusState(static_cast<int>(lastState), startUnix, endUnix, duration);
+
+            m_SQLite->InsertEvent(lastAppId, m_Fw.window_id, lastTitle, startUnix, endUnix,
+                                  duration);
+
+            spdlog::info("Focus event: state={}, app_id='{}', title='{}', duration={}",
+                         static_cast<int>(lastState), lastAppId, lastTitle, duration);
+
+            lastRecord = now;
+        }
+
+        // Periodic snapshot (same app + same state)
+        if (!stateChanged && !appChanged && now - lastRecord >= std::chrono::seconds(15)) {
+
+            startUnix = ToUnixTime(lastRecord);
+            endUnix = ToUnixTime(now);
+            duration = endUnix - startUnix;
+
+            if (duration > 0.0) {
+                m_SQLite->InsertFocusState(static_cast<int>(lastState), startUnix, endUnix,
                                            duration);
-            } else {
-                spdlog::debug("Skipping focus state insert on change: monitoring_enabled={}, "
-                              "duration={}, currentState={}",
-                              m_MonitoringEnabled, duration, static_cast<int>(m_CurrentState));
+
+                m_SQLite->InsertEvent(m_Fw.app_id, m_Fw.window_id, m_Fw.title, startUnix, endUnix,
+                                      duration);
+
+                spdlog::info("Focus snapshot: state={}, app_id='{}', title='{}', start={}, end={}, "
+                             "duration={}",
+                             static_cast<int>(lastState), m_Fw.app_id, m_Fw.title, startUnix,
+                             endUnix, duration);
+
+                lastRecord = now;
             }
-            m_StateStartTime = now;
-            m_PrevState = m_CurrentState;
-            m_CurrentState = newState;
         }
 
-        // Periodic registration: if the same state persists longer than REGISTER_STATE_AFTER,
-        // insert a state record and reset the state start time so long sessions are segmented.
-        double sinceStateStart = now - m_StateStartTime;
-        if (sinceStateStart >= REGISTER_STATE_AFTER) {
-            spdlog::debug("Periodic insert: state={}, duration={}", static_cast<int>(m_CurrentState), sinceStateStart);
-            if (m_MonitoringEnabled && sinceStateStart > 0) {
-                m_SQLite->InsertFocusState(static_cast<int>(m_CurrentState), m_StateStartTime, now,
-                                           sinceStateStart);
-            } else {
-                spdlog::debug("Skipping periodic insert: monitoring_enabled={}, duration={}", m_MonitoringEnabled, sinceStateStart);
-            }
-            m_StateStartTime = now;
+        // Start new logical interval
+        if (stateChanged) {
+            stateSince = now;
+            lastState = currentState;
         }
 
-        if (is_idle) {
-            spdlog::debug("User is on idle");
-            // Reset unfocused timers while idle
-            m_UnfocusedStartTime = 0;
-            continue; // skip the rest of the loop while idle
+        if (appChanged) {
+            lastAppId = m_Fw.app_id;
+            lastTitle = m_Fw.title;
         }
 
-        spdlog::debug("User is active");
-        spdlog::debug("State: {}", static_cast<int>(m_CurrentState));
-
-        // Only track unfocused time if user is active
-        if (m_CurrentState == UNFOCUSED) {
-            if (m_UnfocusedStartTime == 0) {
-                m_UnfocusedStartTime = now;
-                spdlog::debug("Started unfocused timer at: {}", m_UnfocusedStartTime);
-            } else {
-                double elapsed = now - m_UnfocusedStartTime;
-                spdlog::debug("Unfocused elapsed time: {} seconds", elapsed);
-                if (elapsed >= ONFOCUSWARNINGAFTER) {
-                    int intervals = static_cast<int>(elapsed / ONFOCUSWARNINGAFTER);
-                    spdlog::debug("Sending {} unfocused notification(s)", intervals);
-                    for (int i = 0; i < intervals; ++i) {
-                        m_Notification->SendNotification(
-                            "Focus Ended", "You are unfocused for " +
-                                               std::to_string(ONFOCUSWARNINGAFTER) + " seconds");
-                    }
-                    m_UnfocusedStartTime = now;
-                }
-            }
-        } else {
-            m_UnfocusedStartTime = 0;
-        }
-
-        // Log window change
-        if (m_Fw.app_id != previousWindow.app_id || m_Fw.title != previousWindow.title) {
-            double duration = now - m_LastStartTime;
-            spdlog::debug("Window changed. Previous: {} - {}, Current: {} - {}, Duration: {}",
-                          previousWindow.app_id, previousWindow.title, m_Fw.app_id, m_Fw.title,
-                          duration);
-
-            if (m_MonitoringEnabled && !previousWindow.app_id.empty()) {
-                // DEBUG: Show what will be inserted
-                spdlog::debug("Inserting window event: App={}, WindowID={}, Title={}, Duration={}",
-                              previousWindow.app_id, previousWindow.window_id, previousWindow.title,
-                              duration);
-
-                m_SQLite->InsertEvent(previousWindow.app_id, previousWindow.window_id,
-                                      previousWindow.title, m_LastStartTime, now, duration);
-            }
-            previousWindow = m_Fw;
-            m_LastStartTime = now;
-        }
+        std::this_thread::sleep_for(std::chrono::seconds(m_Ping));
     }
 }
 
@@ -230,6 +179,55 @@ FocusService::~FocusService() {
     if (m_Thread.joinable()) {
         m_Thread.join();
     }
+}
+
+// ─────────────────────────────────────
+double FocusService::ToUnixTime(std::chrono::steady_clock::time_point steady_tp) {
+    auto now_steady = std::chrono::steady_clock::now();
+    auto now_system = std::chrono::system_clock::now();
+
+    auto delta = steady_tp - now_steady;
+    auto system_tp = now_system + delta;
+
+    return std::chrono::duration<double>(system_tp.time_since_epoch()).count();
+}
+
+// ─────────────────────────────────────
+FocusState FocusService::AmIFocused(FocusedWindow Fw) {
+    // If the focused window is invalid (no app_id and no title), treat as IDLE
+    if (Fw.app_id.empty() && Fw.title.empty()) {
+        spdlog::info("FOCUSED: IDLE (no app_id or title)");
+        return IDLE;
+    }
+
+    bool isFocusedWindow = true;
+
+    if (!m_AllowedApps.empty() || !m_AllowedWindowTitles.empty()) {
+        isFocusedWindow = false;
+
+        // Check allowed apps
+        for (const auto &allowedApp : m_AllowedApps) {
+            if (Fw.app_id.find(allowedApp) != std::string::npos) {
+                isFocusedWindow = true;
+                spdlog::trace("Window matches allowed app: {}", allowedApp);
+                break;
+            }
+        }
+
+        // Check allowed titles
+        if (!isFocusedWindow && !m_AllowedWindowTitles.empty()) {
+            for (const auto &allowedTitle : m_AllowedWindowTitles) {
+                if (Fw.title.find(allowedTitle) != std::string::npos) {
+                    isFocusedWindow = true;
+                    spdlog::trace("Window matches allowed title: {}", allowedTitle);
+                    break;
+                }
+            }
+        }
+    }
+
+    spdlog::debug("FOCUSED: {}", isFocusedWindow ? "YES" : "NO");
+    return isFocusedWindow ? FOCUSED : UNFOCUSED;
 }
 
 // ─────────────────────────────────────
@@ -553,35 +551,14 @@ bool FocusService::InitServer() {
 
         m_Server.Get("/focus/today", [&](const httplib::Request &, httplib::Response &res) {
             spdlog::info("[SERVER] Get Today Focus Summary");
-
             try {
                 nlohmann::json summary = m_SQLite->FetchTodayFocusSummary();
-
-                // Include ongoing current-state duration so the UI shows live totals
-                double now = std::chrono::duration<double>(
-                                 std::chrono::system_clock::now().time_since_epoch())
-                                 .count();
-                double ongoing = 0.0;
-                {
-                    std::lock_guard<std::mutex> lock(m_GlobalMutex);
-                    if (m_CurrentState != IDLE) {
-                        ongoing = now - m_StateStartTime;
-                        if (m_CurrentState == FOCUSED) {
-                            summary["focused_seconds"] =
-                                summary.value("focused_seconds", 0.0) + ongoing;
-                        } else if (m_CurrentState == UNFOCUSED) {
-                            summary["unfocused_seconds"] =
-                                summary.value("unfocused_seconds", 0.0) + ongoing;
-                        }
-                    } else {
-                        // When idle, optionally include idle time in the summary
-                        ongoing = now - m_StateStartTime;
-                        summary["idle_seconds"] = summary.value("idle_seconds", 0.0) + ongoing;
-                    }
-                }
+                nlohmann::json result = {
+                    {"focused_seconds", summary.value("focused_seconds", 0.0)},
+                    {"unfocused_seconds", summary.value("unfocused_seconds", 0.0)}};
 
                 res.status = 200;
-                res.set_content(summary.dump(), "application/json");
+                res.set_content(result.dump(), "application/json");
             } catch (const std::exception &e) {
                 spdlog::error("[SERVER] Failed to fetch today focus summary: {}", e.what());
                 res.status = 500;
@@ -606,8 +583,12 @@ bool FocusService::InitServer() {
                 auto j = nlohmann::json::parse(req.body);
                 bool enabled = j.at("enabled").get<bool>();
                 m_MonitoringEnabled = enabled;
-                if (enabled) {
-                    m_LastMonitoringDisabledNotification = 0; // Reset timer when re-enabled
+                if (m_MonitoringEnabled) {
+                    m_Notification->SendNotification("dialog-ok", "Monitoring Enable",
+                                                     "Monitoring your apps use");
+                } else {
+                    m_Notification->SendNotification("dialog-warning", "Monitoring Disable",
+                                                     "Not monitoring your apps use");
                 }
                 m_Secrets->SaveSecret("monitoring_enabled", enabled ? "true" : "false");
                 spdlog::info("[SERVER] Monitoring {}", enabled ? "enabled" : "disabled");

@@ -13,6 +13,7 @@ SQLite::SQLite(const std::string &db_path) : m_Db(nullptr), m_DbPath(db_path) {
     ExecIgnoringErrors("PRAGMA journal_mode=WAL");
     ExecIgnoringErrors("PRAGMA synchronous=NORMAL");
     ExecIgnoringErrors("PRAGMA temp_store=MEMORY");
+    ExecIgnoringErrors("PRAGMA cache_size = -1000;");
 
     Init();
 }
@@ -97,7 +98,8 @@ void SQLite::InsertEvent(const std::string &app_id, int window_id, const std::st
 
     sqlite3_step(stmt);
     sqlite3_finalize(stmt);
-    spdlog::debug("Inserted focus event: app_id={}, title={}, duration={}", app_id, title, duration);
+    spdlog::debug("Inserted focus event: app_id={}, title={}, duration={}", app_id, title,
+                  duration);
 }
 
 // ─────────────────────────────────────
@@ -119,9 +121,10 @@ void SQLite::InsertFocusState(int state, double start, double end, double durati
 
     rc = sqlite3_step(stmt);
     if (rc != SQLITE_DONE) {
-        spdlog::error("db step failed in InsertFocusState: rc={}, err={}", rc, sqlite3_errmsg(m_Db));
+        spdlog::error("db step failed in InsertFocusState: rc={}, err={}", rc,
+                      sqlite3_errmsg(m_Db));
     } else {
-        spdlog::info("Inserted focus state: state={}, start={}, end={}, duration={}", state, start, end, duration);
+        spdlog::info("Inserted focus state: state={}, duration={}", state, duration);
     }
 
     sqlite3_finalize(stmt);
@@ -165,7 +168,8 @@ nlohmann::json SQLite::FetchTodayFocusSummary() {
 
     sqlite3_finalize(stmt);
 
-    spdlog::debug("Fetched today focus summary: focused={}, unfocused={}, idle={}", focused, unfocused, idle);
+    spdlog::debug("Fetched today focus summary: focused={}, unfocused={}, idle={}", focused,
+                  unfocused, idle);
     return {{"focused_seconds", focused}, {"unfocused_seconds", unfocused}, {"idle_seconds", idle}};
 }
 
@@ -416,7 +420,8 @@ bool SQLite::UpsertActivityCategory(const std::string &app_id, const std::string
         UpsertCategory(category, apps, titles);
     }
 
-    spdlog::debug("Upserted activity category: app_id={}, title={}, category={}", app_id, title, category);
+    spdlog::debug("Upserted activity category: app_id={}, title={}, category={}", app_id, title,
+                  category);
     return true;
 }
 
