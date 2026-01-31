@@ -21,6 +21,19 @@ class FocusApp {
         this.amIFocused = false;
         this.monitoringEnabled = true;
 
+        this.pomodoro = {
+            isRunning: false,
+            isPaused: false,
+            mode: "focus", // 'focus', 'short-break', 'long-break'
+            focusDuration: 25 * 60,
+            shortBreakDuration: 5 * 60,
+            longBreakDuration: 15 * 60,
+            timeLeft: 25 * 60,
+            interval: null,
+            autoStartBreaks: true,
+        };
+        this.initPomodoro();
+
         // Set default filter mode
         window.historyFilterMode = "month";
 
@@ -57,14 +70,20 @@ class FocusApp {
         // Email app token storage (persisted)
         this.emailAppIds = JSON.parse(localStorage.getItem("emailAppIds") || "[]");
         this.emailAppTitles = JSON.parse(localStorage.getItem("emailAppTitles") || "[]");
+        // Notes app token storage (persisted)
+        this.noteAppIds = JSON.parse(localStorage.getItem("noteAppIds") || "[]");
+        this.noteAppTitles = JSON.parse(localStorage.getItem("noteAppTitles") || "[]");
+        // Excluded tokens (will be hidden from modals)
+        this.excludedAppIds = JSON.parse(localStorage.getItem("excludedAppIds") || "[]");
+        this.excludedAppTitles = JSON.parse(localStorage.getItem("excludedAppTitles") || "[]");
     }
 
+    // ==================== MEETING APP TOKEN INPUTS & MODAL ====================
     openMeetingsEditor(event) {
         event.stopPropagation();
         document.getElementById("category-editor").classList.remove("hidden");
     }
 
-    // ==================== MEETING APP TOKEN INPUTS & MODAL ====================
     openAddMeetingAppModal() {
         console.log("openAddMeetingAppModal()");
         const modal = document.getElementById("addMeetingAppModal");
@@ -72,8 +91,26 @@ class FocusApp {
         // populate token fields from stored arrays
         const idsEl = document.getElementById("meetingAppIds");
         const titlesEl = document.getElementById("meetingAppTitles");
-        if (idsEl) this._renderTokenField(idsEl, this.meetingAppIds);
-        if (titlesEl) this._renderTokenField(titlesEl, this.meetingAppTitles);
+        if (idsEl)
+            this._renderTokenField(
+                idsEl,
+                (Array.isArray(this.meetingAppIds) ? this.meetingAppIds : []).filter(
+                    (v) =>
+                        !this.excludedAppIds
+                            .map((x) => String(x || "").toLowerCase())
+                            .includes(String(v || "").toLowerCase()),
+                ),
+            );
+        if (titlesEl)
+            this._renderTokenField(
+                titlesEl,
+                (Array.isArray(this.meetingAppTitles) ? this.meetingAppTitles : []).filter(
+                    (v) =>
+                        !this.excludedAppTitles
+                            .map((x) => String(x || "").toLowerCase())
+                            .includes(String(v || "").toLowerCase()),
+                ),
+            );
 
         const el = document.getElementById("meetingAppIds");
         if (el) {
@@ -93,8 +130,26 @@ class FocusApp {
         if (modal) modal.classList.remove("hidden");
         const idsEl = document.getElementById("emailAppIds");
         const titlesEl = document.getElementById("emailAppTitles");
-        if (idsEl) this._renderTokenField(idsEl, this.emailAppIds);
-        if (titlesEl) this._renderTokenField(titlesEl, this.emailAppTitles);
+        if (idsEl)
+            this._renderTokenField(
+                idsEl,
+                (Array.isArray(this.emailAppIds) ? this.emailAppIds : []).filter(
+                    (v) =>
+                        !this.excludedAppIds
+                            .map((x) => String(x || "").toLowerCase())
+                            .includes(String(v || "").toLowerCase()),
+                ),
+            );
+        if (titlesEl)
+            this._renderTokenField(
+                titlesEl,
+                (Array.isArray(this.emailAppTitles) ? this.emailAppTitles : []).filter(
+                    (v) =>
+                        !this.excludedAppTitles
+                            .map((x) => String(x || "").toLowerCase())
+                            .includes(String(v || "").toLowerCase()),
+                ),
+            );
 
         const el = document.getElementById("emailAppIds");
         if (el) {
@@ -112,41 +167,131 @@ class FocusApp {
         if (modal) modal.classList.add("hidden");
     }
 
+    // ==================== NOTE APP TOKEN INPUTS & MODAL ====================
+    openAddNoteAppModal() {
+        console.log("openAddNoteAppModal()");
+        const modal = document.getElementById("addNoteAppModal");
+        if (modal) modal.classList.remove("hidden");
+        const idsEl = document.getElementById("noteAppIds");
+        const titlesEl = document.getElementById("noteAppTitles");
+        if (idsEl)
+            this._renderTokenField(
+                idsEl,
+                (Array.isArray(this.noteAppIds) ? this.noteAppIds : []).filter(
+                    (v) =>
+                        !this.excludedAppIds
+                            .map((x) => String(x || "").toLowerCase())
+                            .includes(String(v || "").toLowerCase()),
+                ),
+            );
+        if (titlesEl)
+            this._renderTokenField(
+                titlesEl,
+                (Array.isArray(this.noteAppTitles) ? this.noteAppTitles : []).filter(
+                    (v) =>
+                        !this.excludedAppTitles
+                            .map((x) => String(x || "").toLowerCase())
+                            .includes(String(v || "").toLowerCase()),
+                ),
+            );
+
+        const el = document.getElementById("noteAppIds");
+        if (el) {
+            this.ensureCursor(el);
+            el.focus();
+            setTimeout(() => {
+                const cursor = el.querySelector("[data-cursor]");
+                if (cursor) this.placeCaretAtCursor(cursor);
+            }, 0);
+        }
+    }
+
+    closeAddNoteAppModal() {
+        const modal = document.getElementById("addNoteAppModal");
+        if (modal) modal.classList.add("hidden");
+    }
+
+    saveNoteApp() {
+        const idsEl = document.getElementById("noteAppIds");
+        const titlesEl = document.getElementById("noteAppTitles");
+        const ids = this.getTokensFromEl(idsEl);
+        const titles = this.getTokensFromEl(titlesEl);
+
+        if (!ids.length && !titles.length) return this.closeAddNoteAppModal();
+
+        this.noteAppIds ??= [];
+        this.noteAppTitles ??= [];
+
+        const excludedIdsLowerN = (Array.isArray(this.excludedAppIds) ? this.excludedAppIds : []).map((x) =>
+            String(x || "").toLowerCase(),
+        );
+        const excludedTitlesLowerN = (Array.isArray(this.excludedAppTitles) ? this.excludedAppTitles : []).map((x) =>
+            String(x || "").toLowerCase(),
+        );
+
+        // Replace stored note arrays with modal contents (respect excluded lists)
+        this.noteAppIds = (Array.isArray(ids) ? ids : [])
+            .map((v) => String(v || "").trim())
+            .filter(Boolean)
+            .filter((v) => !excludedIdsLowerN.includes(String(v).toLowerCase()));
+
+        this.noteAppTitles = (Array.isArray(titles) ? titles : [])
+            .map((v) => String(v || "").trim())
+            .filter(Boolean)
+            .filter((v) => !excludedTitlesLowerN.includes(String(v).toLowerCase()));
+
+        try {
+            localStorage.setItem("noteAppIds", JSON.stringify(this.noteAppIds));
+            localStorage.setItem("noteAppTitles", JSON.stringify(this.noteAppTitles));
+        } catch (e) {
+            console.error("Failed to save note apps to localStorage", e);
+        }
+
+        const idsRenderEl = document.getElementById("noteAppIds");
+        const titlesRenderEl = document.getElementById("noteAppTitles");
+        if (idsRenderEl)
+            this._renderTokenField(
+                idsRenderEl,
+                (Array.isArray(this.noteAppIds) ? this.noteAppIds : []).filter(
+                    (v) => !excludedIdsLowerN.includes(String(v || "").toLowerCase()),
+                ),
+            );
+        if (titlesRenderEl)
+            this._renderTokenField(
+                titlesRenderEl,
+                (Array.isArray(this.noteAppTitles) ? this.noteAppTitles : []).filter(
+                    (v) => !excludedTitlesLowerN.includes(String(v || "").toLowerCase()),
+                ),
+            );
+
+        this.closeAddNoteAppModal();
+    }
+
     saveEmailApp() {
         const idsEl = document.getElementById("emailAppIds");
         const titlesEl = document.getElementById("emailAppTitles");
-        const ids = this.readTokens(idsEl)
-            .map((s) => String(s || "").trim())
-            .filter(Boolean);
-        const titles = this.readTokens(titlesEl)
-            .map((s) => String(s || "").trim())
-            .filter(Boolean);
-
-        if (!ids.length && idsEl && idsEl.innerText) {
-            ids.push(
-                ...idsEl.innerText
-                    .split(/[\n,;]+/)
-                    .map((s) => s.trim())
-                    .filter(Boolean),
-            );
-        }
-        if (!titles.length && titlesEl && titlesEl.innerText) {
-            titles.push(
-                ...titlesEl.innerText
-                    .split(/[\n,;]+/)
-                    .map((s) => s.trim())
-                    .filter(Boolean),
-            );
-        }
+        const ids = this.getTokensFromEl(idsEl);
+        const titles = this.getTokensFromEl(titlesEl);
 
         if (!ids.length && !titles.length) return;
 
-        ids.forEach((id) => {
-            if (!this.emailAppIds.includes(id)) this.emailAppIds.push(id);
-        });
-        titles.forEach((t) => {
-            if (!this.emailAppTitles.includes(t)) this.emailAppTitles.push(t);
-        });
+        const excludedIdsLower = (Array.isArray(this.excludedAppIds) ? this.excludedAppIds : []).map((x) =>
+            String(x || "").toLowerCase(),
+        );
+        const excludedTitlesLower = (Array.isArray(this.excludedAppTitles) ? this.excludedAppTitles : []).map((x) =>
+            String(x || "").toLowerCase(),
+        );
+
+        // Replace stored email arrays with modal contents (respect excluded lists)
+        this.emailAppIds = (Array.isArray(ids) ? ids : [])
+            .map((v) => String(v || "").trim())
+            .filter(Boolean)
+            .filter((v) => !excludedIdsLower.includes(String(v).toLowerCase()));
+
+        this.emailAppTitles = (Array.isArray(titles) ? titles : [])
+            .map((v) => String(v || "").trim())
+            .filter(Boolean)
+            .filter((v) => !excludedTitlesLower.includes(String(v).toLowerCase()));
 
         try {
             localStorage.setItem("emailAppIds", JSON.stringify(this.emailAppIds));
@@ -157,8 +302,20 @@ class FocusApp {
 
         console.log("Saved email apps:", { ids: this.emailAppIds, titles: this.emailAppTitles });
 
-        if (idsEl) this._renderTokenField(idsEl, this.emailAppIds);
-        if (titlesEl) this._renderTokenField(titlesEl, this.emailAppTitles);
+        if (idsEl)
+            this._renderTokenField(
+                idsEl,
+                (Array.isArray(this.emailAppIds) ? this.emailAppIds : []).filter(
+                    (v) => !excludedIdsLower.includes(String(v || "").toLowerCase()),
+                ),
+            );
+        if (titlesEl)
+            this._renderTokenField(
+                titlesEl,
+                (Array.isArray(this.emailAppTitles) ? this.emailAppTitles : []).filter(
+                    (v) => !excludedTitlesLower.includes(String(v || "").toLowerCase()),
+                ),
+            );
 
         this.closeAddEmailAppModal();
     }
@@ -168,45 +325,36 @@ class FocusApp {
         if (modal) modal.classList.add("hidden");
     }
 
-    saveMeetingApp() {
+    async saveMeetingApp() {
+        // Ensure arrays are initialized
+        this.meetingAppIds ??= [];
+        this.meetingAppTitles ??= [];
+
         const idsEl = document.getElementById("meetingAppIds");
         const titlesEl = document.getElementById("meetingAppTitles");
-        const ids = this.readTokens(idsEl)
-            .map((s) => String(s || "").trim())
-            .filter(Boolean);
-        const titles = this.readTokens(titlesEl)
-            .map((s) => String(s || "").trim())
-            .filter(Boolean);
 
-        // fallback: split innerText if user pasted plain text
-        if (!ids.length && idsEl && idsEl.innerText) {
-            ids.push(
-                ...idsEl.innerText
-                    .split(/[\n,;]+/)
-                    .map((s) => s.trim())
-                    .filter(Boolean),
-            );
-        }
-        if (!titles.length && titlesEl && titlesEl.innerText) {
-            titles.push(
-                ...titlesEl.innerText
-                    .split(/[\n,;]+/)
-                    .map((s) => s.trim())
-                    .filter(Boolean),
-            );
-        }
+        const ids = this.getTokensFromEl(idsEl);
+        const titles = this.getTokensFromEl(titlesEl);
 
-        if (!ids.length && !titles.length) return;
+        // Replace stored arrays with the content of the modal (respect excluded lists)
+        const excludedIdsLowerM = (Array.isArray(this.excludedAppIds) ? this.excludedAppIds : []).map((x) =>
+            String(x || "").toLowerCase(),
+        );
+        const excludedTitlesLowerM = (Array.isArray(this.excludedAppTitles) ? this.excludedAppTitles : []).map((x) =>
+            String(x || "").toLowerCase(),
+        );
 
-        // Merge into stored arrays (avoid duplicates)
-        ids.forEach((id) => {
-            if (!this.meetingAppIds.includes(id)) this.meetingAppIds.push(id);
-        });
-        titles.forEach((t) => {
-            if (!this.meetingAppTitles.includes(t)) this.meetingAppTitles.push(t);
-        });
+        this.meetingAppIds = (Array.isArray(ids) ? ids : [])
+            .map((v) => String(v || "").trim())
+            .filter(Boolean)
+            .filter((v) => !excludedIdsLowerM.includes(String(v).toLowerCase()));
 
-        // persist
+        this.meetingAppTitles = (Array.isArray(titles) ? titles : [])
+            .map((v) => String(v || "").trim())
+            .filter(Boolean)
+            .filter((v) => !excludedTitlesLowerM.includes(String(v).toLowerCase()));
+
+        // Persist locally
         try {
             localStorage.setItem("meetingAppIds", JSON.stringify(this.meetingAppIds));
             localStorage.setItem("meetingAppTitles", JSON.stringify(this.meetingAppTitles));
@@ -214,12 +362,39 @@ class FocusApp {
             console.warn("Failed to persist meeting apps to localStorage", e);
         }
 
-        // Debug
-        console.log("Saved meeting apps:", { ids: this.meetingAppIds, titles: this.meetingAppTitles });
+        const payload = {
+            appids: this.meetingAppIds,
+            apptitles: this.meetingAppTitles,
+            taskname: "Meet",
+        };
 
-        // Re-render fields so tokens are visible and cursor is present
-        if (idsEl) this._renderTokenField(idsEl, this.meetingAppIds);
-        if (titlesEl) this._renderTokenField(titlesEl, this.meetingAppTitles);
+        const res = await fetch("/api/v1/task/recurring_tasks", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+        });
+
+        console.log(res);
+        if (!res.ok) {
+            console.warn("Failed to save recurring tasks", await res.text());
+            return;
+        }
+
+        // Re-render fields so tokens are visible and cursor is correct
+        if (idsEl)
+            this._renderTokenField(
+                idsEl,
+                (Array.isArray(this.meetingAppIds) ? this.meetingAppIds : []).filter(
+                    (v) => !excludedIdsLowerM.includes(String(v || "").toLowerCase()),
+                ),
+            );
+        if (titlesEl)
+            this._renderTokenField(
+                titlesEl,
+                (Array.isArray(this.meetingAppTitles) ? this.meetingAppTitles : []).filter(
+                    (v) => !excludedTitlesLowerM.includes(String(v || "").toLowerCase()),
+                ),
+            );
 
         this.closeAddMeetingAppModal();
     }
@@ -306,7 +481,14 @@ class FocusApp {
 
     readTokens(el) {
         if (!el) return [];
-        return [...el.querySelectorAll("span:not([data-cursor])")].map((s) => s.textContent);
+        return [...el.querySelectorAll("span:not([data-cursor])")].map((s) => {
+            // prefer the first text node (token value) so we don't include the exclude button text
+            if (s.childNodes && s.childNodes.length) {
+                const first = s.childNodes[0];
+                if (first && first.nodeType === Node.TEXT_NODE) return String(first.textContent || "").trim();
+            }
+            return String(s.textContent || "").trim();
+        });
     }
 
     _createTokenSpan(value) {
@@ -322,6 +504,83 @@ class FocusApp {
         el.innerHTML = "";
         (Array.isArray(tokens) ? tokens : []).forEach((t) => {
             const span = this._createTokenSpan(t);
+            // store metadata so exclude handler knows which list this came from
+            span.dataset.tokenValue = String(t || "");
+            span.dataset.parentId = el.id || "";
+
+            // create exclude button (small ×) to allow hiding this token permanently
+            const btn = document.createElement("button");
+            btn.type = "button";
+            btn.className = "ml-1 text-[10px] text-red-600 hover:text-red-800 inline-block align-middle";
+            btn.setAttribute("aria-label", "exclude token");
+            btn.textContent = "✖";
+            btn.addEventListener("click", (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                const val = span.dataset.tokenValue || "";
+                const parent = span.dataset.parentId || "";
+                if (!val) return;
+
+                // decide whether this is an id field or title field
+                const isTitle = /title/i.test(parent) || /titles/i.test(parent);
+
+                // add to excluded lists
+                try {
+                    if (isTitle) {
+                        this.excludedAppTitles ??= [];
+                        if (
+                            !this.excludedAppTitles.some(
+                                (x) => String(x || "").toLowerCase() === String(val).toLowerCase(),
+                            )
+                        ) {
+                            this.excludedAppTitles.push(val);
+                            localStorage.setItem("excludedAppTitles", JSON.stringify(this.excludedAppTitles));
+                        }
+                    } else {
+                        this.excludedAppIds ??= [];
+                        if (
+                            !this.excludedAppIds.some(
+                                (x) => String(x || "").toLowerCase() === String(val).toLowerCase(),
+                            )
+                        ) {
+                            this.excludedAppIds.push(val);
+                            localStorage.setItem("excludedAppIds", JSON.stringify(this.excludedAppIds));
+                        }
+                    }
+                } catch (err) {
+                    console.error("Failed to persist exclusion", err);
+                }
+
+                // also remove from the underlying stored arrays for this modal (if present)
+                try {
+                    const mapping = {
+                        meetingAppIds: "meetingAppIds",
+                        meetingAppTitles: "meetingAppTitles",
+                        emailAppIds: "emailAppIds",
+                        emailAppTitles: "emailAppTitles",
+                        noteAppIds: "noteAppIds",
+                        noteAppTitles: "noteAppTitles",
+                    };
+                    const key = mapping[parent];
+                    if (key && Array.isArray(this[key])) {
+                        this[key] = this[key].filter(
+                            (x) => String(x || "").toLowerCase() !== String(val).toLowerCase(),
+                        );
+                        try {
+                            localStorage.setItem(key, JSON.stringify(this[key]));
+                        } catch (err) {
+                            console.warn("Failed to update stored tokens after exclusion", err);
+                        }
+                    }
+                } catch (err) {
+                    console.warn("Error removing token from stored arrays", err);
+                }
+
+                // remove span from DOM
+                span.remove();
+            });
+
+            span.appendChild(btn);
             el.appendChild(span);
         });
         // ensure cursor at end
@@ -410,10 +669,31 @@ class FocusApp {
     }
 
     normalizeListInput(value) {
-        return value
-            .split(",")
-            .map((s) => s.trim())
+        return String(value || "")
+            .split(/[\n,;]+/)
+            .map((s) => s.replace(/\u00A0/g, " ").trim())
             .filter(Boolean);
+    }
+
+    // Robust extraction of tokens from a contenteditable token container.
+    // First try structured tokens (span elements). If none, fallback to splitting visible text.
+    getTokensFromEl(el) {
+        if (!el) return [];
+        try {
+            const tokens = this.readTokens(el)
+                .map((s) => String(s || "").trim())
+                .filter(Boolean);
+            if (tokens.length) return tokens;
+            const txt = (el.innerText || el.textContent || "").replace(/\u00A0/g, " ");
+            return this.normalizeListInput(txt);
+        } catch (err) {
+            try {
+                const txt = (el.innerText || el.textContent || "").replace(/\u00A0/g, " ");
+                return this.normalizeListInput(txt);
+            } catch (e) {
+                return [];
+            }
+        }
     }
 
     normalizeTimestamp(ts) {
@@ -506,7 +786,7 @@ class FocusApp {
     async loadTasks() {
         this.anytypeError = null;
         try {
-            const res = await fetch("/anytype/tasks", { cache: "no-store" });
+            const res = await fetch("/api/v1/anytype/tasks", { cache: "no-store" });
             if (!res.ok) {
                 const text = await res.text();
                 this.anytypeError = text || "Failed to load Anytype tasks.";
@@ -522,7 +802,7 @@ class FocusApp {
     }
 
     async loadCurrent() {
-        const res = await fetch("/current", { cache: "no-store" });
+        const res = await fetch("/api/v1/current", { cache: "no-store" });
         if (!res.ok) return null;
         const cur = await res.json();
         return Object.keys(cur || {}).length ? cur : null;
@@ -530,7 +810,7 @@ class FocusApp {
 
     async loadMonitoringState() {
         try {
-            const res = await fetch("/monitoring", { cache: "no-store" });
+            const res = await fetch("/api/v1/monitoring", { cache: "no-store" });
             if (res.ok) {
                 const data = await res.json();
                 this.monitoringEnabled = data.enabled;
@@ -546,7 +826,7 @@ class FocusApp {
 
     async loadSettings() {
         try {
-            const res = await fetch("/settings", { cache: "no-store" });
+            const res = await fetch("/api/v1/settings", { cache: "no-store" });
             if (res.ok) {
                 const data = await res.json();
                 this.monitoringEnabled = data.monitoring_enabled;
@@ -564,7 +844,7 @@ class FocusApp {
     }
 
     async loadEvents() {
-        const res = await fetch("/events", { cache: "no-store" });
+        const res = await fetch("/api/v1/events", { cache: "no-store" });
         if (!res.ok) return [];
         const events = await res.json();
         if (!Array.isArray(events)) return [];
@@ -572,7 +852,7 @@ class FocusApp {
     }
 
     async loadCategories() {
-        const res = await fetch("/categories", { cache: "no-store" });
+        const res = await fetch("/api/v1/categories", { cache: "no-store" });
         if (!res.ok) return [];
         const categories = await res.json();
         if (!Array.isArray(categories)) return [];
@@ -580,7 +860,7 @@ class FocusApp {
     }
 
     async loadHistory() {
-        const res = await fetch("/history", { cache: "no-store" });
+        const res = await fetch("/api/v1/history", { cache: "no-store" });
         if (!res.ok) return [];
         const history = await res.json();
         if (!Array.isArray(history)) return [];
@@ -596,7 +876,7 @@ class FocusApp {
                       task_title: task.title || "",
                   }
                 : { allowed_app_ids: [], allowed_titles: [], task_title: "" };
-            await fetch("/focus/rules", {
+            await fetch("/api/v1/focus/rules", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify(payload),
@@ -607,7 +887,7 @@ class FocusApp {
     }
 
     async updateDailyFocus() {
-        const res = await fetch("/focus/today");
+        const res = await fetch("/api/v1/focus/today");
         if (!res.ok) {
             console.error("API '/focus/today' not returned ok");
             return;
@@ -754,22 +1034,122 @@ class FocusApp {
             .join(", ")})`;
 
         if (loadingEl) loadingEl.style.display = "none";
+
+        // update
+        this.updateDailyActivities();
+    }
+
+    // Count daily non-task activities (notes, meetings, emails)
+    async updateDailyActivities() {
+        try {
+            // Fetch recurring tasks (for layout/colors/icons)
+            const tasksRes = await fetch("/api/v1/task/recurring_tasks", { cache: "no-store" });
+            if (!tasksRes.ok) return console.error("Fetch failed in updateDailyActivities");
+            const tasks = await tasksRes.json();
+
+            // Fetch today’s category summary
+            const categoriesRes = await fetch("/api/v1/focus/today/categories", { cache: "no-store" });
+            if (!categoriesRes.ok) return console.error("Fetch failed for today categories");
+            const categories = await categoriesRes.json(); // array: [{category, total_seconds}]
+
+            const container = document.getElementById("daily-classes");
+            container.innerHTML = ""; // clear old content
+
+            tasks.forEach((task) => {
+                const categoryData = categories.find((c) => c.category === task.name);
+                const totalSeconds = categoryData ? categoryData.total_seconds : 0;
+                const minutes = Math.floor(totalSeconds / 60);
+
+                const taskDiv = document.createElement("div");
+                taskDiv.className =
+                    "flex items-center justify-between p-4 rounded-lg shadow-sm border-b border-gray-200 dark:border-gray-700";
+
+                taskDiv.innerHTML = `
+                <div class="flex items-center gap-3 min-w-0">
+                    <div class="h-8 w-8 rounded bg-${task.color}-50 text-${task.color}-600 dark:bg-${task.color}-500/10 dark:text-${task.color}-400 flex items-center justify-center">
+                        <span class="material-symbols-outlined text-[20px]">${task.icon}</span>
+                    </div>
+                    <div class="min-w-0">
+                        <p class="text-sm font-medium truncate text-gray-800 dark:text-gray-100">
+                            ${task.name}
+                        </p>
+                    </div>
+                </div>
+                <div class="flex items-center gap-2">
+                    <span class="text-xs font-mono text-primary bg-primary/5 dark:bg-primary/10 px-2 py-1 rounded border border-primary/10 dark:border-primary/20">
+                        ${minutes}m
+                    </span>
+                    <button class="exclude-btn hover:text-red-600 rounded hover:cursor-pointer">
+                        <span class="material-symbols-outlined text-[18px]">delete</span>
+                    </button>
+                </div>
+            `;
+
+                // Add click handler for exclude
+                const btn = taskDiv.querySelector(".exclude-btn");
+                btn.addEventListener("click", async () => {
+                    await this.excludeDailyActivity(task.name);
+                    taskDiv.remove(); // remove from DOM immediately
+                });
+                container.appendChild(taskDiv);
+            });
+        } catch (err) {
+            console.error("Error in updateDailyActivities:", err);
+        }
+    }
+
+    // Example function to mark task as excluded on server
+    async excludeDailyActivity(taskName) {
+        try {
+            const res = await fetch("/api/v1/focus/exclude_task", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ name: taskName }),
+            });
+            if (!res.ok) {
+                const errorText = await res.text();
+                console.error("Failed to exclude task:", taskName, errorText);
+            }
+        } catch (err) {
+            console.error("Error excluding task:", err);
+        }
     }
 
     // ==================== STATE MANAGEMENT ====================
-    setCurrentTaskId(taskId) {
+    async setCurrentTaskId(taskId) {
         this.currentTaskId = taskId ? String(taskId) : null;
+
+        // Save to localStorage
         if (this.currentTaskId) {
-            localStorage.setItem("currentTaskId", String(this.currentTaskId));
+            localStorage.setItem("currentTaskId", this.currentTaskId);
         } else {
             localStorage.removeItem("currentTaskId");
         }
+
+        // Send to server
+        try {
+            if (this.currentTaskId) {
+                const response = await fetch("/api/v1/task/set_current", {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json",
+                    },
+                    body: JSON.stringify({ id: this.currentTaskId }),
+                });
+
+                if (!response.ok) {
+                    const text = await response.text();
+                    console.error("[CLIENT] Failed to set current task:", text);
+                }
+            }
+        } catch (err) {
+            console.error("[CLIENT] Error sending task to server:", err);
+        }
+
+        // Update UI
         this.renderTasks(this.lastTasks);
         this.renderCurrentTask(this.lastTasks);
         this.updateFocusWarning(null, this.lastTasks);
-        const task = Array.isArray(this.lastTasks)
-            ? this.lastTasks.find((t) => String(t.id) === String(this.currentTaskId))
-            : null;
     }
 
     normalizeAllowList(list) {
@@ -990,31 +1370,6 @@ class FocusApp {
                 currentBtn.innerHTML = `<span class="material-symbols-outlined text-[16px]">${isCurrent ? "radio_button_checked" : "radio_button_unchecked"}</span>`;
 
                 // Current button click handler
-                currentBtn.addEventListener("click", (event) => {
-                    event.stopPropagation();
-                    const isCurrentlySelected = this.currentTaskId && String(task.id) === String(this.currentTaskId);
-
-                    // Clear all markdown containers first
-                    document.querySelectorAll(".task-markdown-container").forEach((container) => {
-                        container.remove();
-                    });
-
-                    if (isCurrentlySelected) {
-                        this.setCurrentTaskId(null);
-                        this.updateServerFocusRules(null);
-                    } else {
-                        this.setCurrentTaskId(task.id);
-                        this.updateServerFocusRules(task);
-                        // Render markdown for this task
-                        setTimeout(() => {
-                            this.renderTaskMarkdown(task);
-                        }, 0);
-                    }
-
-                    // Update button states without re-rendering everything
-                    this.updateCurrentButtonStates();
-                });
-
                 currentBtn.dataset.taskId = task.id;
                 currentBtn.dataset.taskCurrent = isCurrent ? "true" : "false";
 
@@ -1345,10 +1700,26 @@ class FocusApp {
     renderCurrentStatus(current) {
         const status = document.getElementById("current-status");
         if (!status) return;
-        if (!current) {
-            status.textContent = "Idle";
+
+        const activeDot = document.getElementById("activity-indicator-active");
+        const idleDot = document.getElementById("activity-indicator-idle");
+
+        if (!this.monitoringEnabled) {
+            status.textContent = "Not Monitoring Activities";
+            if (activeDot) activeDot.classList.toggle("hidden", true);
+            if (idleDot) idleDot.classList.toggle("hidden", false);
             return;
         }
+
+        if (!current) {
+            status.textContent = "Idle";
+            if (activeDot) activeDot.classList.toggle("hidden", true);
+            if (idleDot) idleDot.classList.toggle("hidden", false);
+            return;
+        }
+
+        if (activeDot) activeDot.classList.toggle("hidden", false);
+        if (idleDot) idleDot.classList.toggle("hidden", true);
         const app = current.app_id || "(unknown)";
         const title = current.title || "(untitled)";
         status.textContent = `${app} — ${title}`;
@@ -1432,15 +1803,7 @@ class FocusApp {
         const allowedTitleLabel = allowedTitles.length ? allowedTitles.join(", ") : "Any title";
         warning.textContent = `Not focused: ${appId} — ${title}.`;
         this.amIFocused = false;
-        const key = `${task.id}:${current.app_id || ""}:${current.title || ""}`;
     }
-
-    // const filterMode = window.historyFilterMode || "month";
-    // const filtered = items.filter((item) => {
-    //     if (filterMode === "all") return true;
-    //     const startDate = item.start ? new Date(item.start * 1000) : null;
-    //     return startDate ? startDate >= startOfMonth : false;
-    // });
 
     renderHistory(history, events, tasks) {
         const list = document.getElementById("history-list");
@@ -1694,44 +2057,444 @@ class FocusApp {
         }
     }
 
+    // ==================== POMODORO ====================
+
+    initPomodoro() {
+        document.getElementById("pomodoro-focus-mode")?.addEventListener("click", () => this.setPomodoroMode("focus"));
+        document
+            .getElementById("pomodoro-short-break-mode")
+            ?.addEventListener("click", () => this.setPomodoroMode("short-break"));
+        document
+            .getElementById("pomodoro-long-break-mode")
+            ?.addEventListener("click", () => this.setPomodoroMode("long-break"));
+
+        // Control buttons
+        document.getElementById("pomodoro-start")?.addEventListener("click", () => this.togglePomodoro());
+        document.getElementById("pomodoro-pause")?.addEventListener("click", () => this.pausePomodoro());
+        document.getElementById("pomodoro-reset")?.addEventListener("click", () => this.resetPomodoro());
+
+        // Sliders
+        document.getElementById("focus-duration-slider")?.addEventListener("input", (e) => {
+            const minutes = parseInt(e.target.value);
+            document.getElementById("focus-duration-value").textContent = `${minutes} min`;
+            this.pomodoro.focusDuration = minutes * 60;
+            if (this.pomodoro.mode === "focus" && !this.pomodoro.isRunning) {
+                this.pomodoro.timeLeft = minutes * 60;
+                this.updatePomodoroDisplay();
+            }
+        });
+
+        document.getElementById("short-break-slider")?.addEventListener("input", (e) => {
+            const minutes = parseInt(e.target.value);
+            document.getElementById("short-break-value").textContent = `${minutes} min`;
+            this.pomodoro.shortBreakDuration = minutes * 60;
+            if (this.pomodoro.mode === "short-break" && !this.pomodoro.isRunning) {
+                this.pomodoro.timeLeft = minutes * 60;
+                this.updatePomodoroDisplay();
+            }
+        });
+
+        document.getElementById("long-break-slider")?.addEventListener("input", (e) => {
+            const minutes = parseInt(e.target.value);
+            document.getElementById("long-break-value").textContent = `${minutes} min`;
+            this.pomodoro.longBreakDuration = minutes * 60;
+            if (this.pomodoro.mode === "long-break" && !this.pomodoro.isRunning) {
+                this.pomodoro.timeLeft = minutes * 60;
+                this.updatePomodoroDisplay();
+            }
+        });
+
+        // Auto-start toggle
+        document.getElementById("auto-start-breaks")?.addEventListener("change", (e) => {
+            this.pomodoro.autoStartBreaks = e.target.checked;
+        });
+
+        // Initialize display
+        this.updatePomodoroDisplay();
+    }
+
+    setPomodoroMode(mode) {
+        if (this.pomodoro.isRunning) {
+            if (!confirm("Timer is running. Switch mode and reset timer?")) return;
+            this.resetPomodoro();
+        }
+
+        this.pomodoro.mode = mode;
+
+        // Update button styles
+        const focusBtn = document.getElementById("pomodoro-focus-mode");
+        const shortBreakBtn = document.getElementById("pomodoro-short-break-mode");
+        const longBreakBtn = document.getElementById("pomodoro-long-break-mode");
+
+        [focusBtn, shortBreakBtn, longBreakBtn].forEach((btn) => {
+            if (btn) {
+                btn.classList.remove(
+                    "bg-primary",
+                    "dark:bg-primary-dark",
+                    "text-white",
+                    "shadow-lg",
+                    "shadow-primary/20",
+                    "dark:shadow-primary-dark/20",
+                );
+                btn.classList.add(
+                    "text-gray-600",
+                    "dark:text-gray-400",
+                    "hover:text-gray-900",
+                    "dark:hover:text-white",
+                );
+            }
+        });
+
+        // Highlight active mode
+        const activeBtn = mode === "focus" ? focusBtn : mode === "short-break" ? shortBreakBtn : longBreakBtn;
+
+        if (activeBtn) {
+            activeBtn.classList.add(
+                "bg-primary",
+                "dark:bg-primary-dark",
+                "text-white",
+                "shadow-lg",
+                "shadow-primary/20",
+                "dark:shadow-primary-dark/20",
+            );
+            activeBtn.classList.remove(
+                "text-gray-600",
+                "dark:text-gray-400",
+                "hover:text-gray-900",
+                "dark:hover:text-white",
+            );
+        }
+
+        // Set timer based on mode
+        switch (mode) {
+            case "focus":
+                this.pomodoro.timeLeft = this.pomodoro.focusDuration;
+                break;
+            case "short-break":
+                this.pomodoro.timeLeft = this.pomodoro.shortBreakDuration;
+                break;
+            case "long-break":
+                this.pomodoro.timeLeft = this.pomodoro.longBreakDuration;
+                break;
+        }
+
+        this.updatePomodoroDisplay();
+    }
+
+    togglePomodoro() {
+        if (!this.pomodoro.isRunning) {
+            this.startPomodoro();
+        } else {
+            this.pausePomodoro();
+        }
+    }
+
+    startPomodoro() {
+        this.pomodoro.isRunning = true;
+        this.pomodoro.isPaused = false;
+
+        // Update button states
+        document.getElementById("pomodoro-start")?.classList.add("hidden");
+        document.getElementById("pomodoro-pause")?.classList.remove("hidden");
+
+        // Start the interval
+        this.pomodoro.interval = setInterval(() => {
+            this.pomodoro.timeLeft--;
+
+            if (this.pomodoro.timeLeft <= 0) {
+                this.pomodoroComplete();
+            }
+
+            this.updatePomodoroDisplay();
+        }, 1000);
+    }
+
+    pausePomodoro() {
+        this.pomodoro.isPaused = true;
+        clearInterval(this.pomodoro.interval);
+        this.pomodoro.interval = null;
+
+        // Update button states
+        document.getElementById("pomodoro-start")?.classList.remove("hidden");
+        document.getElementById("pomodoro-pause")?.classList.add("hidden");
+
+        const startBtn = document.getElementById("pomodoro-start");
+        if (startBtn) {
+            startBtn.innerHTML = `
+            <span class="material-symbols-outlined text-2xl" style="font-variation-settings: 'FILL' 1">
+                play_arrow
+            </span>
+            <span class="text-lg font-bold tracking-tight">Resume</span>
+        `;
+        }
+    }
+
+    resetPomodoro() {
+        clearInterval(this.pomodoro.interval);
+        this.pomodoro.isRunning = false;
+        this.pomodoro.isPaused = false;
+        this.pomodoro.interval = null;
+
+        // Reset timer to current mode's duration
+        switch (this.pomodoro.mode) {
+            case "focus":
+                this.pomodoro.timeLeft = this.pomodoro.focusDuration;
+                break;
+            case "short-break":
+                this.pomodoro.timeLeft = this.pomodoro.shortBreakDuration;
+                break;
+            case "long-break":
+                this.pomodoro.timeLeft = this.pomodoro.longBreakDuration;
+                break;
+        }
+
+        // Update button states
+        document.getElementById("pomodoro-start")?.classList.remove("hidden");
+        document.getElementById("pomodoro-pause")?.classList.add("hidden");
+
+        const startBtn = document.getElementById("pomodoro-start");
+        if (startBtn) {
+            startBtn.innerHTML = `
+            <span class="material-symbols-outlined text-2xl" style="font-variation-settings: 'FILL' 1">
+                play_arrow
+            </span>
+            <span class="text-lg font-bold tracking-tight">Start Timer</span>
+        `;
+        }
+
+        this.updatePomodoroDisplay();
+    }
+
+    pomodoroComplete() {
+        clearInterval(this.pomodoro.interval);
+        this.pomodoro.isRunning = false;
+
+        // Play sound
+        this.playTimerEndSound();
+
+        // Show notification
+        this.showPomodoroNotification();
+
+        // Auto-start next session if enabled
+        if (this.pomodoro.autoStartBreaks && this.pomodoro.mode === "focus") {
+            setTimeout(() => {
+                this.setPomodoroMode("short-break");
+                this.startPomodoro();
+            }, 1000);
+        } else if (this.pomodoro.autoStartBreaks && this.pomodoro.mode !== "focus") {
+            setTimeout(() => {
+                this.setPomodoroMode("focus");
+                this.startPomodoro();
+            }, 1000);
+        } else {
+            this.resetPomodoro();
+        }
+    }
+
+    updatePomodoroDisplay() {
+        const timerElement = document.getElementById("pomodoro-timer");
+        const phaseElement = document.getElementById("pomodoro-phase");
+        const progressElement = document.getElementById("pomodoro-progress");
+
+        if (!timerElement || !phaseElement) return;
+
+        // Update timer display
+        const minutes = Math.floor(this.pomodoro.timeLeft / 60);
+        const seconds = this.pomodoro.timeLeft % 60;
+        timerElement.textContent = `${minutes.toString().padStart(2, "0")}:${seconds.toString().padStart(2, "0")}`;
+
+        // Update phase text
+        switch (this.pomodoro.mode) {
+            case "focus":
+                phaseElement.textContent = "Focus";
+                phaseElement.className =
+                    "text-gray-600 dark:text-gray-400 uppercase tracking-[0.4em] text-xs mt-4 font-semibold";
+                break;
+            case "short-break":
+                phaseElement.textContent = "Short Break";
+                phaseElement.className =
+                    "text-emerald-600 dark:text-emerald-400 uppercase tracking-[0.4em] text-xs mt-4 font-semibold";
+                break;
+            case "long-break":
+                phaseElement.textContent = "Long Break";
+                phaseElement.className =
+                    "text-blue-600 dark:text-blue-400 uppercase tracking-[0.4em] text-xs mt-4 font-semibold";
+                break;
+        }
+
+        // Update progress ring
+        if (progressElement) {
+            const totalDuration = this.getCurrentModeDuration();
+            const progress = 1 - this.pomodoro.timeLeft / totalDuration;
+            const circumference = 2 * Math.PI * 48; // r="48%" = 48% of 200 (circle diameter)
+            const offset = circumference * progress;
+            progressElement.style.strokeDashoffset = offset;
+        }
+    }
+
+    getCurrentModeDuration() {
+        switch (this.pomodoro.mode) {
+            case "focus":
+                return this.pomodoro.focusDuration;
+            case "short-break":
+                return this.pomodoro.shortBreakDuration;
+            case "long-break":
+                return this.pomodoro.longBreakDuration;
+            default:
+                return 25 * 60;
+        }
+    }
+
+    showPomodoroNotification() {
+        const message =
+            this.pomodoro.mode === "focus"
+                ? "Focus session complete! Time for a break."
+                : "Break time is over! Ready to focus?";
+
+        // Create or show notification element
+        let notification = document.getElementById("pomodoro-notification");
+        if (!notification) {
+            notification = document.createElement("div");
+            notification.id = "pomodoro-notification";
+            notification.className = "fixed bottom-4 right-4 p-4 rounded-lg shadow-xl z-50 hidden";
+            document.body.appendChild(notification);
+        }
+
+        notification.innerHTML = `
+        <div class="flex items-center gap-3">
+            <span class="material-symbols-outlined text-2xl">timer</span>
+            <div>
+                <p class="font-semibold">${message}</p>
+                <p class="text-sm opacity-75">Pomodoro Timer</p>
+            </div>
+            <button onclick="this.parentElement.parentElement.classList.add('hidden')" 
+                    class="ml-4 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">
+                <span class="material-symbols-outlined">close</span>
+            </button>
+        </div>
+    `;
+
+        // Style based on theme
+        notification.className = notification.className.replace(/bg-\S+ text-\S+/, "");
+        if (document.documentElement.classList.contains("dark")) {
+            notification.classList.add("bg-gray-800", "text-white", "border", "border-gray-700");
+        } else {
+            notification.classList.add("bg-white", "text-gray-900", "border", "border-gray-200");
+        }
+
+        notification.classList.remove("hidden");
+
+        // Auto-hide after 5 seconds
+        setTimeout(() => {
+            notification.classList.add("hidden");
+        }, 5000);
+    }
+
     // ==================== VIEW MANAGEMENT ====================
 
     setView(view) {
         this.currentView = view;
+
+        // Get all view containers
         const tasksView = document.getElementById("view-tasks");
         const historyView = document.getElementById("view-history");
+        const pomodoroView = document.getElementById("view-pomodoro");
+
+        // Get all sidebar/aside containers
         const tasksAside = document.getElementById("tasks-aside");
         const historyAside = document.getElementById("history-aside");
+
+        // Show/hide main content views
         if (tasksView) tasksView.classList.toggle("hidden", view !== "tasks");
         if (historyView) historyView.classList.toggle("hidden", view !== "history");
-        if (tasksAside) tasksAside.classList.toggle("lg:flex", view === "tasks");
-        if (historyAside) historyAside.classList.toggle("lg:flex", view === "history");
+        if (pomodoroView) pomodoroView.classList.toggle("hidden", view !== "pomodoro");
 
+        // Show/hide sidebars
+        if (tasksAside) {
+            tasksAside.classList.toggle("lg:flex", view === "tasks");
+            tasksAside.classList.toggle("hidden", view !== "tasks");
+        }
+        if (historyAside) {
+            historyAside.classList.toggle("lg:flex", view === "history");
+            historyAside.classList.toggle("hidden", view !== "history");
+        }
+
+        // Update navigation link styling
         document.querySelectorAll(".nav-link[data-view]").forEach((link) => {
             const isActive = link.dataset.view === view;
-            link.classList.toggle("bg-primary/10", isActive);
-            link.classList.toggle("text-primary", isActive);
-            link.classList.toggle("font-semibold", isActive);
-            if (!isActive) {
-                link.classList.add("text-gray-500", "dark:text-gray-400");
-                link.classList.add("hover:bg-gray-50", "dark:hover:bg-gray-700");
-                link.classList.add("hover:text-gray-900", "dark:hover:text-white");
-                link.classList.remove("hover:bg-primary/20");
-                link.classList.remove("hover:text-primary");
+
+            // Reset all classes first
+            link.classList.remove(
+                "bg-primary/10",
+                "dark:bg-primary-dark/10",
+                "text-primary",
+                "dark:text-primary-dark",
+                "font-semibold",
+                "text-gray-500",
+                "dark:text-gray-400",
+                "hover:bg-gray-50",
+                "dark:hover:bg-gray-700",
+                "hover:text-gray-900",
+                "dark:hover:text-white",
+                "hover:bg-primary/20",
+                "dark:hover:bg-primary-dark/20",
+                "hover:text-primary",
+                "dark:hover:text-primary-dark",
+            );
+
+            // Apply active styling
+            if (isActive) {
+                link.classList.add(
+                    "bg-primary/10",
+                    "dark:bg-primary-dark/10",
+                    "text-primary",
+                    "dark:text-primary-dark",
+                    "font-semibold",
+                    "hover:bg-primary/20",
+                    "dark:hover:bg-primary-dark/20",
+                    "hover:text-primary",
+                    "dark:hover:text-primary-dark",
+                );
             } else {
-                link.classList.remove("text-gray-500", "dark:text-gray-400");
-                link.classList.remove("hover:bg-gray-50", "dark:hover:bg-gray-700");
-                link.classList.remove("hover:text-gray-900", "dark:hover:text-white");
-                link.classList.add("hover:bg-primary/20");
-                link.classList.add("hover:text-primary");
+                // Apply inactive styling
+                link.classList.add(
+                    "text-gray-500",
+                    "dark:text-gray-400",
+                    "hover:bg-gray-50",
+                    "dark:hover:bg-gray-700",
+                    "hover:text-gray-900",
+                    "dark:hover:text-white",
+                );
             }
         });
 
-        // this.refreshAll();
-    }
+        // Refresh data based on the current view
+        if (view === "tasks") {
+            this.refreshAll();
+        } else if (view === "history") {
+            this.refreshAll();
+        } else if (view === "pomodoro") {
+            // Reset pomodoro display when switching to pomodoro view
+            this.updatePomodoroDisplay();
 
+            // Stop any ongoing timer if pomodoro is paused
+            if (this.pomodoro.isPaused) {
+                this.resetPomodoro();
+            }
+        }
+
+        // Update page title
+        let pageTitle = "Focus Dashboard";
+        if (view === "tasks") pageTitle = "Focus Dashboard - Tasks";
+        else if (view === "pomodoro") pageTitle = "Focus Dashboard - Pomodoro";
+        else if (view === "history") pageTitle = "Focus Dashboard - History";
+
+        document.title = pageTitle;
+    }
     isPageActive() {
+        return true
         return document.visibilityState === "visible" && document.hasFocus();
+
     }
 
     async refreshFocusOnly() {
@@ -1754,6 +2517,7 @@ class FocusApp {
             ]);
 
             this.updateDailyFocus();
+            this.updateDailyActivities();
             this.lastTasks = Array.isArray(tasks) ? tasks : [];
             this.lastCurrentFocus = current;
             this.updateAnytypeWarning();
@@ -1777,6 +2541,9 @@ class FocusApp {
         this.renderCurrentTask(tasks);
         this.updateFocusWarning(current, tasks);
         this.updateCategorySuggestions(categories);
+        this.updateDailyActivities();
+
+        // refre
     }
 
     async refreshEverything() {
@@ -1796,6 +2563,7 @@ class FocusApp {
         this.updateCategorySuggestions(categories);
         // this.renderStats(history, events, tasks);
         this.renderHistory(history, events, tasks);
+        this.updateDailyActivities();
     }
 
     // ==================== TASK MANAGEMENT ====================
@@ -1814,7 +2582,7 @@ class FocusApp {
             exclude: false,
         };
 
-        const res = await fetch("/tasks", {
+        const res = await fetch("/api/v1/tasks", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(payload),
@@ -2052,7 +2820,7 @@ class FocusApp {
         }
         this.setAnytypeStatus("Creating challenge…");
         try {
-            const res = await fetch("/anytype/auth/challenges", {
+            const res = await fetch("/api/v1/anytype/auth/challenges", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
             });
@@ -2081,7 +2849,7 @@ class FocusApp {
         }
         this.setAnytypeStatus("Creating API key…");
         try {
-            const res = await fetch("/anytype/auth/api_keys", {
+            const res = await fetch("/api/v1/anytype/auth/api_keys", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ challenge_id: challengeId, code }),
@@ -2106,7 +2874,7 @@ class FocusApp {
     async loadAnytypeSpaces() {
         this.setAnytypeStatus("Loading spaces…");
         try {
-            const res = await fetch("/anytype/spaces", { cache: "no-store" });
+            const res = await fetch("/api/v1/anytype/spaces", { cache: "no-store" });
             if (!res.ok) {
                 const text = await res.text();
                 this.setAnytypeStatus(text || "Failed to load spaces.");
@@ -2133,7 +2901,7 @@ class FocusApp {
         }
         this.setAnytypeStatus("Saving space…");
         try {
-            const res = await fetch("/anytype/space", {
+            const res = await fetch("/api/v1/anytype/space", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ space_id: spaceId }),
@@ -2166,7 +2934,7 @@ class FocusApp {
             return;
         }
         try {
-            const res = await fetch("/anytype/config", {
+            const res = await fetch("/api/v1/anytype/config", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ api_key, space_id }),
@@ -2192,7 +2960,7 @@ class FocusApp {
         const status = document.getElementById("anytype-config-status");
         if (status) status.textContent = "Updating…";
         try {
-            const res = await fetch("/anytype/refresh", { method: "POST" });
+            const res = await fetch("/api/v1/anytype/refresh", { method: "POST" });
             if (!res.ok) {
                 const text = await res.text();
                 if (status) status.textContent = text || "Failed to update.";
@@ -2231,60 +2999,63 @@ class FocusApp {
         document.getElementById("task-submit")?.addEventListener("click", this.submitTask);
         document.getElementById("task-name")?.addEventListener("keydown", this.handleKeyDown);
 
-        // Task container events
+        // Task double-click
+        // In setupEventListeners(), replace the tasks-container click handler with:
         document.getElementById("tasks-container")?.addEventListener("click", async (event) => {
-            const noteTarget = event.target?.closest("button[data-task-note]");
-            const currentTarget = event.target?.closest("button[data-task-current]");
-            if (currentTarget) {
-                const taskId = currentTarget.dataset.taskId || "";
-                if (!taskId) return;
-                this.setCurrentTaskId(taskId);
-                const res = await fetch("/task/set_current", {
+            // Find the clicked button that has data-task-id
+            const button = event.target.closest("button[data-task-id]");
+            if (!button) return;
+
+            event.stopPropagation();
+            const taskId = button.dataset.taskId;
+            if (!taskId) return;
+
+            // Find the task in lastTasks
+            const task = Array.isArray(this.lastTasks)
+                ? this.lastTasks.find((t) => String(t.id) === String(taskId))
+                : null;
+
+            if (!task) return;
+
+            const isCurrentlySelected = this.currentTaskId && String(taskId) === String(this.currentTaskId);
+
+            // Clear all markdown containers first
+            document.querySelectorAll(".task-markdown-container").forEach((container) => {
+                container.remove();
+            });
+
+            if (isCurrentlySelected) {
+                // Deselect current task
+                await this.setCurrentTaskId(null);
+                await this.updateServerFocusRules(null);
+            } else {
+                // Select new task
+                await this.setCurrentTaskId(taskId);
+                await this.updateServerFocusRules(task);
+                // Render markdown for this task
+                setTimeout(() => {
+                    this.renderTaskMarkdown(task);
+                }, 0);
+            }
+
+            // Update button states
+            this.updateCurrentButtonStates();
+
+            // Send to server
+            try {
+                const res = await fetch("/api/v1/task/set_current", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({ id: taskId }),
                 });
+
                 if (!res.ok) {
                     const text = await res.text();
-                    alert("Failed to update task: " + text);
-                    return;
+                    console.warn("Failed to update current task on server:", text);
                 }
-                await this.refreshAll();
-                return;
+            } catch (error) {
+                console.error("Error updating current task on server:", error);
             }
-        });
-
-        // Task double-click
-        document.getElementById("tasks-container")?.addEventListener("dblclick", async (event) => {
-            const row = event.target?.closest(".task-row");
-            if (!row) return;
-            const taskId = Number(row.dataset.taskId || 0);
-            if (!taskId) return;
-
-            const current = await this.loadCurrent();
-            const defaultApp = current?.app_id || "";
-            const defaultTitle = current?.title || "";
-
-            const appId = prompt("Allowed App ID (leave blank to keep):", defaultApp);
-            if (appId == null) return;
-            const title = prompt("Allowed Title keyword (leave blank to keep):", defaultTitle);
-            if (title == null) return;
-
-            const payload = { id: taskId };
-            if (appId.trim()) payload.allowed_app_ids = [appId.trim()];
-            if (title.trim()) payload.allowed_titles = [title.trim()];
-
-            const res = await fetch("/tasks/update", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(payload),
-            });
-            if (!res.ok) {
-                const text = await res.text();
-                alert("Failed to update task: " + text);
-                return;
-            }
-            await this.refreshAll();
         });
 
         // Timer
@@ -2340,6 +3111,13 @@ class FocusApp {
             this.openAddMeetingAppModal();
         });
 
+        // Notes app modal and token inputs
+        document.querySelector('[data-action="add-note-app"]')?.addEventListener("click", (e) => {
+            e.preventDefault();
+            console.log("add-note-app clicked");
+            this.openAddNoteAppModal();
+        });
+
         document.getElementById("meeting-cancel-button")?.addEventListener("click", (e) => {
             e.preventDefault();
             this.closeAddMeetingAppModal();
@@ -2349,6 +3127,17 @@ class FocusApp {
             e.preventDefault();
             console.log("meeting-add-button clicked");
             this.saveMeetingApp();
+        });
+
+        document.getElementById("note-cancel-button")?.addEventListener("click", (e) => {
+            e.preventDefault();
+            this.closeAddNoteAppModal();
+        });
+
+        document.getElementById("note-add-button")?.addEventListener("click", (e) => {
+            e.preventDefault();
+            console.log("note-add-button clicked");
+            this.saveNoteApp();
         });
 
         // Email app modal and token inputs
@@ -2544,7 +3333,7 @@ class FocusApp {
         document.getElementById("monitoring-toggle")?.addEventListener("change", async (e) => {
             const enabled = e.target.checked;
             try {
-                const res = await fetch("/monitoring", {
+                const res = await fetch("/api/v1/monitoring", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({ enabled }),
@@ -2554,6 +3343,7 @@ class FocusApp {
                 } else {
                     e.target.checked = this.monitoringEnabled; // revert
                 }
+                this.renderCurrentStatus(enabled);
             } catch (err) {
                 console.error("Failed to toggle monitoring", err);
                 e.target.checked = this.monitoringEnabled; // revert
@@ -2565,7 +3355,42 @@ class FocusApp {
         window.addEventListener("blur", this.handleBlur);
 
         const meetCategory = document.getElementById("edit-meet-apps");
-        // window.addEventListener("click", this.openMeetingsEditor);
+
+        const openBtn = document.getElementById("daily-config-open");
+        const modal = document.getElementById("daily-config-modal");
+        const closeBtn = document.getElementById("daily-config-close");
+        const saveBtn = document.getElementById("daily-config-save");
+        const cancelBtn = document.getElementById("daily-config-cancel");
+
+        openBtn.onclick = () => modal.classList.remove("hidden");
+        closeBtn.onclick = cancelBtn.onclick = () => modal.classList.add("hidden");
+
+        saveBtn.onclick = async () => {
+            const data = {
+                name: document.getElementById("daily-name").value.trim(),
+                appIds: document
+                    .getElementById("daily-appids")
+                    .value.split(";")
+                    .map((s) => s.trim())
+                    .filter(Boolean),
+                appTitles: document
+                    .getElementById("daily-apptitles")
+                    .value.split(";")
+                    .map((s) => s.trim())
+                    .filter(Boolean),
+                icon: document.getElementById("daily-icon").value.trim(),
+                color: document.getElementById("daily-color").value,
+            };
+
+            const res = await fetch("/api/v1/task/recurring_tasks", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(data),
+            });
+            console.log(res);
+
+            modal.classList.add("hidden");
+        };
     }
 
     startPolling() {
@@ -2600,6 +3425,12 @@ class FocusApp {
         // Setup token inputs for meeting app autocompletion
         this.setupTokenInput(document.getElementById("meetingAppIds"));
         this.setupTokenInput(document.getElementById("meetingAppTitles"));
+        // Notes token inputs
+        this.setupTokenInput(document.getElementById("noteAppIds"));
+        this.setupTokenInput(document.getElementById("noteAppTitles"));
+        // Email token inputs
+        this.setupTokenInput(document.getElementById("emailAppIds"));
+        this.setupTokenInput(document.getElementById("emailAppTitles"));
 
         // Set initial view
         this.setView("tasks");

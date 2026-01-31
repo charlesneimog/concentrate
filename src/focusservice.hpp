@@ -13,6 +13,7 @@
 #include "secrets.hpp"
 #include "notification.hpp"
 #include "sqlite.hpp"
+#include "hydration.hpp"
 
 #include "common.hpp"
 
@@ -45,6 +46,7 @@ class FocusService {
     std::unique_ptr<Secrets> m_Secrets;
     std::unique_ptr<Notification> m_Notification;
     std::unique_ptr<SQLite> m_SQLite;
+    std::unique_ptr<HydrationService> m_Hydration;
 
     // Server
     std::thread m_Thread;
@@ -60,6 +62,11 @@ class FocusService {
     // Current Task
     std::vector<std::string> m_AllowedApps;
     std::vector<std::string> m_AllowedWindowTitles;
+
+    // Special API (When wayland info is not enough)
+    std::string m_SpecialProjectTitle;
+    std::string m_SpecialAppId;
+    bool m_SpecialProjectFocused;
 
     // Monitoring Notification
     std::chrono::system_clock m_LastMonitoringDisabledNotification;

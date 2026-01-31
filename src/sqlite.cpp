@@ -14,6 +14,7 @@ SQLite::SQLite(const std::string &db_path) : m_Db(nullptr), m_DbPath(db_path) {
     ExecIgnoringErrors("PRAGMA synchronous=NORMAL");
     ExecIgnoringErrors("PRAGMA temp_store=MEMORY");
     ExecIgnoringErrors("PRAGMA cache_size = -1000;");
+    ExecIgnoringErrors("ALTER TABLE recurring_tasks ADD COLUMN excluded INTEGER DEFAULT 0");
 
     Init();
 }
@@ -33,7 +34,7 @@ void SQLite::Init() {
     ExecIgnoringErrors("CREATE TABLE IF NOT EXISTS focus_events ("
                        "id INTEGER PRIMARY KEY AUTOINCREMENT,"
                        "app_id TEXT,"
-                       "window_id INTEGER,"
+                       "windowId INTEGER,"
                        "title TEXT,"
                        "start_time REAL,"
                        "end_time REAL,"
@@ -46,16 +47,16 @@ void SQLite::Init() {
                        "task TEXT,"
                        "start_time REAL,"
                        "end_time REAL,"
-                       "allowed_app_ids TEXT,"
-                       "allowed_titles TEXT,"
+                       "allowedAppIds TEXT,"
+                       "allowedTitles TEXT,"
                        "excluded INTEGER DEFAULT 0,"
                        "done INTEGER DEFAULT 0)");
 
     // Categories
     ExecIgnoringErrors("CREATE TABLE IF NOT EXISTS focus_categories ("
                        "category TEXT PRIMARY KEY,"
-                       "allowed_app_ids TEXT,"
-                       "allowed_titles TEXT,"
+                       "allowedAppIds TEXT,"
+                       "allowedTitles TEXT,"
                        "updated_at REAL)");
 
     // App/title → category mapping
@@ -73,24 +74,35 @@ void SQLite::Init() {
                        "start_time REAL NOT NULL,"
                        "end_time REAL,"
                        "duration REAL)");
+
+    // Recurring daily tasks config
+    ExecIgnoringErrors("CREATE TABLE IF NOT EXISTS recurring_tasks ("
+                       "id INTEGER PRIMARY KEY AUTOINCREMENT,"
+                       "name TEXT NOT NULL UNIQUE,"
+                       "app_ids TEXT,"
+                       "app_titles TEXT,"
+                       "icon TEXT,"
+                       "color TEXT,"
+                       "updated_at REAL)");
+
     spdlog::info("SQLite database tables initialized");
 }
 
 // ─────────────────────────────────────
-void SQLite::InsertEvent(const std::string &app_id, int window_id, const std::string &title,
+void SQLite::InsertEvent(const std::string &appId, int windowId, const std::string &title,
                          double start_time, double end_time, double duration) {
     sqlite3_stmt *stmt = nullptr;
 
     const char *sql = "INSERT INTO focus_events "
-                      "(app_id, window_id, title, start_time, end_time, duration) "
+                      "(app_id, windowId, title, start_time, end_time, duration) "
                       "VALUES (?, ?, ?, ?, ?, ?)";
 
     if (sqlite3_prepare_v2(m_Db, sql, -1, &stmt, nullptr) != SQLITE_OK) {
         return;
     }
 
-    sqlite3_bind_text(stmt, 1, app_id.c_str(), -1, SQLITE_TRANSIENT);
-    sqlite3_bind_int(stmt, 2, window_id);
+    sqlite3_bind_text(stmt, 1, appId.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_int(stmt, 2, windowId);
     sqlite3_bind_text(stmt, 3, title.c_str(), -1, SQLITE_TRANSIENT);
     sqlite3_bind_double(stmt, 4, start_time);
     sqlite3_bind_double(stmt, 5, end_time);
@@ -98,8 +110,7 @@ void SQLite::InsertEvent(const std::string &app_id, int window_id, const std::st
 
     sqlite3_step(stmt);
     sqlite3_finalize(stmt);
-    spdlog::debug("Inserted focus event: app_id={}, title={}, duration={}", app_id, title,
-                  duration);
+    spdlog::debug("Inserted focus event: app_id={}, title={}, duration={}", appId, title, duration);
 }
 
 // ─────────────────────────────────────
@@ -174,14 +185,14 @@ nlohmann::json SQLite::FetchTodayFocusSummary() {
 }
 
 // ─────────────────────────────────────
-void SQLite::UpsertCategory(const std::string &category, const nlohmann::json &allowed_app_ids,
-                            const nlohmann::json &allowed_titles) {
+void SQLite::UpsertCategory(const std::string &category, const nlohmann::json &allowedAppIds,
+                            const nlohmann::json &allowedTitles) {
     if (category.empty()) {
         return;
     }
 
     sqlite3_stmt *select_stmt = nullptr;
-    const char *select_sql = "SELECT allowed_app_ids, allowed_titles "
+    const char *select_sql = "SELECT allowedAppIds, allowedTitles "
                              "FROM focus_categories WHERE category = ?";
 
     if (sqlite3_prepare_v2(m_Db, select_sql, -1, &select_stmt, nullptr) != SQLITE_OK) {
@@ -190,11 +201,10 @@ void SQLite::UpsertCategory(const std::string &category, const nlohmann::json &a
 
     sqlite3_bind_text(select_stmt, 1, category.c_str(), -1, SQLITE_TRANSIENT);
 
-    nlohmann::json merged_apps =
-        allowed_app_ids.is_array() ? allowed_app_ids : nlohmann::json::array();
+    nlohmann::json merged_apps = allowedAppIds.is_array() ? allowedAppIds : nlohmann::json::array();
 
     nlohmann::json merged_titles =
-        allowed_titles.is_array() ? allowed_titles : nlohmann::json::array();
+        allowedTitles.is_array() ? allowedTitles : nlohmann::json::array();
 
     if (sqlite3_step(select_stmt) == SQLITE_ROW) {
         const char *apps = reinterpret_cast<const char *>(sqlite3_column_text(select_stmt, 0));
@@ -208,11 +218,11 @@ void SQLite::UpsertCategory(const std::string &category, const nlohmann::json &a
     sqlite3_finalize(select_stmt);
     sqlite3_stmt *stmt = nullptr;
     const char *sql = "INSERT INTO focus_categories "
-                      "(category, allowed_app_ids, allowed_titles, updated_at) "
+                      "(category, allowedAppIds, allowedTitles, updated_at) "
                       "VALUES (?, ?, ?, ?) "
                       "ON CONFLICT(category) DO UPDATE SET "
-                      "allowed_app_ids=excluded.allowed_app_ids, "
-                      "allowed_titles=excluded.allowed_titles, "
+                      "allowedAppIds=excluded.allowedAppIds, "
+                      "allowedTitles=excluded.allowedTitles, "
                       "updated_at=excluded.updated_at";
 
     if (sqlite3_prepare_v2(m_Db, sql, -1, &stmt, nullptr) != SQLITE_OK) {
@@ -236,11 +246,11 @@ void SQLite::UpsertCategory(const std::string &category, const nlohmann::json &a
 
 // ─────────────────────────────────────
 bool SQLite::CreateTask(const nlohmann::json &data, std::string &error) {
-    nlohmann::json allowed_app_ids =
-        data.contains("allowed_app_ids") ? data["allowed_app_ids"] : nlohmann::json::array();
+    nlohmann::json allowedAppIds =
+        data.contains("allowedAppIds") ? data["allowedAppIds"] : nlohmann::json::array();
 
-    nlohmann::json allowed_titles =
-        data.contains("allowed_titles") ? data["allowed_titles"] : nlohmann::json::array();
+    nlohmann::json allowedTitles =
+        data.contains("allowedTitles") ? data["allowedTitles"] : nlohmann::json::array();
 
     int excluded = data.value("exclude", false) ? 1 : 0;
     int done = data.value("done", false) ? 1 : 0;
@@ -248,7 +258,7 @@ bool SQLite::CreateTask(const nlohmann::json &data, std::string &error) {
     sqlite3_stmt *stmt = nullptr;
     const char *sql =
         "INSERT INTO focus_tasks "
-        "(category, task, start_time, end_time, allowed_app_ids, allowed_titles, excluded, done) "
+        "(category, task, start_time, end_time, allowedAppIds, allowedTitles, excluded, done) "
         "VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
 
     if (sqlite3_prepare_v2(m_Db, sql, -1, &stmt, nullptr) != SQLITE_OK) {
@@ -266,8 +276,8 @@ bool SQLite::CreateTask(const nlohmann::json &data, std::string &error) {
     sqlite3_bind_text(stmt, 2, task.c_str(), -1, SQLITE_TRANSIENT);
     sqlite3_bind_double(stmt, 3, start_time);
     sqlite3_bind_double(stmt, 4, end_time);
-    sqlite3_bind_text(stmt, 5, allowed_app_ids.dump().c_str(), -1, SQLITE_TRANSIENT);
-    sqlite3_bind_text(stmt, 6, allowed_titles.dump().c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 5, allowedAppIds.dump().c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 6, allowedTitles.dump().c_str(), -1, SQLITE_TRANSIENT);
     sqlite3_bind_int(stmt, 7, excluded);
     sqlite3_bind_int(stmt, 8, done);
 
@@ -279,7 +289,7 @@ bool SQLite::CreateTask(const nlohmann::json &data, std::string &error) {
     }
 
     sqlite3_finalize(stmt);
-    UpsertCategory(category, allowed_app_ids, allowed_titles);
+    UpsertCategory(category, allowedAppIds, allowedTitles);
     spdlog::info("Created task: {}", task);
     return true;
 }
@@ -327,13 +337,13 @@ bool SQLite::UpdateTask(const nlohmann::json &data, std::string &error) {
     double end_time =
         data.contains("end_time") ? m_JsonParse.GetDouble(data, "end_time", 0.0) : column_double(4);
 
-    nlohmann::json allowed_app_ids = data.contains("allowed_app_ids")
-                                         ? data["allowed_app_ids"]
-                                         : nlohmann::json::parse(column_text(5));
+    nlohmann::json allowedAppIds = data.contains("allowedAppIds")
+                                       ? data["allowedAppIds"]
+                                       : nlohmann::json::parse(column_text(5));
 
-    nlohmann::json allowed_titles = data.contains("allowed_titles")
-                                        ? data["allowed_titles"]
-                                        : nlohmann::json::parse(column_text(6));
+    nlohmann::json allowedTitles = data.contains("allowedTitles")
+                                       ? data["allowedTitles"]
+                                       : nlohmann::json::parse(column_text(6));
 
     int excluded =
         data.contains("exclude") ? (data.value("exclude", false) ? 1 : 0) : column_int(7);
@@ -344,7 +354,7 @@ bool SQLite::UpdateTask(const nlohmann::json &data, std::string &error) {
     sqlite3_stmt *update_stmt = nullptr;
     const char *update_sql = "UPDATE focus_tasks "
                              "SET category = ?, task = ?, start_time = ?, end_time = ?, "
-                             "allowed_app_ids = ?, allowed_titles = ?, excluded = ?, done = ? "
+                             "allowedAppIds = ?, allowedTitles = ?, excluded = ?, done = ? "
                              "WHERE id = ?";
 
     if (sqlite3_prepare_v2(m_Db, update_sql, -1, &update_stmt, nullptr) != SQLITE_OK) {
@@ -357,8 +367,8 @@ bool SQLite::UpdateTask(const nlohmann::json &data, std::string &error) {
     sqlite3_bind_text(update_stmt, 2, task.c_str(), -1, SQLITE_TRANSIENT);
     sqlite3_bind_double(update_stmt, 3, start_time);
     sqlite3_bind_double(update_stmt, 4, end_time);
-    sqlite3_bind_text(update_stmt, 5, allowed_app_ids.dump().c_str(), -1, SQLITE_TRANSIENT);
-    sqlite3_bind_text(update_stmt, 6, allowed_titles.dump().c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(update_stmt, 5, allowedAppIds.dump().c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(update_stmt, 6, allowedTitles.dump().c_str(), -1, SQLITE_TRANSIENT);
     sqlite3_bind_int(update_stmt, 7, excluded);
     sqlite3_bind_int(update_stmt, 8, done);
     sqlite3_bind_int(update_stmt, 9, task_id);
@@ -371,16 +381,16 @@ bool SQLite::UpdateTask(const nlohmann::json &data, std::string &error) {
     }
 
     sqlite3_finalize(update_stmt);
-    UpsertCategory(category, allowed_app_ids, allowed_titles);
+    UpsertCategory(category, allowedAppIds, allowedTitles);
     spdlog::info("Updated task ID: {}", task_id);
     return true;
 }
 
 // ─────────────────────────────────────
-bool SQLite::UpsertActivityCategory(const std::string &app_id, const std::string &title,
+bool SQLite::UpsertActivityCategory(const std::string &appId, const std::string &title,
                                     const std::string &category, std::string &error) {
-    if (app_id.empty() && title.empty()) {
-        error = "missing app_id/title";
+    if (appId.empty() && title.empty()) {
+        error = "missing appId/title";
         return false;
     }
 
@@ -400,7 +410,7 @@ bool SQLite::UpsertActivityCategory(const std::string &app_id, const std::string
     double now =
         std::chrono::duration<double>(std::chrono::system_clock::now().time_since_epoch()).count();
 
-    sqlite3_bind_text(stmt, 1, app_id.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 1, appId.c_str(), -1, SQLITE_TRANSIENT);
     sqlite3_bind_text(stmt, 2, title.c_str(), -1, SQLITE_TRANSIENT);
     sqlite3_bind_text(stmt, 3, category.c_str(), -1, SQLITE_TRANSIENT);
     sqlite3_bind_double(stmt, 4, now);
@@ -411,8 +421,8 @@ bool SQLite::UpsertActivityCategory(const std::string &app_id, const std::string
     if (!category.empty()) {
         nlohmann::json apps = nlohmann::json::array();
         nlohmann::json titles = nlohmann::json::array();
-        if (!app_id.empty()) {
-            apps.push_back(app_id);
+        if (!appId.empty()) {
+            apps.push_back(appId);
         }
         if (!title.empty()) {
             titles.push_back(title);
@@ -420,7 +430,7 @@ bool SQLite::UpsertActivityCategory(const std::string &app_id, const std::string
         UpsertCategory(category, apps, titles);
     }
 
-    spdlog::debug("Upserted activity category: app_id={}, title={}, category={}", app_id, title,
+    spdlog::debug("Upserted activity category: app_id={}, title={}, category={}", appId, title,
                   category);
     return true;
 }
@@ -441,8 +451,8 @@ nlohmann::json SQLite::FetchEvents() {
         nlohmann::json row;
         row["id"] = sqlite3_column_int(stmt, 0);
 
-        const unsigned char *app_id_txt = sqlite3_column_text(stmt, 1);
-        row["app_id"] = app_id_txt ? reinterpret_cast<const char *>(app_id_txt) : "";
+        const unsigned char *appId_txt = sqlite3_column_text(stmt, 1);
+        row["app_id"] = appId_txt ? reinterpret_cast<const char *>(appId_txt) : "";
 
         row["window_id"] = sqlite3_column_int(stmt, 2);
 
@@ -490,11 +500,11 @@ nlohmann::json SQLite::FetchHistory() {
     while (sqlite3_step(stmt) == SQLITE_ROW) {
         nlohmann::json row;
 
-        const char *app_id = reinterpret_cast<const char *>(sqlite3_column_text(stmt, 0));
+        const char *appId = reinterpret_cast<const char *>(sqlite3_column_text(stmt, 0));
         const char *title = reinterpret_cast<const char *>(sqlite3_column_text(stmt, 1));
         const char *category = reinterpret_cast<const char *>(sqlite3_column_text(stmt, 5));
 
-        row["app_id"] = app_id ? app_id : "";
+        row["app_id"] = appId ? appId : "";
         row["title"] = title ? title : "";
         row["total_duration"] = sqlite3_column_double(stmt, 2);
         row["start"] = sqlite3_column_double(stmt, 3); // real first start
@@ -564,4 +574,177 @@ void SQLite::ExecIgnoringErrors(const std::string &sql) {
         spdlog::warn("sqlite exec error: {}", errmsg);
         sqlite3_free(errmsg);
     }
+}
+
+// ─────────────────────────────────────
+bool SQLite::UpsertRecurringTask(const nlohmann::json &data, std::string &error) {
+    std::string name = data.value("name", "");
+    if (name.empty()) {
+        error = "missing name";
+        return false;
+    }
+
+    nlohmann::json appIds = data.contains("app_ids") ? data["app_ids"] : nlohmann::json::array();
+    nlohmann::json app_titles =
+        data.contains("app_titles") ? data["app_titles"] : nlohmann::json::array();
+
+    std::string icon = data.value("icon", "");
+    std::string color = data.value("color", "");
+
+    const char *sql = R"(
+        INSERT INTO recurring_tasks
+            (name, app_ids, app_titles, icon, color, updated_at, excluded)
+        VALUES (?, ?, ?, ?, ?, ?, 0)
+        ON CONFLICT(name) DO UPDATE SET
+            app_ids = excluded.app_ids,
+            app_titles = excluded.app_titles,
+            icon = excluded.icon,
+            color = excluded.color,
+            updated_at = excluded.updated_at,
+            excluded = 0
+    )";
+
+    sqlite3_stmt *stmt = nullptr;
+    if (sqlite3_prepare_v2(m_Db, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+        error = sqlite3_errmsg(m_Db);
+        return false;
+    }
+
+    double now =
+        std::chrono::duration<double>(std::chrono::system_clock::now().time_since_epoch()).count();
+
+    sqlite3_bind_text(stmt, 1, name.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 2, appIds.dump().c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 3, app_titles.dump().c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 4, icon.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 5, color.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_double(stmt, 6, now);
+
+    if (sqlite3_step(stmt) != SQLITE_DONE) {
+        error = sqlite3_errmsg(m_Db);
+        sqlite3_finalize(stmt);
+        return false;
+    }
+
+    sqlite3_finalize(stmt);
+    spdlog::info("Upserted recurring task: {}", name);
+    return true;
+}
+
+// ─────────────────────────────────────
+nlohmann::json SQLite::FetchRecurringTasks() {
+    const char *sql = R"(
+        SELECT name, app_ids, app_titles, icon, color, updated_at
+        FROM recurring_tasks
+        WHERE excluded = 0
+        ORDER BY updated_at DESC
+    )";
+
+    sqlite3_stmt *stmt = nullptr;
+    if (sqlite3_prepare_v2(m_Db, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+        throw std::runtime_error("db prepare failed");
+    }
+
+    nlohmann::json rows = nlohmann::json::array();
+
+    while (sqlite3_step(stmt) == SQLITE_ROW) {
+        nlohmann::json row;
+        row["name"] = reinterpret_cast<const char *>(sqlite3_column_text(stmt, 0));
+
+        const char *apps = reinterpret_cast<const char *>(sqlite3_column_text(stmt, 1));
+        const char *titles = reinterpret_cast<const char *>(sqlite3_column_text(stmt, 2));
+
+        row["app_ids"] = apps ? nlohmann::json::parse(apps) : nlohmann::json::array();
+        row["app_titles"] = titles ? nlohmann::json::parse(titles) : nlohmann::json::array();
+
+        row["icon"] = reinterpret_cast<const char *>(sqlite3_column_text(stmt, 3));
+        row["color"] = reinterpret_cast<const char *>(sqlite3_column_text(stmt, 4));
+        row["updated_at"] = sqlite3_column_double(stmt, 5);
+
+        rows.push_back(row);
+    }
+
+    sqlite3_finalize(stmt);
+    return rows;
+}
+
+// ──────────────────────────────────────────
+nlohmann::json SQLite::FetchTodayCategorySummary() {
+    nlohmann::json rows = nlohmann::json::array();
+
+    const char *sql = R"(
+        SELECT t.category,
+               SUM(e.duration) AS total_seconds
+        FROM focus_tasks t
+        JOIN focus_activity_categories c
+          ON c.category = t.category
+        JOIN focus_events e
+          ON e.app_id = c.app_id AND e.title = c.title
+        WHERE t.excluded = 0
+          AND date(e.start_time, 'unixepoch', 'localtime') = date('now', 'localtime')
+        GROUP BY t.category
+        ORDER BY total_seconds DESC
+    )";
+
+    sqlite3_stmt *stmt = nullptr;
+    if (sqlite3_prepare_v2(m_Db, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+        spdlog::error("db prepare failed in FetchTodayCategorySummary: {}", sqlite3_errmsg(m_Db));
+        return rows;
+    }
+
+    while (sqlite3_step(stmt) == SQLITE_ROW) {
+        const char *category = reinterpret_cast<const char *>(sqlite3_column_text(stmt, 0));
+        double total_seconds = sqlite3_column_double(stmt, 1);
+
+        rows.push_back({{"category", category ? category : ""}, {"total_seconds", total_seconds}});
+    }
+
+    sqlite3_finalize(stmt);
+    spdlog::debug("Fetched {} categories from recurring tasks for today", rows.size());
+    return rows;
+}
+
+// ──────────────────────────────────────────
+bool SQLite::ExcludeRecurringTask(const std::string &name, std::string &error) {
+    if (name.empty()) {
+        error = "missing task name";
+        return false;
+    }
+
+    const char *sql = R"(
+        UPDATE recurring_tasks
+        SET excluded = 1,
+            updated_at = ?
+        WHERE name = ?
+    )";
+
+    sqlite3_stmt *stmt = nullptr;
+    if (sqlite3_prepare_v2(m_Db, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+        error = sqlite3_errmsg(m_Db);
+        return false;
+    }
+
+    // Current timestamp in seconds
+    double now =
+        std::chrono::duration<double>(std::chrono::system_clock::now().time_since_epoch()).count();
+
+    sqlite3_bind_double(stmt, 1, now);
+    sqlite3_bind_text(stmt, 2, name.c_str(), -1, SQLITE_TRANSIENT);
+
+    int rc = sqlite3_step(stmt);
+    sqlite3_finalize(stmt);
+
+    if (rc != SQLITE_DONE) {
+        error = sqlite3_errmsg(m_Db);
+        return false;
+    }
+
+    // Check if a row was actually updated
+    if (sqlite3_changes(m_Db) == 0) {
+        error = "task not found";
+        return false;
+    }
+
+    spdlog::info("Excluded recurring task: {}", name);
+    return true;
 }

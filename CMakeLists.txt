@@ -48,6 +48,7 @@ add_executable(
     src/notification.cpp
     src/window.cpp
     src/anytype.cpp
+    src/hydration.cpp
     src/json.cpp
     src/sqlite.cpp)
 

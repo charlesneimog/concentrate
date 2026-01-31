@@ -51,6 +51,15 @@
                 <a
                     class="nav-link flex items-center gap-3 px-3 py-2.5 rounded-lg group transition-all hover:bg-gray-50 dark:hover:bg-gray-700"
                     href="#"
+                    data-view="pomodoro"
+                >
+                    <span class="material-symbols-outlined dark:text-primary-dark">timer</span>
+                    <span class="text-sm dark:text-white">Pomodoro</span>
+                </a>
+
+                <a
+                    class="nav-link flex items-center gap-3 px-3 py-2.5 rounded-lg group transition-all hover:bg-gray-50 dark:hover:bg-gray-700"
+                    href="#"
                     data-view="history"
                 >
                     <span class="material-symbols-outlined dark:text-primary-dark">history</span>
@@ -133,7 +142,7 @@
 
                         <input
                             id="editor-appid"
-                            placeholder="app_id (e.g. zoom, outlook)"
+                            placeholder="appId (e.g. zoom, outlook)"
                             class="w-full mb-2 px-2 py-1 text-sm border rounded"
                         />
 
@@ -155,191 +164,139 @@
                     </div>
                 </div>
 
-                <!--  Auto Tracking Section-->
+                <!--  Daily Tracking Section-->
                 <section
                     class="px-8 pb-12 flex-1 flex flex-col gap-6 bg-white text-gray-900 dark:bg-gray-900 dark:text-gray-100"
                 >
-                    <div class="flex flex-col gap-2 mt-4">
-                        <div class="flex items-center justify-between mb-1 pl-1">
+                    <!-- Daily Activity Modal -->
+                    <div
+                        id="daily-config-modal"
+                        class="fixed inset-0 z-50 hidden flex items-center justify-center bg-black/40"
+                    >
+                        <!-- Modal Menu -->
+                        <div
+                            class="w-full max-w-md rounded-lg bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 shadow-lg p-6 flex flex-col gap-4"
+                        >
+                            <!-- Header -->
+                            <div class="flex items-center justify-between">
+                                <h2
+                                    class="text-sm font-semibold uppercase tracking-wider text-gray-700 dark:text-gray-300"
+                                >
+                                    Add Daily Activity
+                                </h2>
+                                <button
+                                    id="daily-config-close"
+                                    class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 hover:cursor-pointer"
+                                >
+                                    <span class="material-symbols-outlined">close</span>
+                                </button>
+                            </div>
+
+                            <!-- Nmae -->
+                            <div class="flex flex-col gap-1">
+                                <label class="text-xs text-gray-500 dark:text-gray-400">Daily Activity Name</label>
+                                <input
+                                    type="text"
+                                    placeholder="Taking Notes"
+                                    id="daily-name"
+                                    class="w-full rounded-md border border-gray-300 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                                />
+                            </div>
+
+                            <!-- App IDs -->
+                            <div class="flex flex-col gap-1">
+                                <label class="text-xs text-gray-500 dark:text-gray-400"> App IDs </label>
+                                <input
+                                    type="text"
+                                    id="daily-appids"
+                                    placeholder="firefox;code;obsidian"
+                                    class="w-full rounded-md border border-gray-300 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                                />
+                            </div>
+
+                            <!-- App Titles -->
+                            <div class="flex flex-col gap-1">
+                                <label class="text-xs text-gray-500 dark:text-gray-400"> App Titles </label>
+                                <input
+                                    type="text"
+                                    id="daily-apptitles"
+                                    placeholder="YouTube;Docs;Research"
+                                    class="w-full rounded-md border border-gray-300 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                                />
+                            </div>
+
+                            <!-- Icon -->
+                            <div class="flex flex-col gap-1">
+                                <label class="text-xs text-gray-500 dark:text-gray-400">
+                                    Icon (Material Symbols)
+                                </label>
+                                <input
+                                    type="text"
+                                    id="daily-icon"
+                                    placeholder="schedule"
+                                    class="w-full rounded-md border border-gray-300 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                                />
+                            </div>
+
+                            <!-- Color -->
+                            <!-- Phantom/hidden so Tailwind sees them -->
+                            <div
+                                class="bg-red-50 bg-blue-50 bg-green-50 bg-yellow-50 bg-purple-50 text-red-600 text-blue-600 text-green-600 text-yellow-600 text-purple-600 dark:bg-red-500/10 dark:bg-blue-500/10 dark:bg-green-500/10 dark:bg-yellow-500/10 dark:bg-purple-500/10 dark:text-red-400 dark:text-blue-400 dark:text-green-400 dark:text-yellow-400 dark:text-purple-400 hover:text-red-600 bg-red-100 hover:bg-red-200"
+                            ></div>
+
+                            <div class="flex flex-col gap-1">
+                                <label class="text-xs text-gray-500 dark:text-gray-400"> Color </label>
+                                <select
+                                    id="daily-color"
+                                    class="w-full rounded-md border border-gray-300 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                                >
+                                    <option value="">Select a color</option>
+                                    <option value="red">Red</option>
+                                    <option value="blue">Blue</option>
+                                    <option value="yellow">Yellow</option>
+                                    <option value="green">Green</option>
+                                    <option value="purple">Purple</option>
+                                </select>
+                            </div>
+
+                            <!-- Actions -->
+                            <div class="flex justify-end gap-2 pt-2">
+                                <button
+                                    id="daily-config-cancel"
+                                    class="px-3 py-2 text-sm rounded-md text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 hover:cursor-pointer"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    id="daily-config-save"
+                                    class="px-4 py-2 text-sm rounded-md bg-primary text-white hover:bg-primary/90 hover:cursor-pointer"
+                                >
+                                    Save
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Showed config -->
+                    <div class="mt-4 flex flex-col gap-2">
+                        <div class="flex items-center gap-2">
+                            <button
+                                id="daily-config-open"
+                                data-anytype-config="daily"
+                                class="flex items-center justify-center p-2 text-gray-400 dark:text-gray-300 hover:text-primary dark:hover:text-primary-dark transition-colors bg-gray-50 dark:bg-gray-800 rounded-full hover:cursor-pointer"
+                                title="Daily Activity Settings"
+                            >
+                                <span class="material-symbols-outlined">add</span>
+                            </button>
+
                             <h3 class="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
-                                Logged Activities
+                                Daily Activities
                             </h3>
                         </div>
-
-                        <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
-                            <!-- Card -->
-
-                            <div
-                                class="flex items-center justify-between p-3 rounded-lg bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 shadow-sm hover:shadow-md transition-all"
-                            >
-                                <div class="flex items-center gap-3 min-w-0">
-                                    <div
-                                        class="h-8 w-8 rounded bg-blue-50 text-blue-600 dark:bg-blue-500/10 dark:text-blue-400 flex items-center justify-center"
-                                    >
-                                        <span class="material-symbols-outlined text-[20px]">videocam</span>
-                                    </div>
-
-                                    <div class="min-w-0">
-                                        <p class="text-sm font-medium truncate text-gray-800 dark:text-gray-100">
-                                            Meetings
-                                        </p>
-                                        <p
-                                            class="text-[10px] uppercase font-bold tracking-tight text-gray-400 dark:text-gray-500"
-                                        >
-                                            External Call
-                                        </p>
-                                    </div>
-                                </div>
-
-                                <div class="flex items-center gap-2">
-                                    <span
-                                        class="text-xs font-mono text-primary bg-primary/5 dark:bg-primary/10 px-2 py-1 rounded border border-primary/10 dark:border-primary/20"
-                                    >
-                                        0m
-                                    </span>
-
-                                    <!-- Add AppID -->
-                                    <button
-                                        data-action="add-meeting-app"
-                                        title="Add App"
-                                        class="h-7 w-7 flex items-center justify-center rounded border border-gray-200 dark:border-gray-600 text-gray-500 hover:text-primary hover:border-primary transition"
-                                    >
-                                        <span class="material-symbols-outlined text-[16px]">add</span>
-                                    </button>
-                                </div>
-                            </div>
-
-                            <!-- Auto Meetting App -->
-                            <div
-                                id="addMeetingAppModal"
-                                class="fixed inset-0 z-50 hidden flex items-center justify-center bg-black/40"
-                            >
-                                <div
-                                    class="w-full max-w-sm rounded-lg bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 shadow-lg p-4"
-                                >
-                                    <h3 class="text-sm font-semibold text-gray-800 dark:text-gray-100 mb-4">
-                                        Add Meeting App
-                                    </h3>
-
-                                    <div class="flex flex-col gap-3">
-                                        <div
-                                            id="meetingAppIds"
-                                            contenteditable
-                                            class="min-h-[40px] w-full rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 px-2 py-1 text-sm text-gray-800 dark:text-gray-100 focus:outline-none focus:ring-1 focus:ring-primary flex flex-wrap items-center"
-                                        ></div>
-
-                                        <div
-                                            id="meetingAppTitles"
-                                            contenteditable
-                                            class="min-h-[40px] w-full rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 px-2 py-1 text-sm text-gray-800 dark:text-gray-100 focus:outline-none focus:ring-1 focus:ring-primary flex flex-wrap items-center"
-                                        ></div>
-                                    </div>
-
-                                    <div class="mt-4 flex justify-end gap-2">
-                                        <button
-                                            id="meeting-cancel-button"
-                                            class="px-3 py-1.5 text-sm rounded border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
-                                        >
-                                            Cancel
-                                        </button>
-
-                                        <button
-                                            id="meeting-add-button"
-                                            class="px-3 py-1.5 text-sm rounded bg-primary text-white hover:opacity-90"
-                                        >
-                                            Add
-                                        </button>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <!-- Auto Email App Modal -->
-                            <div
-                                id="addEmailAppModal"
-                                class="fixed inset-0 z-50 hidden flex items-center justify-center bg-black/40"
-                            >
-                                <div
-                                    class="w-full max-w-sm rounded-lg bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 shadow-lg p-4"
-                                >
-                                    <h3 class="text-sm font-semibold text-gray-800 dark:text-gray-100 mb-4">Add Email App</h3>
-
-                                    <div class="flex flex-col gap-3">
-                                        <div
-                                            id="emailAppIds"
-                                            contenteditable
-                                            class="min-h-[40px] w-full rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 px-2 py-1 text-sm text-gray-800 dark:text-gray-100 focus:outline-none focus:ring-1 focus:ring-primary flex flex-wrap items-center"
-                                        ></div>
-
-                                        <div
-                                            id="emailAppTitles"
-                                            contenteditable
-                                            class="min-h-[40px] w-full rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 px-2 py-1 text-sm text-gray-800 dark:text-gray-100 focus:outline-none focus:ring-1 focus:ring-primary flex flex-wrap items-center"
-                                        ></div>
-                                    </div>
-
-                                    <div class="mt-4 flex justify-end gap-2">
-                                        <button
-                                            id="email-cancel-button"
-                                            class="px-3 py-1.5 text-sm rounded border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
-                                        >
-                                            Cancel
-                                        </button>
-
-                                        <button
-                                            id="email-add-button"
-                                            class="px-3 py-1.5 text-sm rounded bg-primary text-white hover:opacity-90"
-                                        >
-                                            Add
-                                        </button>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <!-- Card -->
-                            <div
-                                class="flex items-center justify-between p-3 rounded-lg bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 shadow-sm hover:shadow-md transition-all"
-                            >
-                                <div class="flex items-center gap-3 min-w-0">
-                                    <div
-                                        class="h-8 w-8 rounded bg-pink-50 text-pink-600 dark:bg-pink-500/10 dark:text-pink-400 flex items-center justify-center"
-                                    >
-                                        <span class="material-symbols-outlined text-[20px]"> mail </span>
-                                    </div>
-
-                                    <div class="min-w-0">
-                                        <p class="text-sm font-medium truncate text-gray-800 dark:text-gray-100">
-                                            Email
-                                        </p>
-                                        <p
-                                            class="text-[10px] uppercase font-bold tracking-tight text-gray-400 dark:text-gray-500"
-                                        >
-                                            Communication
-                                        </p>
-                                    </div>
-                                </div>
-
-                                <div class="flex items-center gap-3">
-                                    <span
-                                        class="text-xs font-mono text-gray-600 dark:text-gray-300 bg-gray-50 dark:bg-gray-700 px-2 py-1 rounded border border-gray-200 dark:border-gray-600"
-                                    >
-                                        0m
-                                    </span>
-
-                                    <button
-                                        data-action="add-email-app"
-                                        title="Add App"
-                                        class="h-7 w-7 flex items-center justify-center rounded border border-gray-200 dark:border-gray-600 text-gray-500 hover:text-primary hover:border-primary transition"
-                                    >
-                                        <span class="material-symbols-outlined text-[16px]">add</span>
-                                    </button>
-
-                                    <button
-                                        class="text-gray-300 hover:text-gray-500 dark:text-gray-500 dark:hover:text-gray-300 transition-colors"
-                                    >
-                                        <span class="material-symbols-outlined text-[18px]"> more_vert </span>
-                                    </button>
-                                </div>
-                            </div>
+                        <div id="daily-classes" class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                            <p class="text-gray-400 dark:text-gray-500 text-sm italic tracking-tight">
+                                No daily activities added yet
+                            </p>
                         </div>
                     </div>
                 </section>
@@ -352,6 +309,303 @@
                     <div id="tasks-container" class="flex flex-col gap-6">Loading...</div>
                 </section>
             </div>
+
+            <!--  POMODORO-->
+            <div id="view-pomodoro" class="flex-1 flex flex-col min-h-0 hidden">
+                <!-- Background gradient -->
+                <div
+                    class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-primary/5 dark:bg-primary-dark/5 rounded-full blur-[120px] pointer-events-none"
+                ></div>
+
+                <div class="relative z-10 flex-1 flex flex-col lg:flex-row gap-8 p-6 lg:p-8 overflow-y-auto">
+                    <!-- Left Column: Configuration -->
+                    <div class="lg:w-1/2 flex flex-col gap-8">
+                        <!-- Mode selector -->
+                        <div class="w-full">
+                            <h2 class="text-lg font-semibold text-gray-900 dark:text-white mb-4">Timer Mode</h2>
+                            <div
+                                class="flex p-1 bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-full"
+                            >
+                                <button
+                                    id="pomodoro-focus-mode"
+                                    class="flex-1 px-6 py-3 rounded-full text-sm font-bold tracking-wider uppercase transition-all bg-primary dark:bg-primary-dark text-white shadow-lg shadow-primary/20 dark:shadow-primary-dark/20"
+                                    data-mode="focus"
+                                >
+                                    Focus
+                                </button>
+                                <button
+                                    id="pomodoro-short-break-mode"
+                                    class="flex-1 px-6 py-3 rounded-full text-sm font-bold tracking-wider uppercase transition-all text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white"
+                                    data-mode="short-break"
+                                >
+                                    Short Break
+                                </button>
+                                <button
+                                    id="pomodoro-long-break-mode"
+                                    class="flex-1 px-6 py-3 rounded-full text-sm font-bold tracking-wider uppercase transition-all text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white"
+                                    data-mode="long-break"
+                                >
+                                    Long Break
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Timer settings -->
+                        <div
+                            class="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-lg border border-gray-200 dark:border-gray-700"
+                        >
+                            <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-6">Timer Settings</h3>
+
+                            <div class="space-y-8">
+                                <div>
+                                    <div class="flex justify-between items-center mb-2">
+                                        <label class="text-sm font-medium text-gray-700 dark:text-gray-300"
+                                            >Focus Duration</label
+                                        >
+                                        <span
+                                            id="focus-duration-value"
+                                            class="text-sm font-semibold text-primary dark:text-primary-dark"
+                                            >25 min</span
+                                        >
+                                    </div>
+                                    <input
+                                        id="focus-duration-slider"
+                                        type="range"
+                                        min="5"
+                                        max="60"
+                                        value="25"
+                                        step="5"
+                                        class="w-full h-2 bg-gray-200 dark:bg-gray-700 rounded-lg appearance-none cursor-pointer slider-primary"
+                                    />
+                                    <div class="flex justify-between text-xs text-gray-500 dark:text-gray-400 mt-1">
+                                        <span>5 min</span>
+                                        <span>60 min</span>
+                                    </div>
+                                </div>
+
+                                <div>
+                                    <div class="flex justify-between items-center mb-2">
+                                        <label class="text-sm font-medium text-gray-700 dark:text-gray-300"
+                                            >Short Break</label
+                                        >
+                                        <span
+                                            id="short-break-value"
+                                            class="text-sm font-semibold text-emerald-600 dark:text-emerald-400"
+                                            >5 min</span
+                                        >
+                                    </div>
+                                    <input
+                                        id="short-break-slider"
+                                        type="range"
+                                        min="1"
+                                        max="15"
+                                        value="5"
+                                        step="1"
+                                        class="w-full h-2 bg-gray-200 dark:bg-gray-700 rounded-lg appearance-none cursor-pointer slider-emerald"
+                                    />
+                                    <div class="flex justify-between text-xs text-gray-500 dark:text-gray-400 mt-1">
+                                        <span>1 min</span>
+                                        <span>15 min</span>
+                                    </div>
+                                </div>
+
+                                <div>
+                                    <div class="flex justify-between items-center mb-2">
+                                        <label class="text-sm font-medium text-gray-700 dark:text-gray-300"
+                                            >Long Break</label
+                                        >
+                                        <span
+                                            id="long-break-value"
+                                            class="text-sm font-semibold text-blue-600 dark:text-blue-400"
+                                            >15 min</span
+                                        >
+                                    </div>
+                                    <input
+                                        id="long-break-slider"
+                                        type="range"
+                                        min="10"
+                                        max="30"
+                                        value="15"
+                                        step="5"
+                                        class="w-full h-2 bg-gray-200 dark:bg-gray-700 rounded-lg appearance-none cursor-pointer slider-blue"
+                                    />
+                                    <div class="flex justify-between text-xs text-gray-500 dark:text-gray-400 mt-1">
+                                        <span>10 min</span>
+                                        <span>30 min</span>
+                                    </div>
+                                </div>
+
+                                <div class="pt-4 border-t border-gray-200 dark:border-gray-700">
+                                    <div class="flex items-center justify-between">
+                                        <div>
+                                            <p class="text-sm font-medium text-gray-700 dark:text-gray-300">
+                                                Auto-start breaks
+                                            </p>
+                                            <p class="text-xs text-gray-500 dark:text-gray-400">
+                                                Automatically start breaks after focus sessions
+                                            </p>
+                                        </div>
+                                        <label class="relative inline-flex items-center cursor-pointer">
+                                            <input
+                                                type="checkbox"
+                                                id="auto-start-breaks"
+                                                checked
+                                                class="sr-only peer"
+                                            />
+                                            <div
+                                                class="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary/25 dark:peer-focus:ring-primary-dark/25 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-primary dark:peer-checked:bg-primary-dark"
+                                            ></div>
+                                        </label>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Session statistics (optional) -->
+                        <div
+                            class="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-lg border border-gray-200 dark:border-gray-700"
+                        >
+                            <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-4">Session Statistics</h3>
+                            <div class="grid grid-cols-2 gap-4">
+                                <div class="text-center p-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
+                                    <div
+                                        class="text-2xl font-bold text-primary dark:text-primary-dark"
+                                        id="pomodoro-sessions-today"
+                                    >
+                                        0
+                                    </div>
+                                    <div class="text-xs text-gray-600 dark:text-gray-400 mt-1">Sessions Today</div>
+                                </div>
+                                <div class="text-center p-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
+                                    <div
+                                        class="text-2xl font-bold text-emerald-600 dark:text-emerald-400"
+                                        id="pomodoro-total-focus"
+                                    >
+                                        0 min
+                                    </div>
+                                    <div class="text-xs text-gray-600 dark:text-gray-400 mt-1">Total Focus Time</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Right Column: Timer Display -->
+                    <div class="lg:w-1/2 flex flex-col items-center justify-center">
+                        <!-- Timer circle -->
+                        <div class="relative mb-12">
+                            <div
+                                class="glass-container w-64 h-64 md:w-80 md:h-80 lg:w-96 lg:h-96 rounded-full flex items-center justify-center ring-1 ring-gray-200 dark:ring-gray-700 shadow-2xl"
+                            >
+                                <div class="text-center">
+                                    <h2
+                                        id="pomodoro-timer"
+                                        class="text-5xl md:text-6xl lg:text-7xl font-bold font-mono tracking-tighter text-gray-900 dark:text-white"
+                                    >
+                                        25:00
+                                    </h2>
+                                    <p
+                                        id="pomodoro-phase"
+                                        class="text-gray-600 dark:text-gray-400 uppercase tracking-[0.4em] text-xs mt-4 font-semibold"
+                                    >
+                                        Focus
+                                    </p>
+                                </div>
+                                <svg class="absolute inset-0 w-full h-full -rotate-90">
+                                    <!-- Background circle -->
+                                    <circle
+                                        class="text-gray-200 dark:text-gray-700"
+                                        cx="50%"
+                                        cy="50%"
+                                        fill="transparent"
+                                        r="48%"
+                                        stroke="currentColor"
+                                        stroke-width="4"
+                                    ></circle>
+                                    <!-- Progress circle -->
+                                    <circle
+                                        id="pomodoro-progress"
+                                        class="text-primary dark:text-primary-dark"
+                                        cx="50%"
+                                        cy="50%"
+                                        fill="transparent"
+                                        r="48%"
+                                        stroke="currentColor"
+                                        stroke-dasharray="301.6"
+                                        stroke-dashoffset="0"
+                                        stroke-width="4"
+                                        style="transition: stroke-dashoffset 1s linear"
+                                    ></circle>
+                                </svg>
+                            </div>
+
+                            <!-- Session counter (optional, displayed on the timer) -->
+                            <div
+                                class="absolute -bottom-6 left-1/2 -translate-x-1/2 bg-white dark:bg-gray-800 px-4 py-2 rounded-full shadow-lg border border-gray-200 dark:border-gray-700"
+                            >
+                                <span class="text-sm text-gray-600 dark:text-gray-400">Session: </span>
+                                <span
+                                    id="current-session-count"
+                                    class="text-sm font-bold text-primary dark:text-primary-dark"
+                                    >1/4</span
+                                >
+                            </div>
+                        </div>
+
+                        <!-- Control buttons -->
+                        <div class="flex flex-col items-center gap-6">
+                            <div class="flex items-center gap-4">
+                                <button
+                                    id="pomodoro-start"
+                                    class="group flex items-center gap-3 bg-primary dark:bg-primary-dark hover:bg-primary/90 dark:hover:bg-primary-dark/90 text-white px-8 py-4 rounded-full transition-all active:scale-95 shadow-lg shadow-primary/20 dark:shadow-primary-dark/20"
+                                >
+                                    <span
+                                        class="material-symbols-outlined text-2xl"
+                                        style="font-variation-settings: &quot;FILL&quot; 1"
+                                    >
+                                        play_arrow
+                                    </span>
+                                    <span class="text-lg font-bold tracking-tight">Start Timer</span>
+                                </button>
+
+                                <button
+                                    id="pomodoro-pause"
+                                    class="group hidden items-center gap-3 bg-amber-500 hover:bg-amber-600 text-white px-8 py-4 rounded-full transition-all active:scale-95 shadow-lg shadow-amber-500/20"
+                                >
+                                    <span class="material-symbols-outlined text-2xl">pause</span>
+                                    <span class="text-lg font-bold tracking-tight">Pause</span>
+                                </button>
+
+                                <button
+                                    id="pomodoro-reset"
+                                    class="group flex items-center gap-3 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-800 dark:text-gray-200 px-6 py-4 rounded-full transition-all active:scale-95"
+                                >
+                                    <span class="material-symbols-outlined text-2xl">refresh</span>
+                                    <span class="text-lg font-bold tracking-tight">Reset</span>
+                                </button>
+                            </div>
+
+                            <!-- Additional control: Skip button -->
+                            <button
+                                id="pomodoro-skip"
+                                class="text-sm text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white transition-colors"
+                            >
+                                Skip to next phase →
+                            </button>
+
+                            <!-- Timer status -->
+                            <div class="mt-4 text-center">
+                                <div id="pomodoro-status" class="text-sm text-gray-500 dark:text-gray-400">
+                                    Ready to start
+                                </div>
+                                <div id="next-phase-hint" class="text-xs text-gray-400 dark:text-gray-500 mt-1 hidden">
+                                    Next: <span class="font-semibold">Short Break</span> (5:00)
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <!-- History -->
             <div id="view-history" class="flex flex-col min-w-0 hidden">
                 <header
                     class="pt-8 pb-6 px-8 flex flex-col gap-6 bg-white dark:bg-gray-900 text-gray-900 dark:text-white"
@@ -693,8 +947,7 @@
             >
                 <div class="flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-gray-700">
                     <div>
-                        <h3 class="text-lg font-semibold text-gray-900 dark:text-white">Anytype Settings</h3>
-                        <p class="text-xs text-gray-500 dark:text-gray-300">Store API credentials locally</p>
+                        <h2 class="text-2xl font-semibold text-gray-900 dark:text-white">Settings</h2>
                     </div>
                     <button
                         id="anytype-config-close"
@@ -705,7 +958,11 @@
                     </button>
                 </div>
                 <div class="px-6 py-5 space-y-4">
-                    <div class="pt-3 shadow-sm dark:shadow-md border-gray-200 dark:border-gray-700 space-y-4">
+                    <h3 class="text-lg font-semibold text-gray-900 dark:text-white">Anytype Settings</h3>
+
+                    <div
+                        class="pt-3 p-4 rounded-md shadow-sm dark:shadow-md border-gray-200 dark:border-gray-700 space-y-4"
+                    >
                         <div>
                             <p class="text-sm font-semibold text-gray-900 dark:text-white">Authenticate from Anytype</p>
                             <p class="text-xs text-gray-500 dark:text-gray-300">
@@ -791,6 +1048,11 @@
                         </div>
                     </div>
                     <p id="anytype-config-status" class="text-xs text-gray-500"></p>
+                </div>
+
+                <div class="px-6 py-5 space-y-4">
+                    <h3 class="text-lg font-semibold text-gray-900 dark:text-white">Daily Apps Settings</h3>
+                    <div class="space-y-2"></div>
                 </div>
                 <div
                     class="flex items-center justify-end gap-2 px-6 py-4 shadow-sm border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 rounded-b-2xl"
