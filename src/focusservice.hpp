@@ -62,6 +62,7 @@ class FocusService {
     // Current Task
     std::vector<std::string> m_AllowedApps;
     std::vector<std::string> m_AllowedWindowTitles;
+    std::string m_CurrentTaskCategory;
 
     // Special API (When wayland info is not enough)
     std::string m_SpecialProjectTitle;

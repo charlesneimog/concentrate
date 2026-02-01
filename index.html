@@ -668,6 +668,14 @@
                         </h3>
                         <div class="flex items-center gap-2">
                             <button
+                                id="history-filter-week"
+                                class="text-xs font-medium text-primary hover:underline dark:text-primary-dark hover:cursor-pointer"
+                                type="button"
+                            >
+                                This Week
+                            </button>
+                            <span class="text-gray-300 dark:text-gray-600">|</span>
+                            <button
                                 id="history-filter-month"
                                 class="text-xs font-medium text-primary hover:underline dark:text-primary-dark hover:cursor-pointer"
                                 type="button"
@@ -676,11 +684,11 @@
                             </button>
                             <span class="text-gray-300 dark:text-gray-600">|</span>
                             <button
-                                id="history-filter-all"
+                                id="history-filter-year"
                                 class="text-xs font-medium text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white hover:cursor-pointer"
                                 type="button"
                             >
-                                All Time
+                                This Year
                             </button>
                         </div>
                     </div>
@@ -742,12 +750,6 @@
                     </div>
                 </div>
 
-                <!-- Legend -->
-                <div
-                    id="stats-legend"
-                    class="space-y-3 bg-white dark:bg-gray-800 p-4 rounded-xl shadow-sm dark:shadow-md border-gray-200 dark:border-gray-700 shadow-subtle"
-                ></div>
-
                 <!-- Daily Focus -->
                 <div
                     id="i-was-focused"
@@ -772,6 +774,12 @@
                         emoji_events
                     </span>
                 </div>
+
+                <!-- Daily Activiies -->
+                <div
+                    id="tasks-categories"
+                    class="space-y-3 bg-white dark:bg-gray-800 p-4 rounded-xl shadow-sm dark:shadow-md border-gray-200 dark:border-gray-700 shadow-subtle"
+                ></div>
             </div>
         </aside>
 
@@ -820,28 +828,18 @@
                     </div>
                 </div>
 
-                <!-- Legend -->
-                <div
-                    id="history-legend"
-                    class="space-y-3 mb-8 bg-white dark:bg-gray-800 p-4 rounded-xl shadow-sm dark:shadow-md border-gray-200 dark:border-gray-700 shadow-subtle"
-                ></div>
-
-                <!-- Consistency Map -->
-
                 <!-- Monthly Goal -->
                 <div
                     class="relative overflow-hidden rounded-xl bg-gradient-to-br from-primary to-blue-600 text-white shadow-lg shadow-blue-200/40 dark:shadow-blue-900/40"
                 >
                     <div class="relative z-10 p-5">
-                        <h4 class="text-sm font-semibold mb-1">Monthly Goal</h4>
-
+                        <h4 id="dynamic-data-focus" class="text-sm font-semibold mb-1">Month Focus</h4>
                         <p id="history-goal-text" class="text-xs text-blue-100 font-medium mb-4"></p>
-
                         <div class="w-full h-2 rounded-full bg-black/20 dark:bg-white/20">
                             <div
                                 id="history-goal-progress"
                                 class="h-2 rounded-full bg-white dark:bg-primary-dark shadow-sm transition-all duration-500"
-                                style="width: 0%"
+                                style="width: 20%"
                             ></div>
                         </div>
                     </div>
@@ -853,6 +851,12 @@
                         trending_up
                     </span>
                 </div>
+
+                <!-- Legend -->
+                <div
+                    id="history-legend"
+                    class="space-y-3 mb-8 bg-white dark:bg-gray-800 p-4 rounded-xl shadow-sm dark:shadow-md border-gray-200 dark:border-gray-700 shadow-subtle"
+                ></div>
             </div>
         </aside>
 

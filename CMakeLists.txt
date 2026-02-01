@@ -35,7 +35,7 @@ pkg_check_modules(PC_LIBSECRET REQUIRED libsecret-1)
 include_directories(${PC_LIBSECRET_INCLUDE_DIRS})
 link_directories(${PC_LIBSECRET_LIBRARY_DIRS})
 add_definitions(${PC_LIBSECRET_CFLAGS_OTHER})
-add_definitions("-DCPPHTTPLIB_THREAD_POOL_COUNT=2")
+add_definitions("-DCPPHTTPLIB_THREAD_POOL_COUNT=4")
 
 # ╭──────────────────────────────────────╮
 # │       focusservice executable        │

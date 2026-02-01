@@ -330,6 +330,57 @@ int Anytype::GetExtractLength(const nlohmann::json &payload) {
 }
 
 // ─────────────────────────────────────
+nlohmann::json Anytype::GetCategoriesOfTasks() {
+    const std::string base = "http://localhost:31009";
+    const std::string api_version = "2025-11-08";
+
+    // Load secrets
+    std::string api_key = m_Secrets.LoadSecret("api_key");
+    std::string space_id = m_Secrets.LoadSecret("default_space_id");
+    std::string prop_id = m_Secrets.LoadSecret("task_categories_id");
+
+    if (api_key.empty() || space_id.empty()) {
+        spdlog::error("Anytype: API key or default space ID is missing");
+        return {};
+    }
+
+    // Build URL
+    std::string url = "/v1/spaces/" + space_id + "/properties/" + prop_id + "/tags";
+
+    httplib::Client client(base);
+    client.set_default_headers({
+        {"Authorization", "Bearer " + api_key},
+        {"Anytype-Version", api_version},
+        {"Content-Type", "application/json"},
+    });
+
+    client.set_connection_timeout(3, 0);
+    client.set_read_timeout(30, 0);
+    client.set_write_timeout(30, 0);
+
+    if (auto res = client.Get(url.c_str())) {
+        if (res->status == 200) {
+            try {
+                nlohmann::json page_json = nlohmann::json::parse(res->body);
+                return page_json;
+            } catch (const nlohmann::json::parse_error &e) {
+                spdlog::error("Anytype: Failed to parse JSON response for page {}: {}", prop_id,
+                              e.what());
+                return {};
+            }
+        } else {
+            spdlog::error("Anytype: Failed to fetch page {}, HTTP status: {}", prop_id,
+                          res->status);
+            return {};
+        }
+    } else {
+        spdlog::error("Anytype: HTTP request failed for page {}: {}", prop_id,
+                      httplib::to_string(res.error()));
+        return {};
+    }
+}
+
+// ─────────────────────────────────────
 nlohmann::json Anytype::PropertyByKey(const nlohmann::json &properties, const std::string &key) {
     if (!properties.is_array()) {
         return nlohmann::json();
@@ -423,6 +474,18 @@ nlohmann::json Anytype::NormalizeTask(const nlohmann::json &obj, int fallback_id
     nlohmann::json apps_allowed_prop = PropertyByKey(properties, "apps_allowed");
     nlohmann::json app_title_prop = PropertyByKey(properties, "app_title");
     nlohmann::json priority_key = PropertyByKey(properties, "priority");
+
+    if (m_Secrets.LoadSecret("task_categories_id").empty()) {
+        for (auto prop : properties) {
+            if (prop["key"] == "category") {
+                bool ok = m_Secrets.SaveSecret("task_categories_id", prop["id"]);
+                if (!ok) {
+                    spdlog::error("Impossible to save task_categories_id on Secrets");
+                }
+                break;
+            }
+        }
+    }
 
     bool done = done_prop.contains("checkbox") && done_prop["checkbox"].is_boolean()
                     ? done_prop["checkbox"].get<bool>()

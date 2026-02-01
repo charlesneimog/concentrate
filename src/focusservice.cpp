@@ -6,6 +6,8 @@
 #include <thread>
 #include <chrono>
 
+// TODO: Know how is my focus by category
+
 // ─────────────────────────────────────
 FocusService::FocusService(const unsigned port, const unsigned ping, LogLevel log_level)
     : m_Port(port), m_Ping(ping) {
@@ -65,11 +67,9 @@ FocusService::FocusService(const unsigned port, const unsigned ping, LogLevel lo
         std::chrono::minutes(static_cast<int>(hydrationIntervalMinutes));
     auto lastClimateUpdate = std::chrono::steady_clock::now();
 
-
     // Time
     std::string monitoring_str = m_Secrets->LoadSecret("monitoring_enabled");
     m_MonitoringEnabled = monitoring_str.empty() ? true : (monitoring_str == "true");
-    auto now = std::chrono::system_clock::now();
 
     // monitoring
     if (!m_MonitoringEnabled) {
@@ -87,7 +87,7 @@ FocusService::FocusService(const unsigned port, const unsigned ping, LogLevel lo
     while (true) {
         auto now = std::chrono::steady_clock::now();
 
-        // Notify if monitoring is disabled every 10 minutes
+        // Notify if monitoring is disabled every 5 minutes
         if (!m_MonitoringEnabled && now - lastMonitoringNotification >= std::chrono::minutes(5)) {
             m_Notification->SendNotification("dialog-warning", "FocusService",
                                              "Application monitoring is currently disabled.");
@@ -112,8 +112,27 @@ FocusService::FocusService(const unsigned port, const unsigned ping, LogLevel lo
             m_Fw.title = m_SpecialProjectTitle;
         }
 
+        if (m_CurrentTaskCategory.empty()) {
+            m_CurrentTaskCategory = "uncategorized";
+        }
+
         // IDLE: close nothing, record nothing, reset clocks
         if (currentState == IDLE) {
+            // If we were tracking something before going idle, close that interval
+            if (lastState != IDLE) {
+                double startUnix = ToUnixTime(lastRecord);
+                double endUnix = ToUnixTime(now);
+                double duration = endUnix - startUnix;
+
+                if (duration > 0.0) {
+                    m_SQLite->InsertEventNew(m_Fw.app_id, m_Fw.title, m_CurrentTaskCategory,
+                                             startUnix, endUnix, duration, lastState);
+                    spdlog::info(
+                        "Focus event before idle: state={}, app_id='{}', title='{}', duration={}",
+                        static_cast<int>(lastState), lastAppId, lastTitle, duration);
+                }
+            }
+
             lastState = IDLE;
             lastRecord = now;
             stateSince = now;
@@ -123,6 +142,8 @@ FocusService::FocusService(const unsigned port, const unsigned ping, LogLevel lo
             std::this_thread::sleep_for(std::chrono::seconds(m_Ping));
             continue;
         }
+
+        // Update climate/hydration (every 3 hours)
         if (now - lastClimateUpdate >= std::chrono::hours(3)) {
             spdlog::info("Updating location and weather info...");
             try {
@@ -134,6 +155,7 @@ FocusService::FocusService(const unsigned port, const unsigned ping, LogLevel lo
             lastClimateUpdate = now;
         }
 
+        // Hydration reminders
         if (now - lastHydrationNotification >=
             std::chrono::minutes(static_cast<int>(hydrationIntervalMinutes))) {
             m_Notification->SendNotification(
@@ -143,60 +165,50 @@ FocusService::FocusService(const unsigned port, const unsigned ping, LogLevel lo
             lastHydrationNotification = now;
         }
 
-
-        // Compute slice: ALWAYS from lastRecord -> now
-        double startUnix = ToUnixTime(lastRecord);
-        double endUnix = ToUnixTime(now);
-        double duration = endUnix - startUnix;
-
-        if (duration <= 0.0) {
-            std::this_thread::sleep_for(std::chrono::seconds(m_Ping));
-            continue;
-        }
-
         bool stateChanged = (currentState != lastState);
         bool appChanged = (m_Fw.app_id != lastAppId) || (m_Fw.title != lastTitle);
 
-        // Close previous interval if needed
+        // Handle state or app changes
         if ((stateChanged || appChanged) && lastState != IDLE) {
-            m_SQLite->InsertFocusState(static_cast<int>(lastState), startUnix, endUnix, duration);
-
-            m_SQLite->InsertEvent(lastAppId, m_Fw.window_id, lastTitle, startUnix, endUnix,
-                                  duration);
-
-            spdlog::info("Focus event: state={}, app_id='{}', title='{}', duration={}",
-                         static_cast<int>(lastState), lastAppId, lastTitle, duration);
+            // Compute duration from lastRecord to now
+            double startUnix = ToUnixTime(lastRecord);
+            double endUnix = ToUnixTime(now);
+            double duration = endUnix - startUnix;
+            if (duration > 0.0) {
+                m_SQLite->InsertEventNew(m_Fw.app_id, m_Fw.title, m_CurrentTaskCategory, startUnix,
+                                         endUnix, duration, lastState);
+                spdlog::info("Focus event: state={}, app_id='{}', title='{}', duration={}",
+                             static_cast<int>(lastState), lastAppId, lastTitle, duration);
+            }
 
             lastRecord = now;
         }
 
-        // Periodic snapshot (same app + same state)
-        if (!stateChanged && !appChanged && now - lastRecord >= std::chrono::seconds(15)) {
-
-            startUnix = ToUnixTime(lastRecord);
-            endUnix = ToUnixTime(now);
-            duration = endUnix - startUnix;
+        // Periodic update (every 15 seconds) - UPDATE existing records instead of inserting new
+        // ones
+        else if (!stateChanged && !appChanged && now - lastRecord >= std::chrono::seconds(15)) {
+            // Update existing records with new end time and duration
+            double endUnix = ToUnixTime(now);
+            double duration = endUnix - ToUnixTime(lastRecord);
 
             if (duration > 0.0) {
-                m_SQLite->InsertFocusState(static_cast<int>(lastState), startUnix, endUnix,
-                                           duration);
-
-                m_SQLite->InsertEvent(m_Fw.app_id, m_Fw.window_id, m_Fw.title, startUnix, endUnix,
-                                      duration);
-
-                spdlog::info("Focus snapshot: state={}, app_id='{}', title='{}', start={}, end={}, "
-                             "duration={}",
-                             static_cast<int>(lastState), m_Fw.app_id, m_Fw.title, startUnix,
-                             endUnix, duration);
-
+                m_SQLite->UpdateEventNew(m_Fw.app_id, m_Fw.title, m_CurrentTaskCategory, endUnix,
+                                         duration, lastState);
                 lastRecord = now;
             }
         }
 
-        // Start new logical interval
-        if (stateChanged) {
+        // Handle transitions from IDLE to active state
+        if (lastState == IDLE && currentState != IDLE) {
+            // Start fresh interval
+            lastRecord = now;
             stateSince = now;
+        }
+
+        // Update tracking variables
+        if (stateChanged) {
             lastState = currentState;
+            stateSince = now;
         }
 
         if (appChanged) {
@@ -231,7 +243,7 @@ double FocusService::ToUnixTime(std::chrono::steady_clock::time_point steady_tp)
 FocusState FocusService::AmIFocused(FocusedWindow Fw) {
     // If the focused window is invalid (no app_id and no title), treat as IDLE
     if (Fw.app_id.empty() && Fw.title.empty()) {
-        spdlog::info("FOCUSED: IDLE (no app_id or title)");
+        spdlog::debug("FOCUSED: IDLE (no app_id or title)");
         return IDLE;
     }
 
@@ -276,10 +288,12 @@ void FocusService::UpdateAllowedApps() {
 
     if (currentTaskPage.contains("object") && currentTaskPage["object"].contains("properties")) {
         const auto &props = currentTaskPage["object"]["properties"];
+        const auto &cat = currentTaskPage["object"]["properties"];
         for (const auto &prop : props) {
             if (!prop.contains("key")) {
                 continue;
             }
+
             std::string key = prop["key"].get<std::string>();
             if (key == "apps_allowed" && prop.contains("multi_select") &&
                 prop["multi_select"].is_array()) {
@@ -289,6 +303,7 @@ void FocusService::UpdateAllowedApps() {
                     }
                 }
             }
+
             if (key == "app_title" && prop.contains("multi_select") &&
                 prop["multi_select"].is_array()) {
                 for (const auto &tag : prop["multi_select"]) {
@@ -296,6 +311,11 @@ void FocusService::UpdateAllowedApps() {
                         allowedWindowTitles.push_back(tag["name"].get<std::string>());
                     }
                 }
+            }
+
+            if (key == "category") {
+                m_CurrentTaskCategory = prop["select"]["name"];
+                spdlog::info("Current category is {}", m_CurrentTaskCategory);
             }
         }
     }
@@ -415,6 +435,19 @@ bool FocusService::InitServer() {
                          }
                      });
 
+        m_Server.Get("/api/v1/anytype/tasks_categories",
+                     [this](const httplib::Request &, httplib::Response &res) {
+                         try {
+                             auto spaces_json = m_Anytype->GetCategoriesOfTasks();
+                             res.status = 200;
+                             res.set_content(spaces_json.dump(), "application/json");
+                         } catch (const std::exception &e) {
+                             res.status = 502;
+                             res.set_content(std::string(R"({"error":")") + e.what() + R"("})",
+                                             "application/json");
+                         }
+                     });
+
         m_Server.Post(
             "/api/v1/anytype/space", [this](const httplib::Request &req, httplib::Response &res) {
                 auto j = nlohmann::json::parse(req.body);
@@ -479,11 +512,12 @@ bool FocusService::InitServer() {
             res.set_content(history.dump(), "application/json");
         });
 
-        m_Server.Get("/api/v1/categories", [&](const httplib::Request &, httplib::Response &res) {
-            nlohmann::json categories = m_SQLite->FetchCategories();
-            res.status = 200;
-            res.set_content(categories.dump(), "application/json");
-        });
+        // m_Server.Get("/api/v1/categories", [&](const httplib::Request &, httplib::Response &res)
+        // {
+        //     nlohmann::json categories = m_SQLite->FetchCategories();
+        //     res.status = 200;
+        //     res.set_content({}, "application/json");
+        // });
 
         m_Server.Get("/api/v1/events", [&](const httplib::Request &, httplib::Response &res) {
             nlohmann::json events = m_SQLite->FetchEvents();
@@ -559,10 +593,9 @@ bool FocusService::InitServer() {
 
         m_Server.Get("/api/v1/focus/today", [&](const httplib::Request &, httplib::Response &res) {
             try {
-                nlohmann::json summary = m_SQLite->FetchTodayFocusSummary();
-                nlohmann::json result = {
-                    {"focused_seconds", summary.value("focused_seconds", 0.0)},
-                    {"unfocused_seconds", summary.value("unfocused_seconds", 0.0)}};
+                nlohmann::json summary = m_SQLite->GetTodayFocusSummary();
+                nlohmann::json result = {{"focused_seconds", summary.value("focused", 0.0)},
+                                         {"unfocused_seconds", summary.value("unfocused", 0.0)}};
 
                 res.status = 200;
                 res.set_content(result.dump(), "application/json");
@@ -574,53 +607,105 @@ bool FocusService::InitServer() {
         });
     }
 
+    // Recurring
     {
         m_Server.Post("/api/v1/task/recurring_tasks", [&](const httplib::Request &req,
                                                           httplib::Response &res) {
-            nlohmann::json body;
             try {
-                body = nlohmann::json::parse(req.body);
-            } catch (const nlohmann::json::parse_error &) {
-                res.status = 400;
-                res.set_content("Invalid JSON", "text/plain");
-                return;
-            }
+                if (req.body.empty()) {
+                    res.status = 400;
+                    res.set_content(R"({"error":"empty request body"})", "application/json");
+                    return;
+                }
 
-            // Validate presence and type
-            if (!body.contains("app_ids") || !body.contains("app_titles") ||
-                !body.contains("icon") || !body.contains("color") || !body.contains("name") ||
-                !body["app_ids"].is_array() || !body["app_titles"].is_array()) {
-                res.status = 400;
-                res.set_content("Invalid JSON: 'appIds' and 'appTitles' must be arrays, and "
-                                "all fields required",
-                                "text/plain");
-                return;
-            }
+                auto body = nlohmann::json::parse(req.body);
 
-            std::string error;
-            bool ok = m_SQLite->UpsertRecurringTask(body, error);
-            if (!ok) {
+                std::string name = body.value("name", "");
+                std::vector<std::string> appIds = body.value("appIds", std::vector<std::string>{});
+                std::vector<std::string> appTitles =
+                    body.value("appTitles", std::vector<std::string>{});
+                std::string icon = body.value("icon", "");
+                std::string color = body.value("color", "");
+
+                if (appIds.size() == 0 && appTitles.size() == 0) {
+                    res.status = 400;
+                    res.set_content(R"({"error":"appIds and appTitles size is 0"})",
+                                    "application/json");
+                    return;
+                }
+
+                if (name.empty()) {
+                    res.status = 400;
+                    res.set_content(R"({"error":"name is required"})", "application/json");
+                    return;
+                }
+
+                // Try to fetch existing task
+                auto tasks = m_SQLite->FetchRecurringTasks();
+                auto it = std::find_if(tasks.begin(), tasks.end(), [&](const nlohmann::json &t) {
+                    return t.value("name", "") == name;
+                });
+
+                if (it != tasks.end()) {
+                    m_SQLite->UpdateRecurringTask(name, appIds, appTitles, icon, color);
+                } else {
+                    // Add new
+                    m_SQLite->AddRecurringTask(name, appIds, appTitles, icon, color);
+                }
+
+                res.status = 200;
+                res.set_content(R"({"success":true})", "application/json");
+
+            } catch (const nlohmann::json::parse_error &e) {
+                res.status = 400;
+                res.set_content(std::string(R"({"error":"invalid JSON: ")") + e.what() + R"("})",
+                                "application/json");
+            } catch (const std::exception &e) {
                 res.status = 500;
-                res.set_content("Failed to save recurring task: " + error, "text/plain");
-                return;
+                res.set_content(std::string(R"({"error":")") + e.what() + R"("})",
+                                "application/json");
             }
-
-            res.status = 200;
-            res.set_content("Recurring task configured", "text/plain");
         });
 
-        m_Server.Get(
-            "/api/v1/task/recurring_tasks", [&](const httplib::Request &, httplib::Response &res) {
-                try {
-                    nlohmann::json dailyTasks = m_SQLite->FetchRecurringTasks();
-                    res.set_content(dailyTasks.dump(), "application/json");
-                    res.status = 200;
-                } catch (const std::exception &e) {
-                    res.status = 500;
-                    res.set_content("Failed to fetch recurring tasks: " + std::string(e.what()),
-                                    "text/plain");
-                }
-            });
+        m_Server.Get("/api/v1/task/recurring_tasks",
+                     [&](const httplib::Request &, httplib::Response &res) {
+                         try {
+                             nlohmann::json tasks = m_SQLite->FetchRecurringTasks();
+                             res.status = 200;
+                             res.set_content(tasks.dump(), "application/json");
+
+                         } catch (const std::exception &e) {
+                             res.status = 500;
+                             res.set_content(std::string(R"({"error":")") + e.what() + R"("})",
+                                             "application/json");
+                         }
+                     });
+
+        m_Server.Delete("/api/v1/task/recurring_tasks",
+                        [&](const httplib::Request &req, httplib::Response &res) {
+                            try {
+                                auto nameIt = req.params.find("name");
+                                if (nameIt == req.params.end() || nameIt->second.empty()) {
+                                    res.status = 400;
+                                    res.set_content(R"({"error":"name parameter is required"})",
+                                                    "application/json");
+                                    return;
+                                }
+
+                                std::string name = nameIt->second;
+
+                                // Remove from DB
+                                m_SQLite->ExcludeRecurringTask(name);
+
+                                res.status = 200;
+                                res.set_content(R"({"success":true})", "application/json");
+
+                            } catch (const std::exception &e) {
+                                res.status = 500;
+                                res.set_content(std::string(R"({"error":")") + e.what() + R"("})",
+                                                "application/json");
+                            }
+                        });
     }
 
     // Monitoring
@@ -707,10 +792,9 @@ bool FocusService::InitServer() {
 
         m_Server.Get("/api/v1/focus/today", [&](const httplib::Request &, httplib::Response &res) {
             try {
-                nlohmann::json summary = m_SQLite->FetchTodayFocusSummary();
-                nlohmann::json result = {
-                    {"focused_seconds", summary.value("focused_seconds", 0.0)},
-                    {"unfocused_seconds", summary.value("unfocused_seconds", 0.0)}};
+                nlohmann::json summary = m_SQLite->GetTodayFocusSummary();
+                nlohmann::json result = {{"focused_seconds", summary.value("focused", 0.0)},
+                                         {"unfocused_seconds", summary.value("unfocused", 0.0)}};
 
                 res.status = 200;
                 res.set_content(result.dump(), "application/json");
@@ -720,12 +804,35 @@ bool FocusService::InitServer() {
                                 "application/json");
             }
         });
+    }
+
+    // Get History
+    {
+        m_Server.Get("/api/v1/focus/category-percentages",
+                     [&](const httplib::Request &req, httplib::Response &res) {
+                         try {
+                             int days = 1;
+                             if (req.has_param("days")) {
+                                 days = std::stoi(req.get_param_value("days"));
+                             }
+
+                             nlohmann::json summary = m_SQLite->GetFocusPercentageByCategory(days);
+
+                             res.status = 200;
+                             res.set_content(summary.dump(), "application/json");
+
+                         } catch (const std::exception &e) {
+                             res.status = 500;
+                             res.set_content(std::string(R"({"error":")") + e.what() + R"("})",
+                                             "application/json");
+                         }
+                     });
 
         // Today Category Summary
         m_Server.Get("/api/v1/focus/today/categories",
                      [&](const httplib::Request &, httplib::Response &res) {
                          try {
-                             nlohmann::json summary = m_SQLite->FetchTodayCategorySummary();
+                             nlohmann::json summary = m_SQLite->GetTodayFocusTimeSummary();
                              res.status = 200;
                              res.set_content(summary.dump(), "application/json");
                          } catch (const std::exception &e) {
@@ -735,32 +842,26 @@ bool FocusService::InitServer() {
                          }
                      });
 
-        // Register route before server starts
-        m_Server.Post("/api/v1/focus/exclude_task", [&](const httplib::Request &req,
-                                                        httplib::Response &res) {
+        m_Server.Get("/api/v1/focus/app-usage", [&](const httplib::Request &req,
+                                                    httplib::Response &res) {
             try {
-                auto body = nlohmann::json::parse(req.body);
-                std::string taskName = body.value("name", "");
+                int days = 1;
 
-                if (taskName.empty()) {
-                    res.status = 400;
-                    res.set_content(R"({"error":"missing task name"})", "application/json");
-                    return;
+                if (req.has_param("days")) {
+                    const auto &raw = req.get_param_value("days");
+                    if (!raw.empty()) {
+                        days = std::stoi(raw);
+                        if (days < 1) {
+                            days = 1;
+                        }
+                    }
                 }
-
-                std::string error;
-                bool ok = m_SQLite->ExcludeRecurringTask(taskName, error);
-                if (!ok) {
-                    res.status = 500;
-                    res.set_content(nlohmann::json({{"error", error}}).dump(), "application/json");
-                    return;
-                }
-
+                nlohmann::json data = m_SQLite->FetchDailyAppUsageByAppId(days);
                 res.status = 200;
-                res.set_content(nlohmann::json({{"status", "excluded"}, {"name", taskName}}).dump(),
-                                "application/json");
+                res.set_content(data.dump(), "application/json");
 
             } catch (const std::exception &e) {
+                spdlog::error("app-usage endpoint failed: {}", e.what());
                 res.status = 500;
                 res.set_content(nlohmann::json({{"error", e.what()}}).dump(), "application/json");
             }

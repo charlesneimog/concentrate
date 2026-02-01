@@ -847,6 +847,7 @@ class FocusApp {
         const res = await fetch("/api/v1/events", { cache: "no-store" });
         if (!res.ok) return [];
         const events = await res.json();
+        // console.log(events);
         if (!Array.isArray(events)) return [];
         return events;
     }
@@ -886,6 +887,48 @@ class FocusApp {
         }
     }
 
+    async updateTasksCategories() {
+        const res = await fetch("/api/v1/anytype/tasks_categories");
+        if (!res.ok) return;
+
+        //
+        const days = 1;
+        const res2 = await fetch(`/api/v1/focus/category-percentages?days=${days}`, {
+            method: "GET",
+            headers: { "Content-Type": "application/json" },
+        });
+
+        if (!res2.ok) return;
+        const res2json = await res2.json();
+
+        const body = await res.json();
+        const categories = body.data;
+        const legend = document.getElementById("tasks-categories");
+
+        legend.innerHTML = categories
+            .map((cat) => {
+                // find percentage for this category
+                const percEntry = res2json.find((p) => p.category === cat.name);
+                const perc = percEntry ? percEntry.percentage : 0;
+
+                return `
+        <div class="flex items-center justify-between text-sm">
+            <div class="flex items-center gap-2">
+                <span
+                    class="w-3 h-3 rounded-full"
+                    style="background-color: var(--anytype-color-tag-${cat.color});"
+                ></span>
+                <span class="text-gray-600 dark:text-gray-400">${cat.name}</span>
+            </div>
+            <span class="font-medium text-gray-900 dark:text-white">
+                ${Number(perc).toFixed(2)}%
+            </span>
+        </div>
+        `;
+            })
+            .join("");
+    }
+
     async updateDailyFocus() {
         const res = await fetch("/api/v1/focus/today");
         if (!res.ok) {
@@ -905,12 +948,11 @@ class FocusApp {
         const bar = document.getElementById("focus-progress-bar");
         const text = container?.querySelector("p");
         const pie = document.getElementById("stats-pie");
-        const legend = document.getElementById("stats-legend");
         const totalEl = document.getElementById("stats-total");
         const totalText = document.getElementById("stats-text");
         const loadingEl = document.getElementById("stats-pie-loading");
 
-        if (!container || !bar || !text || !pie || !legend || !totalEl || !totalText) return;
+        if (!container || !bar || !text || !pie || !totalEl || !totalText) return;
 
         totalText.textContent = "Total Time";
 
@@ -1008,21 +1050,6 @@ class FocusApp {
 
         totalEl.textContent = this.fmtDuration(totalSeconds);
 
-        legend.innerHTML = "";
-        slicesData.forEach(({ label, value, color }) => {
-            const percent = (value / totalSeconds) * 100;
-            const row = document.createElement("div");
-            row.className = "flex items-center justify-between text-sm";
-            row.innerHTML = `
-            <div class="flex items-center gap-2">
-                <span class="w-3 h-3 rounded-full" style="background:${color}"></span>
-                <span class="text-gray-600 dark:text-gray-400">${label}</span>
-            </div>
-            <span class="font-medium text-gray-900 dark:text-white">${Math.round(percent)}%</span>
-        `;
-            legend.appendChild(row);
-        });
-
         let offset = 0;
         pie.style.background = `conic-gradient(${slicesData
             .map(({ value, color }) => {
@@ -1041,71 +1068,74 @@ class FocusApp {
 
     // Count daily non-task activities (notes, meetings, emails)
     async updateDailyActivities() {
-        try {
-            // Fetch recurring tasks (for layout/colors/icons)
-            const tasksRes = await fetch("/api/v1/task/recurring_tasks", { cache: "no-store" });
-            if (!tasksRes.ok) return console.error("Fetch failed in updateDailyActivities");
-            const tasks = await tasksRes.json();
-
-            // Fetch today’s category summary
-            const categoriesRes = await fetch("/api/v1/focus/today/categories", { cache: "no-store" });
-            if (!categoriesRes.ok) return console.error("Fetch failed for today categories");
-            const categories = await categoriesRes.json(); // array: [{category, total_seconds}]
-
-            const container = document.getElementById("daily-classes");
-            container.innerHTML = ""; // clear old content
-
-            tasks.forEach((task) => {
-                const categoryData = categories.find((c) => c.category === task.name);
-                const totalSeconds = categoryData ? categoryData.total_seconds : 0;
-                const minutes = Math.floor(totalSeconds / 60);
-
-                const taskDiv = document.createElement("div");
-                taskDiv.className =
-                    "flex items-center justify-between p-4 rounded-lg shadow-sm border-b border-gray-200 dark:border-gray-700";
-
-                taskDiv.innerHTML = `
-                <div class="flex items-center gap-3 min-w-0">
-                    <div class="h-8 w-8 rounded bg-${task.color}-50 text-${task.color}-600 dark:bg-${task.color}-500/10 dark:text-${task.color}-400 flex items-center justify-center">
-                        <span class="material-symbols-outlined text-[20px]">${task.icon}</span>
-                    </div>
-                    <div class="min-w-0">
-                        <p class="text-sm font-medium truncate text-gray-800 dark:text-gray-100">
-                            ${task.name}
-                        </p>
-                    </div>
-                </div>
-                <div class="flex items-center gap-2">
-                    <span class="text-xs font-mono text-primary bg-primary/5 dark:bg-primary/10 px-2 py-1 rounded border border-primary/10 dark:border-primary/20">
-                        ${minutes}m
-                    </span>
-                    <button class="exclude-btn hover:text-red-600 rounded hover:cursor-pointer">
-                        <span class="material-symbols-outlined text-[18px]">delete</span>
-                    </button>
-                </div>
-            `;
-
-                // Add click handler for exclude
-                const btn = taskDiv.querySelector(".exclude-btn");
-                btn.addEventListener("click", async () => {
-                    await this.excludeDailyActivity(task.name);
-                    taskDiv.remove(); // remove from DOM immediately
-                });
-                container.appendChild(taskDiv);
-            });
-        } catch (err) {
-            console.error("Error in updateDailyActivities:", err);
+        const tasksRes = await fetch("/api/v1/task/recurring_tasks", { cache: "no-store" });
+        if (!tasksRes.ok) {
+            const text = await tasksRes.text().catch(() => "");
+            console.error(`Failed to fetch recurring tasks (status: ${tasksRes.status}): ${text}`);
+            return; // stops execution
         }
+
+        const tasks = await tasksRes.json();
+
+        const container = document.getElementById("daily-classes");
+        container.innerHTML = "";
+
+        if (!tasks.length) {
+            // Show placeholder when no tasks
+            const placeholder = document.createElement("div");
+            placeholder.className = "p-4 text-sm text-gray-500 dark:text-gray-400 italic";
+            placeholder.textContent = "No recurring tasks added yet.";
+            container.appendChild(placeholder);
+            return;
+        }
+
+        tasks.forEach((task) => {
+            const taskDiv = document.createElement("div");
+            taskDiv.className =
+                "flex items-center justify-between p-4 rounded-lg shadow-sm border-b border-gray-200 dark:border-gray-700";
+
+            taskDiv.innerHTML = `
+            <div class="flex items-center gap-3 min-w-0">
+                <div class="h-8 w-8 rounded bg-${task.color}-50 text-${task.color}-600 dark:bg-${task.color}-500/10 dark:text-${task.color}-400 flex items-center justify-center">
+                    <span class="material-symbols-outlined text-[20px]">${task.icon}</span>
+                </div>
+                <div class="min-w-0">
+                    <p class="text-sm font-medium truncate text-gray-800 dark:text-gray-100">
+                        ${task.name}
+                    </p>
+                </div>
+            </div>
+            <div class="flex items-center gap-2">
+                <span class="text-xs font-mono text-primary bg-primary/5 dark:bg-primary/10 px-2 py-1 rounded border border-primary/10 dark:border-primary/20">
+                    0m
+                </span>
+                <button class="exclude-btn hover:text-red-600 rounded hover:cursor-pointer">
+                    <span class="material-symbols-outlined text-[18px]">delete</span>
+                </button>
+            </div>
+        `;
+
+            // Exclude button handler
+            const btn = taskDiv.querySelector(".exclude-btn");
+            btn.addEventListener("click", async () => {
+                try {
+                    await this.excludeDailyActivity(task.name);
+                    taskDiv.remove();
+                } catch (err) {
+                    console.error("Failed to exclude task:", err);
+                }
+            });
+
+            container.appendChild(taskDiv);
+        });
     }
 
     // Example function to mark task as excluded on server
     async excludeDailyActivity(taskName) {
         try {
-            const res = await fetch("/api/v1/focus/exclude_task", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ name: taskName }),
-            });
+            const url = `/api/v1/task/recurring_tasks?name=${encodeURIComponent(taskName)}`;
+            const res = await fetch(url, { method: "DELETE" });
+
             if (!res.ok) {
                 const errorText = await res.text();
                 console.error("Failed to exclude task:", taskName, errorText);
@@ -1325,15 +1355,17 @@ class FocusApp {
         container.innerHTML = "";
 
         const grouped = this.groupTasksByPriority(tasks);
+
         for (const [category, items] of grouped.entries()) {
             const section = document.createElement("div");
             section.className = "flex flex-col gap-2";
 
             const title = document.createElement("h1");
             title.className = "text-lg font-bold uppercase tracking-wide text-gray-800 dark:text-gray-100 pl-1";
-            const color = items[0].category?.color;
-            if (color) {
-                title.style.color = color;
+
+            const categoryColor = items[0].category?.color;
+            if (categoryColor) {
+                title.style.color = `var(--anytype-color-tag-${categoryColor})`;
             }
 
             title.textContent = category;
@@ -1345,19 +1377,24 @@ class FocusApp {
             items.forEach((task) => {
                 const done = !!task.done;
                 const isCurrent = this.currentTaskId && String(task.id) === String(this.currentTaskId);
+
                 const li = document.createElement("li");
                 li.className = "flex flex-col gap-1 bg-white dark:bg-gray-800 shadow-sm rounded-lg px-3 py-2";
-                li.dataset.taskId = task.id; // Use data-task-id instead of id
+                li.dataset.taskId = task.id;
 
                 const row = document.createElement("div");
                 row.className = "flex items-center gap-2";
 
                 const mark = document.createElement("span");
-                mark.className = `font-mono text-xs ${done ? "text-emerald-600 dark:text-emerald-400" : "text-gray-400 dark:text-gray-500"}`;
+                mark.className = `font-mono text-xs ${
+                    done ? "text-emerald-600 dark:text-emerald-400" : "text-gray-400 dark:text-gray-500"
+                }`;
                 mark.textContent = done ? "[x]" : "[ ]";
 
                 const text = document.createElement("span");
-                text.className = `text-sm font-medium ${done ? "text-gray-400 dark:text-gray-500 line-through" : "text-gray-800 dark:text-white"}`;
+                text.className = `text-sm font-medium ${
+                    done ? "text-gray-400 dark:text-gray-500 line-through" : "text-gray-800 dark:text-white"
+                }`;
                 text.textContent = task.title || "(task)";
 
                 const spacer = document.createElement("span");
@@ -1365,11 +1402,15 @@ class FocusApp {
 
                 const currentBtn = document.createElement("button");
                 currentBtn.type = "button";
-                currentBtn.className = `h-7 w-7 rounded shadow-sm ${isCurrent ? "bg-emerald-500 border-emerald-500 text-white" : "border-gray-200 dark:border-gray-600 text-gray-400 dark:text-gray-500 hover:text-emerald-500"} flex items-center justify-center transition-all`;
+                currentBtn.className = `h-7 w-7 rounded shadow-sm ${
+                    isCurrent
+                        ? "bg-emerald-500 border-emerald-500 text-white"
+                        : "border-gray-200 dark:border-gray-600 text-gray-400 dark:text-gray-500 hover:text-emerald-500"
+                } flex items-center justify-center transition-all`;
                 currentBtn.title = isCurrent ? "Current task" : "Set as current";
-                currentBtn.innerHTML = `<span class="material-symbols-outlined text-[16px]">${isCurrent ? "radio_button_checked" : "radio_button_unchecked"}</span>`;
-
-                // Current button click handler
+                currentBtn.innerHTML = `<span class="material-symbols-outlined text-[16px]">${
+                    isCurrent ? "radio_button_checked" : "radio_button_unchecked"
+                }</span>`;
                 currentBtn.dataset.taskId = task.id;
                 currentBtn.dataset.taskCurrent = isCurrent ? "true" : "false";
 
@@ -1380,42 +1421,51 @@ class FocusApp {
 
                 const debug = document.createElement("div");
                 debug.className = "text-[10px] text-gray-500 dark:text-gray-400 flex flex-wrap gap-2";
+
                 const allowedApps = this.normalizeAllowList(task.allowed_app_ids);
                 const allowedTitles = this.normalizeAllowList(task.allowed_titles);
-                const appLabel = allowedApps.length ? allowedApps.join(", ") : "Any";
-                const titleLabel = allowedTitles.length ? allowedTitles.join(", ") : "Any";
 
                 const allowedChip = document.createElement("span");
                 allowedChip.className =
                     "px-2 py-0.5 rounded bg-gray-50 dark:bg-gray-700 border border-gray-100 dark:border-gray-600";
-                allowedChip.textContent = `Allowed apps: ${appLabel}`;
+                allowedChip.textContent = `Allowed apps: ${allowedApps.length ? allowedApps.join(", ") : "Any"}`;
 
                 const titleChip = document.createElement("span");
                 titleChip.className =
                     "px-2 py-0.5 rounded bg-gray-50 dark:bg-gray-700 border border-gray-100 dark:border-gray-600";
-                titleChip.textContent = `Allowed titles: ${titleLabel}`;
-
-                const focusChip = document.createElement("span");
-                const focusAllowed = this.isFocusAllowed(this.lastCurrentFocus, task);
-                focusChip.className = `px-2 py-0.5 rounded border ${focusAllowed ? "bg-emerald-50 dark:bg-emerald-900/20 border-emerald-200 dark:border-emerald-700 text-emerald-700 dark:text-emerald-300" : "bg-rose-50 dark:bg-rose-900/20 border-rose-200 dark:border-rose-700 text-rose-700 dark:text-rose-300"}`;
-                focusChip.textContent = focusAllowed ? "Current app: allowed" : "Current app: NOT allowed";
+                titleChip.textContent = `Allowed titles: ${allowedTitles.length ? allowedTitles.join(", ") : "Any"}`;
 
                 debug.appendChild(allowedChip);
                 debug.appendChild(titleChip);
-                if (this.lastCurrentFocus) debug.appendChild(focusChip);
+
+                if (this.lastCurrentFocus) {
+                    const focusAllowed = this.isFocusAllowed(this.lastCurrentFocus, task);
+
+                    const focusChip = document.createElement("span");
+                    focusChip.className = `px-2 py-0.5 rounded border ${
+                        focusAllowed
+                            ? "bg-emerald-50 dark:bg-emerald-900/20 border-emerald-200 dark:border-emerald-700 text-emerald-700 dark:text-emerald-300"
+                            : "bg-rose-50 dark:bg-rose-900/20 border-rose-200 dark:border-rose-700 text-rose-700 dark:text-rose-300"
+                    }`;
+                    focusChip.textContent = focusAllowed ? "Current app: focused" : "Current app: NOT ";
+
+                    debug.appendChild(focusChip);
+                }
 
                 li.appendChild(row);
                 li.appendChild(debug);
 
                 const priorityColor = task.priority?.color;
-
                 if (priorityColor) {
-                    li.style.setProperty("--p", priorityColor);
-                    li.classList.add("bg-[color:var(--p)]/15", "dark:bg-[color:var(--p)]/15");
-                    li.classList.add("border-l-4", "border-[color:var(--p)]");
+                    li.style.setProperty("--p", `var(--anytype-color-tag-${priorityColor})`);
+                    li.classList.add(
+                        "bg-[color:var(--p)]/15",
+                        "dark:bg-[color:var(--p)]/15",
+                        "border-l-4",
+                        "border-[color:var(--p)]",
+                    );
                 }
 
-                // Only render markdown if this is the current task
                 if (isCurrent && task.markdown) {
                     setTimeout(() => {
                         this.renderTaskMarkdown(task);
@@ -1805,81 +1855,50 @@ class FocusApp {
         this.amIFocused = false;
     }
 
-    renderHistory(history, events, tasks) {
+    async renderHistory() {
+        const days = this.historyDays;
         const list = document.getElementById("history-list");
         if (!list) return;
 
-        const items = this.normalizeHistoryItems(history, events).sort((a, b) => (b.start || 0) - (a.start || 0));
-
-        const filterMode = window.historyFilterMode || "month";
-        const now = new Date();
-        const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-
-        const filtered = items.filter((item) => {
-            if (filterMode === "all") return true;
-            const startDate = item.start ? new Date(item.start * 1000) : null;
-            return startDate ? startDate >= startOfMonth : false;
+        const res = await fetch(`/api/v1/focus/app-usage?days=${days}`, {
+            cache: "no-store",
         });
 
-        // ── Group by day ─────────────────────────────────────
-        const groupedByDay = new Map();
-        filtered.forEach((item) => {
-            const date = new Date((item.start || item.end || 0) * 1000);
-            const key = this.toLocalDateKey(date);
-            if (!groupedByDay.has(key)) groupedByDay.set(key, []);
-            groupedByDay.get(key).push(item);
-        });
-
-        const dayKeys = Array.from(groupedByDay.keys()).sort((a, b) => (a < b ? 1 : -1));
-        list.innerHTML = "";
-
-        if (!dayKeys.length) {
-            const empty = document.createElement("div");
-            empty.className = "text-sm text-gray-400 dark:text-gray-500";
-            empty.textContent = "No history available yet.";
-            list.appendChild(empty);
+        if (!res.ok) {
+            list.innerHTML = `<div class="text-sm text-gray-400">Failed to load history.</div>`;
             return;
         }
 
-        // ── Render days ──────────────────────────────────────
-        dayKeys.forEach((key, index) => {
-            const entries = groupedByDay.get(key);
-            const dayDate = new Date(key + "T00:00:00");
+        const data = await res.json();
+        const dayKeys = Object.keys(data).sort((a, b) => (a < b ? 1 : -1));
+        list.innerHTML = "";
 
-            const start = entries.reduce((m, i) => Math.min(m, i.start || m), entries[0]?.start || 0);
-            const end = entries.reduce((m, i) => Math.max(m, i.end || m), entries[0]?.end || 0);
-            const totalDuration = entries.reduce((s, i) => s + (i.duration || 0), 0);
+        if (!dayKeys.length) {
+            list.innerHTML = `
+            <div class="text-sm text-gray-400 dark:text-gray-500">
+                No history available yet.
+            </div>
+        `;
+            return;
+        }
 
-            // ── Group by app_id → title ───────────────────────
-            const byApp = new Map();
+        dayKeys.forEach((dayKey, index) => {
+            const apps = data[dayKey];
+            const dayDate = new Date(dayKey + "T00:00:00");
 
-            entries.forEach((item) => {
-                const appId = item.app_id || "Unknown app";
-                const title = item.task || item.title || "Session";
-                const duration = item.duration || 0;
-
-                if (!byApp.has(appId)) {
-                    byApp.set(appId, { total: 0, titles: new Map() });
-                }
-
-                const appGroup = byApp.get(appId);
-                appGroup.total += duration;
-
-                if (!appGroup.titles.has(title)) {
-                    appGroup.titles.set(title, 0);
-                }
-                appGroup.titles.set(title, appGroup.titles.get(title) + duration);
+            let dayTotal = 0;
+            Object.values(apps).forEach((titles) => {
+                Object.values(titles).forEach((sec) => (dayTotal += sec));
             });
 
             const opacity = Math.max(0.7, 1 - index * 0.05);
 
-            // ── Card ──────────────────────────────────────────
+            // Card
             const card = document.createElement("div");
-            card.className =
-                "bg-white dark:bg-gray-800 shadow-sm rounded-xl overflow-hidden shadow-subtle hover:border-primary/30 transition-all";
+            card.className = "bg-white dark:bg-gray-800 shadow-sm rounded-xl overflow-hidden shadow-subtle";
             card.style.opacity = String(opacity);
 
-            // ── Header ────────────────────────────────────────
+            // Header
             const header = document.createElement("div");
             header.className = "bg-gray-50 dark:bg-gray-700 px-5 py-3 shadow-sm flex justify-between items-center";
 
@@ -1887,31 +1906,31 @@ class FocusApp {
             <div class="flex items-center gap-4">
                 <div class="flex flex-col">
                     <span class="text-sm font-bold text-gray-900 dark:text-white">
-                        ${this.escapeHtml(this.formatDayLabel(dayDate))}
-                    </span>
-                    <span class="text-xs text-gray-500 dark:text-gray-400">
-                        ${this.escapeHtml(this.formatTimeRange(new Date(start * 1000), new Date(end * 1000)))}
+                        ${this.formatDayLabel(dayDate)}
                     </span>
                 </div>
                 <div class="h-8 w-px bg-gray-200 dark:bg-gray-600"></div>
                 <div class="flex items-center gap-1.5">
                     <span class="material-symbols-outlined text-primary text-lg">timer</span>
                     <span class="text-sm font-bold text-primary">
-                        ${this.escapeHtml(this.fmtDuration(totalDuration))}
+                        ${this.fmtDuration(dayTotal)}
                     </span>
                 </div>
             </div>
         `;
 
-            // ── Body ──────────────────────────────────────────
+            // Body
             const body = document.createElement("div");
             body.className = "p-5";
 
             const grid = document.createElement("div");
             grid.className = "grid grid-cols-1 sm:grid-cols-2 gap-3";
 
-            byApp.forEach((appData, appId) => {
+            Object.entries(apps).forEach(([appId, titles]) => {
                 const badgeStyle = this.appIdBadgeStyle(appId);
+
+                let appTotal = 0;
+                Object.values(titles).forEach((sec) => (appTotal += sec));
 
                 const appBlock = document.createElement("div");
                 appBlock.className =
@@ -1926,7 +1945,7 @@ class FocusApp {
                         ${this.escapeHtml(appId)}
                     </span>
                     <span class="text-xs font-bold text-primary">
-                        ${this.escapeHtml(this.fmtDuration(appData.total))}
+                        ${this.fmtDuration(appTotal)}
                     </span>
                 </div>
             `;
@@ -1934,22 +1953,51 @@ class FocusApp {
                 const titleList = document.createElement("div");
                 titleList.className = "flex flex-col gap-1 pl-2";
 
-                appData.titles.forEach((time, title) => {
-                    if (time < 60) return;
+                const entries = Object.entries(titles).sort((a, b) => b[1] - a[1]);
+
+                let othersSeconds = 0;
+
+                // first pass: collect < 60s
+                entries.forEach(([_, seconds]) => {
+                    if (seconds < 60) {
+                        othersSeconds += seconds;
+                    }
+                });
+
+                // second pass: render >= 60s
+                entries.forEach(([title, seconds]) => {
+                    if (seconds < 60) return;
+
                     const row = document.createElement("div");
                     row.className = "flex justify-between text-sm text-gray-700 dark:text-gray-200";
 
                     row.innerHTML = `
-                    <span class="truncate" title="${this.escapeHtml(title)}">
-                        ${this.escapeHtml(this.truncateText(title, 36))}
-                    </span>
-                    <span class="text-xs font-mono text-gray-500 dark:text-gray-400">
-                        ${this.escapeHtml(this.fmtDuration(time))}
-                    </span>
-                `;
+                        <span class="truncate" title="${this.escapeHtml(title)}">
+                            ${this.escapeHtml(this.truncateText(title, 36))}
+                        </span>
+                        <span class="text-xs font-mono text-gray-500 dark:text-gray-400">
+                            ${this.fmtDuration(seconds)}
+                        </span>
+                    `;
 
                     titleList.appendChild(row);
                 });
+
+                // append Others if needed
+                if (othersSeconds > 0) {
+                    const row = document.createElement("div");
+                    row.className = "flex justify-between text-sm text-gray-600 dark:text-gray-400 italic";
+
+                    const label =
+                        othersSeconds < 60 ? `${Math.round(othersSeconds)}s` : this.fmtDuration(othersSeconds);
+
+                    row.innerHTML = `
+        <span>Others</span>
+        <span class="text-xs font-mono">${label}</span>
+    `;
+
+                    titleList.appendChild(row);
+                }
 
                 appBlock.appendChild(titleList);
                 grid.appendChild(appBlock);
@@ -1960,101 +2008,6 @@ class FocusApp {
             card.appendChild(body);
             list.appendChild(card);
         });
-
-        this.renderHistoryStats(filtered);
-    }
-
-    renderHistoryStats(items) {
-        const pie = document.getElementById("history-pie");
-        const legend = document.getElementById("history-legend");
-        const monthLabel = document.getElementById("history-month-label");
-        const goalText = document.getElementById("history-goal-text");
-        const goalProgress = document.getElementById("history-goal-progress");
-        if (!pie || !legend) return;
-
-        const totals = new Map();
-        items.forEach((item) => {
-            const key = item.app_id || "Others";
-            const prev = totals.get(key) || 0;
-            totals.set(key, prev + (item.duration || 0));
-        });
-        const entries = Array.from(totals.entries())
-            .filter(([, v]) => v > 0)
-            .sort((a, b) => b[1] - a[1]);
-        const total = entries.reduce((sum, [, v]) => sum + v, 0);
-        legend.innerHTML = "";
-
-        if (!entries.length || total <= 0) {
-            pie.style.background = "conic-gradient(#94a3b8 0% 100%)";
-            legend.innerHTML = `
-                <div class="flex items-center justify-between text-sm">
-                    <div class="flex items-center gap-2">
-                        <span class="w-3 h-3 rounded-full bg-slate-400 shadow-sm"></span>
-                        <span class="text-gray-600 dark:text-gray-400">No data</span>
-                    </div>
-                    <span class="font-medium text-gray-900 dark:text-white">100%</span>
-                </div>
-            `;
-        } else {
-            const colors = [
-                "#2563EB",
-                "#A855F7",
-                "#F97316",
-                "#10b981",
-                "#f59e0b",
-                "#06b6d4",
-                "#ef4444",
-                "#3b82f6",
-                "#94a3b8",
-            ];
-            let offset = 0;
-            const slices = entries.map(([label, value], idx) => {
-                const percent = (value / total) * 100;
-                const color = colors[idx % colors.length];
-                const slice = `${color} ${offset}% ${offset + percent}%`;
-                offset += percent;
-
-                const row = document.createElement("div");
-                row.className = "flex items-start justify-between text-sm";
-                row.innerHTML = `
-    <div class="flex items-start gap-2">
-        <span class="w-3 h-3 rounded-full mt-1" style="background:${color}"></span>
-
-        <div class="flex flex-col leading-tight">
-            <span class="text-gray-600 dark:text-gray-400">
-                ${this.escapeHtml(label)}
-            </span>
-            <span class="text-xs text-gray-400 dark:text-gray-500">
-                ${this.fmtDuration(value)}
-            </span>
-        </div>
-    </div>
-
-    <span class="font-medium text-gray-900 dark:text-white">
-        ${Math.round(percent)}%
-    </span>
-`;
-                legend.appendChild(row);
-
-                return slice;
-            });
-            pie.style.background = `conic-gradient(${slices.join(", ")})`;
-        }
-
-        if (monthLabel) {
-            monthLabel.textContent = this.fmtDuration(total);
-        }
-
-        if (goalText && goalProgress) {
-            const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
-            const monthSeconds = items
-                .filter((item) => item.start && new Date(item.start * 1000) >= monthStart)
-                .reduce((sum, item) => sum + (item.duration || 0), 0);
-            const goalSeconds = 120 * 3600;
-            const pct = Math.min(100, Math.round((monthSeconds / goalSeconds) * 100));
-            goalText.textContent = `${this.fmtDuration(monthSeconds)} focused this month. On track for your ${Math.round(goalSeconds / 3600)}h goal.`;
-            goalProgress.style.width = `${pct}%`;
-        }
     }
 
     // ==================== POMODORO ====================
@@ -2492,9 +2445,8 @@ class FocusApp {
         document.title = pageTitle;
     }
     isPageActive() {
-        return true
-        return document.visibilityState === "visible" && document.hasFocus();
-
+        return true;
+        // return document.visibilityState === "visible" && document.hasFocus();
     }
 
     async refreshFocusOnly() {
@@ -2506,32 +2458,37 @@ class FocusApp {
         this.updateDailyFocus();
     }
 
+    async renderTotalTimeFocus() {
+        const bar = document.getElementById("history-goal-progress");
+    }
+
     async refreshAll() {
         if (this.currentView === "history") {
-            const [tasks, current, categories, history, events] = await Promise.all([
+            const [tasks, current, history, events] = await Promise.all([
                 this.loadTasks(),
                 this.loadCurrent(),
-                this.loadCategories(),
                 this.loadHistory(),
                 this.loadEvents(),
             ]);
 
-            this.updateDailyFocus();
-            this.updateDailyActivities();
+            // this.updateDailyFocus();
+            // this.updateDailyActivities();
             this.lastTasks = Array.isArray(tasks) ? tasks : [];
             this.lastCurrentFocus = current;
-            this.updateAnytypeWarning();
-            this.renderCurrentStatus(current);
-            this.renderCurrentTask(tasks);
-            this.updateFocusWarning(current, tasks);
-            this.updateCategorySuggestions(categories);
-            this.renderHistory(history, events, tasks);
+            // this.updateAnytypeWarning();
+            // this.renderCurrentStatus(current);
+            // this.renderCurrentTask(tasks);
+            // this.updateFocusWarning(current, tasks);
+            //
+
+            this.renderTotalTimeFocus();
+            this.renderHistory();
             return;
         }
 
         const tasks = await this.loadTasks();
         const current = await this.loadCurrent();
-        const categories = await this.loadCategories();
+        // const categories = await this.loadCategories();
 
         this.lastTasks = Array.isArray(tasks) ? tasks : [];
         this.lastCurrentFocus = current;
@@ -2540,16 +2497,14 @@ class FocusApp {
         this.renderCurrentStatus(current);
         this.renderCurrentTask(tasks);
         this.updateFocusWarning(current, tasks);
-        this.updateCategorySuggestions(categories);
         this.updateDailyActivities();
-
-        // refre
+        this.updateTasksCategories();
     }
 
     async refreshEverything() {
         const tasks = await this.loadTasks();
         const current = await this.loadCurrent();
-        const categories = await this.loadCategories();
+        // const categories = await this.loadCategories();
         const history = await this.loadHistory();
         const events = await this.loadEvents();
 
@@ -2560,9 +2515,9 @@ class FocusApp {
         this.renderCurrentStatus(current);
         this.renderCurrentTask(tasks);
         this.updateFocusWarning(current, tasks);
-        this.updateCategorySuggestions(categories);
+        // this.updateCategorySuggestions(categories);
         // this.renderStats(history, events, tasks);
-        this.renderHistory(history, events, tasks);
+        this.renderHistory();
         this.updateDailyActivities();
     }
 
@@ -2993,6 +2948,53 @@ class FocusApp {
         }
     }
 
+    initHistoryFilters() {
+        const setActive = (activeId) => {
+            ["week", "month", "year"].forEach((k) => {
+                const el = document.getElementById(`history-filter-${k}`);
+                if (!el) return;
+
+                const isActive = `history-filter-${k}` === activeId;
+
+                // inactive styles
+                el.classList.toggle("text-gray-500", !isActive);
+                el.classList.toggle("dark:text-gray-400", !isActive);
+
+                // active styles
+                el.classList.toggle("text-primary", isActive);
+                el.classList.toggle("dark:text-primary-dark", isActive);
+            });
+        };
+
+        const bind = (id, days) => {
+            const el = document.getElementById(id);
+            if (!el) return;
+
+            const t = document.getElementById("dynamic-data-focus");
+
+            el.addEventListener("click", async () => {
+                this.historyDays = days;
+                setActive(id);
+                if (days == 7) {
+                    t.textContent = "Week Focus";
+                } else if (days == 30) {
+                    t.textContent = "Month Focus";
+                } else if (days == 365) {
+                    t.textContent = "Year Focus";
+                }
+                await this.renderHistory(days);
+            });
+        };
+
+        bind("history-filter-week", 7);
+        bind("history-filter-month", 30);
+        bind("history-filter-year", 365);
+
+        // default
+        this.historyDays = 30;
+        setActive("history-filter-month");
+    }
+
     // ==================== INITIALIZATION ====================
     setupEventListeners() {
         // Task submission
@@ -3286,6 +3288,8 @@ class FocusApp {
         document.getElementById("anytype-config-modal")?.addEventListener("click", (event) => {
             if (event.target?.id === "anytype-config-modal") this.closeAnytypeConfigModal();
         });
+
+        this.initHistoryFilters();
 
         const anytypeSpaceIdInput = document.getElementById("anytype-space-id");
         if (anytypeSpaceIdInput) {

@@ -25,6 +25,19 @@
     --box-shadow-subtle-dark: 0 1px 2px 0 rgb(255 255 255 / 0.05);
 }
 
+:root {
+    /* Anytype Colors */
+    --anytype-color-tag-yellow: #b2a616;
+    --anytype-color-tag-orange: #d3720d;
+    --anytype-color-tag-red: #e2400c;
+    --anytype-color-tag-pink: #ca1b8e;
+    --anytype-color-tag-purple: #9e30c4;
+    --anytype-color-tag-blue: #3e58eb;
+    --anytype-color-tag-ice: #1c8bca;
+    --anytype-color-tag-teal: #0caaa3;
+    --anytype-color-tag-lime: #64b90f;
+}
+
 .task-markdown-content h1:first-child,
 .task-markdown-content h2:first-child,
 .task-markdown-content h3:first-child {

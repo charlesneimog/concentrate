@@ -24,6 +24,7 @@ class Anytype {
     // Get
     nlohmann::json GetSpaces();
     nlohmann::json GetTasks();
+    nlohmann::json GetCategoriesOfTasks();
     nlohmann::json GetPage(const std::string &id);
 
   private:

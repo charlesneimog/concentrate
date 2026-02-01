@@ -6,34 +6,49 @@
 #include <string>
 
 #include "json.hpp"
+#include "common.hpp"
 
 class SQLite {
   public:
     SQLite(const std::string &db_path);
     ~SQLite();
 
-    void InsertEvent(const std::string &appId, int windowId, const std::string &title,
-                     double start_time, double end_time, double duration);
+    void InsertEventNew(const std::string &appId, const std::string &title,
+                        const std::string &taskCategory, double start_time, double end_time,
+                        double duration, int state);
+    bool UpdateEventNew(const std::string &appId, const std::string &title,
+                        const std::string &taskCategory, double end_time, double duration,
+                        int state);
 
     bool CreateTask(const nlohmann::json &data, std::string &error);
     bool UpdateTask(const nlohmann::json &data, std::string &error);
 
-    bool UpsertActivityCategory(const std::string &appId, const std::string &title,
-                                const std::string &category, std::string &error);
-    void InsertFocusState(int state, double start, double end, double duration);
-    nlohmann::json FetchTodayFocusSummary();
-
-    // Daily Tasks
-    nlohmann::json FetchRecurringTasks();
-    bool UpsertRecurringTask(const nlohmann::json &data, std::string &error);
+    // nlohmann::json FetchTodayFocusSummary();
     nlohmann::json FetchTodayCategorySummary();
-    bool ExcludeRecurringTask(const std::string &name, std::string &error);
+
+    // What I did
+    nlohmann::json GetTodayFocusSummary();
+    nlohmann::json GetTodayFocusTimeSummary();
+
+    // Recurring Tasks
+    void AddRecurringTask(const std::string &name, const std::vector<std::string> &appIds,
+                          const std::vector<std::string> &appTitles, const std::string &icon = "",
+                          const std::string &color = "");
+    void UpdateRecurringTask(const std::string &name, const std::vector<std::string> &appIds,
+                             const std::vector<std::string> &appTitles,
+                             const std::string &icon = "", const std::string &color = "");
+    void ExcludeRecurringTask(const std::string &name);
+    nlohmann::json FetchRecurringTasks();
 
     // Anytype
     nlohmann::json FetchEvents();
     nlohmann::json FetchTasks();
     nlohmann::json FetchCategories();
     nlohmann::json FetchHistory();
+
+    // History
+    nlohmann::json GetFocusPercentageByCategory(int days);
+    nlohmann::json FetchDailyAppUsageByAppId(int days);
 
   private:
     void Init();
