@@ -891,7 +891,6 @@ class FocusApp {
         const res = await fetch("/api/v1/anytype/tasks_categories");
         if (!res.ok) return;
 
-        //
         const days = 1;
         const res2 = await fetch(`/api/v1/focus/category-percentages?days=${days}`, {
             method: "GET",
@@ -930,17 +929,105 @@ class FocusApp {
     }
 
     async updateDailyFocus() {
-        const res = await fetch("/api/v1/focus/today");
+        // use selected history range when computing focus statistics
+        const days = 1; //Number(this.historyDays) || 1;
+        const res = await fetch(`/api/v1/focus/today?days=${days}`);
         if (!res.ok) {
             console.error("API '/focus/today' not returned ok");
             return;
         }
 
         const data = await res.json();
-
-        const focusedSeconds = data.focused_seconds ?? 0;
-        const unfocusedSeconds = data.unfocused_seconds ?? 0;
+        const focusedSeconds = Number(data.focused_seconds ?? 0);
+        const unfocusedSeconds = Number(data.unfocused_seconds ?? 0);
         const totalSeconds = focusedSeconds + unfocusedSeconds;
+        // aggregate app totals across the selected days for the history pie/legend
+        const aggregated = {};
+        Object.keys(data || {}).forEach((d) => {
+            const apps = data[d] || {};
+            Object.entries(apps).forEach(([appId, titles]) => {
+                let appTotal = 0;
+                Object.values(titles || {}).forEach((sec) => (appTotal += Number(sec || 0)));
+                aggregated[appId] = (aggregated[appId] || 0) + appTotal;
+            });
+        });
+
+        // render history pie and legend
+        try {
+            const pieEl = document.getElementById("history-pie");
+            const legendEl = document.getElementById("history-legend");
+            const monthLabel = document.getElementById("history-month-label");
+            const goalText = document.getElementById("history-goal-text");
+            const goalBar = document.getElementById("history-goal-progress");
+
+            const appEntries = Object.entries(aggregated).sort((a, b) => b[1] - a[1]);
+            const total = appEntries.reduce((s, [, v]) => s + v, 0) || 0;
+
+            // prepare slices (top 6 + others)
+            const colors = ["#2563eb", "#a855f7", "#f97316", "#ef4444", "#10b981", "#06b6d4"];
+            const slices = [];
+            let others = 0;
+            appEntries.forEach((entry, idx) => {
+                if (idx < 6) slices.push({ app: entry[0], secs: entry[1], color: colors[idx % colors.length] });
+                else others += entry[1];
+            });
+            if (others > 0) slices.push({ app: "Others", secs: others, color: "#94a3b8" });
+
+            if (pieEl) {
+                let offset = 0;
+                const parts = slices.map((s) => {
+                    const pct = total > 0 ? (s.secs / total) * 100 : 0;
+                    const start = offset;
+                    offset += pct;
+                    const end = offset;
+                    return `${s.color} ${start}% ${end}%`;
+                });
+                pieEl.style.background = `conic-gradient(${parts.join(", ")})`;
+            }
+
+            if (legendEl) {
+                legendEl.innerHTML = "";
+                slices.forEach((s) => {
+                    const row = document.createElement("div");
+                    row.className = "flex items-center justify-between text-sm";
+                    const pct = total > 0 ? (s.secs / total) * 100 : 0;
+                    row.innerHTML = `
+                        <div class=\"flex items-center gap-2\"> 
+                            <span class=\"w-3 h-3 rounded-full\" style=\"background:${s.color}\"></span>
+                            <span class=\"text-gray-600 dark:text-gray-400\">${this.escapeHtml(s.app)}</span>
+                        </div>
+                        <div class=\"text-right\"> 
+                            <div class=\"font-medium text-gray-900 dark:text-white\">${this.fmtDuration(s.secs)}</div>
+                            <div class=\"text-xs text-gray-500\">${pct.toFixed(1)}%</div>
+                        </div>
+                    `;
+                    legendEl.appendChild(row);
+                });
+            }
+
+            if (monthLabel) {
+                // show a label based on selected range
+                const days = Number(this.historyDays) || 30;
+                const now = new Date();
+                if (days <= 7)
+                    monthLabel.textContent = now.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+                else if (days <= 31)
+                    monthLabel.textContent = now.toLocaleDateString(undefined, { month: "short", year: "numeric" });
+                else monthLabel.textContent = now.toLocaleDateString(undefined, { month: "short", year: "numeric" });
+            }
+
+            if (goalText)
+                goalText.textContent = `${this.fmtDuration(focusedSeconds)} over ${Object.keys(data).length} days`;
+            if (goalBar) {
+                // set a simple goal: 1 hour per day
+                const days = Number(this.historyDays) || 30;
+                const goalSeconds = days * 3600;
+                const pct = goalSeconds > 0 ? Math.min(100, (focusedSeconds / goalSeconds) * 100) : 0;
+                goalBar.style.width = `${pct}%`;
+            }
+        } catch (err) {
+            console.warn("Failed to render history pie/legend", err);
+        }
 
         // ─────────────────────────────────────
         // Elements
@@ -948,6 +1035,7 @@ class FocusApp {
         const bar = document.getElementById("focus-progress-bar");
         const text = container?.querySelector("p");
         const pie = document.getElementById("stats-pie");
+        const legend = document.getElementById("stats-legend");
         const totalEl = document.getElementById("stats-total");
         const totalText = document.getElementById("stats-text");
         const loadingEl = document.getElementById("stats-pie-loading");
@@ -980,22 +1068,24 @@ class FocusApp {
             totalEl.textContent = this.fmtDuration(0);
 
             // Legend
-            legend.innerHTML = `
-            <div class="flex items-center justify-between text-sm">
-                <div class="flex items-center gap-2">
-                    <span class="w-3 h-3 rounded-full bg-gray-400"></span>
-                    <span class="text-gray-600 dark:text-gray-400">Focused</span>
+            if (legend) {
+                legend.innerHTML = `
+                <div class="flex items-center justify-between text-sm">
+                    <div class="flex items-center gap-2">
+                        <span class="w-3 h-3 rounded-full bg-gray-400"></span>
+                        <span class="text-gray-600 dark:text-gray-400">Focused</span>
+                    </div>
+                    <span class="font-medium text-gray-900 dark:text-white">0%</span>
                 </div>
-                <span class="font-medium text-gray-900 dark:text-white">0%</span>
-            </div>
-            <div class="flex items-center justify-between text-sm">
-                <div class="flex items-center gap-2">
-                    <span class="w-3 h-3 rounded-full bg-gray-400"></span>
-                    <span class="text-gray-600 dark:text-gray-400">Not Focused</span>
+                <div class="flex items-center justify-between text-sm">
+                    <div class="flex items-center gap-2">
+                        <span class="w-3 h-3 rounded-full bg-gray-400"></span>
+                        <span class="text-gray-600 dark:text-gray-400">Not Focused</span>
+                    </div>
+                    <span class="font-medium text-gray-900 dark:text-white">0%</span>
                 </div>
-                <span class="font-medium text-gray-900 dark:text-white">0%</span>
-            </div>
-        `;
+            `;
+            }
 
             if (loadingEl) loadingEl.style.display = "none";
             return;
@@ -1004,6 +1094,7 @@ class FocusApp {
         // ─────────────────────────────────────
         // NORMAL STATE
         const focusPercent = Math.min(100, (focusedSeconds / totalSeconds) * 100);
+        const unfocusPercent = Math.min(100, (unfocusedSeconds / totalSeconds) * 100);
 
         let gradient = "";
         let barColor = "";
@@ -1043,12 +1134,33 @@ class FocusApp {
 
         // ─────────────────────────────────────
         // Pie + legend
+        const defaultMode = this.statsLegendMode || "total";
+        const mode = ["total", "focused", "unfocused"].includes(defaultMode) ? defaultMode : "total";
+        this.statsLegendMode = mode;
+
+        const focusColor = mode === "unfocused" ? "#e5e7eb" : "#10b981";
+        const unfocusColor = mode === "focused" ? "#e5e7eb" : "#ef4444";
+
         const slicesData = [
-            { label: "Focused", value: focusedSeconds, color: "#10b981" },
-            { label: "Not Focused", value: unfocusedSeconds, color: "#ef4444" },
+            { label: "Focused", value: focusedSeconds, color: focusColor },
+            { label: "Not Focused", value: unfocusedSeconds, color: unfocusColor },
         ];
 
-        totalEl.textContent = this.fmtDuration(totalSeconds);
+        const setCenterLabel = (nextMode) => {
+            this.statsLegendMode = nextMode;
+            if (nextMode === "focused") {
+                totalEl.textContent = this.fmtDuration(focusedSeconds);
+                totalText.textContent = `Focused (${focusPercent.toFixed(0)}%)`;
+            } else if (nextMode === "unfocused") {
+                totalEl.textContent = this.fmtDuration(unfocusedSeconds);
+                totalText.textContent = `Not Focused (${unfocusPercent.toFixed(0)}%)`;
+            } else {
+                totalEl.textContent = this.fmtDuration(totalSeconds);
+                totalText.textContent = "Total Time";
+            }
+        };
+
+        setCenterLabel(mode);
 
         let offset = 0;
         pie.style.background = `conic-gradient(${slicesData
@@ -1059,6 +1171,38 @@ class FocusApp {
                 return `${color} ${start}% ${offset}%`;
             })
             .join(", ")})`;
+
+        if (legend) {
+            legend.innerHTML = "";
+            const createLegendButton = (label, percent, color, nextMode) => {
+                const btn = document.createElement("button");
+                btn.type = "button";
+                const isActive = this.statsLegendMode === nextMode;
+                btn.className = `w-full flex items-center justify-between text-sm rounded-lg px-2 py-1 transition-colors ${
+                    isActive
+                        ? "bg-primary/10 dark:bg-primary-dark/10 text-primary dark:text-primary-dark"
+                        : "hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-600 dark:text-gray-300"
+                }`;
+                btn.setAttribute("aria-pressed", isActive ? "true" : "false");
+                btn.innerHTML = `
+                    <div class="flex items-center gap-2">
+                        <span class="w-3 h-3 rounded-full" style="background:${color}"></span>
+                        <span>${label}</span>
+                    </div>
+                    <span class="font-medium text-gray-900 dark:text-white">${percent.toFixed(1)}%</span>
+                `;
+                btn.addEventListener("click", () => {
+                    const next = this.statsLegendMode === nextMode ? "total" : nextMode;
+                    this.statsLegendMode = next;
+                    setCenterLabel(next);
+                    this.updateDailyFocus();
+                });
+                return btn;
+            };
+
+            legend.appendChild(createLegendButton("Focused", focusPercent, "#10b981", "focused"));
+            legend.appendChild(createLegendButton("Not Focused", unfocusPercent, "#ef4444", "unfocused"));
+        }
 
         if (loadingEl) loadingEl.style.display = "none";
 
@@ -1872,6 +2016,99 @@ class FocusApp {
         const data = await res.json();
         const dayKeys = Object.keys(data).sort((a, b) => (a < b ? 1 : -1));
         list.innerHTML = "";
+
+        // Also render the aggregate history pie/legend and goal in the sidebar
+        try {
+            let focusedTotalSeconds = null;
+            try {
+                const focusRes = await fetch(`/api/v1/focus/today?days=${days}`, { cache: "no-store" });
+                if (focusRes.ok) {
+                    const focusData = await focusRes.json();
+                    focusedTotalSeconds = Number(focusData?.focused_seconds ?? 0);
+                }
+            } catch (err) {
+                console.warn("Failed to load focused summary", err);
+            }
+
+            const aggregated = {};
+            Object.keys(data || {}).forEach((d) => {
+                const apps = data[d] || {};
+                Object.entries(apps).forEach(([appId, titles]) => {
+                    let appTotal = 0;
+                    Object.values(titles || {}).forEach((sec) => (appTotal += Number(sec || 0)));
+                    aggregated[appId] = (aggregated[appId] || 0) + appTotal;
+                });
+            });
+
+            const pieEl = document.getElementById("history-pie");
+            const legendEl = document.getElementById("history-legend");
+            const monthLabel = document.getElementById("history-month-label");
+            const goalText = document.getElementById("history-goal-text");
+            const goalBar = document.getElementById("history-goal-progress");
+
+            const appEntries = Object.entries(aggregated).sort((a, b) => b[1] - a[1]);
+            const total = appEntries.reduce((s, [, v]) => s + v, 0) || 0;
+
+            const colors = ["#2563eb", "#a855f7", "#f97316", "#ef4444", "#10b981", "#06b6d4"];
+            const slices = [];
+            let others = 0;
+            appEntries.forEach((entry, idx) => {
+                if (idx < 6) slices.push({ app: entry[0], secs: entry[1], color: colors[idx % colors.length] });
+                else others += entry[1];
+            });
+            if (others > 0) slices.push({ app: "Others", secs: others, color: "#94a3b8" });
+
+            if (pieEl) {
+                let offset = 0;
+                const parts = slices.map((s) => {
+                    const pct = total > 0 ? (s.secs / total) * 100 : 0;
+                    const start = offset;
+                    offset += pct;
+                    const end = offset;
+                    return `${s.color} ${start}% ${end}%`;
+                });
+                pieEl.style.background = `conic-gradient(${parts.join(", ")})`;
+            }
+
+            if (legendEl) {
+                legendEl.innerHTML = "";
+                slices.forEach((s) => {
+                    const row = document.createElement("div");
+                    row.className = "flex items-center justify-between text-sm";
+                    const pct = total > 0 ? (s.secs / total) * 100 : 0;
+                    row.innerHTML = `
+                        <div class=\"flex items-center gap-2\"> 
+                            <span class=\"w-3 h-3 rounded-full\" style=\"background:${s.color}\"></span>
+                            <span class=\"text-gray-600 dark:text-gray-400\">${this.escapeHtml(s.app)}</span>
+                        </div>
+                        <div class=\"text-right\"> 
+                            <div class=\"font-medium text-gray-900 dark:text-white\">${this.fmtDuration(s.secs)}</div>
+                            <div class=\"text-xs text-gray-500\">${pct.toFixed(1)}%</div>
+                        </div>
+                    `;
+                    legendEl.appendChild(row);
+                });
+            }
+
+            if (monthLabel) {
+                const days = Number(this.historyDays) || 30;
+                const now = new Date();
+                if (days <= 7)
+                    monthLabel.textContent = now.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+                else monthLabel.textContent = now.toLocaleDateString(undefined, { month: "short", year: "numeric" });
+            }
+
+            const goalTotal = Number.isFinite(focusedTotalSeconds) ? focusedTotalSeconds : total;
+            if (goalText) goalText.textContent = `${this.fmtDuration(goalTotal)} over ${Object.keys(data).length} days`;
+            if (goalBar) {
+                const days = Number(this.historyDays) || 30;
+                const goalSeconds = days * 3600;
+                const pct = goalSeconds > 0 ? Math.min(100, (goalTotal / goalSeconds) * 100) : 0;
+                goalBar.style.width = `${pct}%`;
+            }
+        } catch (err) {
+            console.warn("Failed to render history pie/legend", err);
+        }
 
         if (!dayKeys.length) {
             list.innerHTML = `

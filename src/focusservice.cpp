@@ -333,6 +333,14 @@ void FocusService::UpdateAllowedApps() {
 
 // ─────────────────────────────────────
 bool FocusService::InitServer() {
+    m_Server.set_keep_alive_max_count(1);
+    m_Server.set_keep_alive_timeout(5);         // segundos
+    m_Server.set_payload_max_length(64 * 1024); // 64 KB
+
+    m_Server.set_read_timeout(5, 0);
+    m_Server.set_write_timeout(5, 0);
+    m_Server.set_idle_interval(1, 0);
+
     // static files
     {
         // index.html
@@ -591,9 +599,20 @@ bool FocusService::InitServer() {
             res.set_content(R"({"status":"ok"})", "application/json");
         });
 
-        m_Server.Get("/api/v1/focus/today", [&](const httplib::Request &, httplib::Response &res) {
+        m_Server.Get("/api/v1/focus/today", [&](const httplib::Request &req, httplib::Response &res) {
             try {
-                nlohmann::json summary = m_SQLite->GetTodayFocusSummary();
+                int days = 1;
+                if (req.has_param("days")) {
+                    const auto &raw = req.get_param_value("days");
+                    if (!raw.empty()) {
+                        days = std::stoi(raw);
+                        if (days < 1) {
+                            days = 1;
+                        }
+                    }
+                }
+
+                nlohmann::json summary = m_SQLite->GetFocusSummary(days);
                 nlohmann::json result = {{"focused_seconds", summary.value("focused", 0.0)},
                                          {"unfocused_seconds", summary.value("unfocused", 0.0)}};
 
@@ -790,9 +809,20 @@ bool FocusService::InitServer() {
             res.set_content(R"({"status":"ok"})", "application/json");
         });
 
-        m_Server.Get("/api/v1/focus/today", [&](const httplib::Request &, httplib::Response &res) {
+        m_Server.Get("/api/v1/focus/today", [&](const httplib::Request &req, httplib::Response &res) {
             try {
-                nlohmann::json summary = m_SQLite->GetTodayFocusSummary();
+                int days = 1;
+                if (req.has_param("days")) {
+                    const auto &raw = req.get_param_value("days");
+                    if (!raw.empty()) {
+                        days = std::stoi(raw);
+                        if (days < 1) {
+                            days = 1;
+                        }
+                    }
+                }
+
+                nlohmann::json summary = m_SQLite->GetFocusSummary(days);
                 nlohmann::json result = {{"focused_seconds", summary.value("focused", 0.0)},
                                          {"unfocused_seconds", summary.value("unfocused", 0.0)}};
 

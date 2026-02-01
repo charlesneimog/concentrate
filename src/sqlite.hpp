@@ -27,7 +27,7 @@ class SQLite {
     nlohmann::json FetchTodayCategorySummary();
 
     // What I did
-    nlohmann::json GetTodayFocusSummary();
+    nlohmann::json GetFocusSummary(int days);
     nlohmann::json GetTodayFocusTimeSummary();
 
     // Recurring Tasks

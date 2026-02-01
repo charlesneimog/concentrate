@@ -167,19 +167,26 @@ nlohmann::json SQLite::FetchTodayCategorySummary() {
 }
 
 // ─────────────────────────────────────
-nlohmann::json SQLite::GetTodayFocusSummary() {
+nlohmann::json SQLite::GetFocusSummary(int days) {
     sqlite3_stmt *stmt = nullptr;
+
+    if (days < 1) {
+        days = 1;
+    }
 
     const char *sql = "SELECT state, SUM(duration) AS total_duration "
                       "FROM focus_log "
                       "WHERE state IS NOT NULL "
-                      "  AND date(start_time, 'unixepoch', 'localtime') = date('now', 'localtime') "
+                      "  AND start_time >= strftime('%s','now','localtime', ? || ' days') "
                       "GROUP BY state";
 
     if (sqlite3_prepare_v2(m_Db, sql, -1, &stmt, nullptr) != SQLITE_OK) {
-        spdlog::error("db prepare failed in GetTodayFocusSummary: {}", sqlite3_errmsg(m_Db));
+        spdlog::error("db prepare failed in GetFocusSummary: {}", sqlite3_errmsg(m_Db));
         throw std::runtime_error("db prepare failed");
     }
+
+    std::string daysArg = "-" + std::to_string(days);
+    sqlite3_bind_text(stmt, 1, daysArg.c_str(), -1, SQLITE_TRANSIENT);
 
     double focused = 0.0;
     double unfocused = 0.0;
@@ -204,8 +211,8 @@ nlohmann::json SQLite::GetTodayFocusSummary() {
 
     sqlite3_finalize(stmt);
 
-    spdlog::debug("Today's focus summary: focused={}, unfocused={}, idle={}", focused, unfocused,
-                  idle);
+    spdlog::debug("Focus summary (last {} days): focused={}, unfocused={}, idle={}", days, focused,
+                  unfocused, idle);
 
     return {{"focused", focused}, {"unfocused", unfocused}, {"idle", idle}};
 }
