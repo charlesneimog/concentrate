@@ -49,6 +49,8 @@ class SQLite {
     // History
     nlohmann::json GetFocusPercentageByCategory(int days);
     nlohmann::json FetchDailyAppUsageByAppId(int days);
+    nlohmann::json GetCategoryTimeSummary(int days);
+    nlohmann::json GetCategoryFocusSplit(int days);
 
   private:
     void Init();

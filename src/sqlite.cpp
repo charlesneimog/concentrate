@@ -1,5 +1,6 @@
 #include "sqlite.hpp"
 #include <spdlog/spdlog.h>
+#include <unordered_map>
 
 // ─────────────────────────────────────
 SQLite::SQLite(const std::string &db_path) : m_Db(nullptr), m_DbPath(db_path) {
@@ -303,6 +304,115 @@ nlohmann::json SQLite::GetFocusPercentageByCategory(int days) {
     for (const auto &[category, duration] : temp) {
         double pct = totalDuration > 0 ? (duration / totalDuration) * 100.0 : 0.0;
         rows.push_back({{"category", category}, {"percentage", pct}});
+    }
+
+    return rows;
+}
+
+// ─────────────────────────────────────
+nlohmann::json SQLite::GetCategoryTimeSummary(int days) {
+    sqlite3_stmt *stmt = nullptr;
+
+    if (days < 1) {
+        days = 1;
+    }
+
+    const char *sql =
+        "SELECT COALESCE(NULLIF(task_category, ''), 'uncategorized') AS category, "
+        "SUM(duration) AS total_seconds "
+        "FROM focus_log "
+        "WHERE state IN (1, 2) "
+        "  AND start_time >= strftime('%s', 'now', 'localtime', ? || ' days') "
+        "GROUP BY category "
+        "ORDER BY total_seconds DESC";
+
+    if (sqlite3_prepare_v2(m_Db, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+        spdlog::error("db prepare failed in GetCategoryTimeSummary: {}", sqlite3_errmsg(m_Db));
+        return nlohmann::json::array();
+    }
+
+    std::string daysArg = "-" + std::to_string(days);
+    sqlite3_bind_text(stmt, 1, daysArg.c_str(), -1, SQLITE_TRANSIENT);
+
+    nlohmann::json rows = nlohmann::json::array();
+
+    while (sqlite3_step(stmt) == SQLITE_ROW) {
+        const char *category_txt = reinterpret_cast<const char *>(sqlite3_column_text(stmt, 0));
+        double total_seconds = sqlite3_column_double(stmt, 1);
+
+        rows.push_back({{"category", category_txt ? category_txt : "uncategorized"},
+                        {"total_seconds", total_seconds}});
+    }
+
+    sqlite3_finalize(stmt);
+    return rows;
+}
+
+// ─────────────────────────────────────
+nlohmann::json SQLite::GetCategoryFocusSplit(int days) {
+    sqlite3_stmt *stmt = nullptr;
+
+    if (days < 1) {
+        days = 1;
+    }
+
+    const char *sql =
+        "SELECT COALESCE(NULLIF(task_category, ''), 'uncategorized') AS category, "
+        "state, SUM(duration) AS total_seconds "
+        "FROM focus_log "
+        "WHERE state IN (1, 2) "
+        "  AND start_time >= strftime('%s', 'now', 'localtime', ? || ' days') "
+        "GROUP BY category, state";
+
+    if (sqlite3_prepare_v2(m_Db, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+        spdlog::error("db prepare failed in GetCategoryFocusSplit: {}", sqlite3_errmsg(m_Db));
+        return nlohmann::json::array();
+    }
+
+    std::string daysArg = "-" + std::to_string(days);
+    sqlite3_bind_text(stmt, 1, daysArg.c_str(), -1, SQLITE_TRANSIENT);
+
+    struct FocusSplit {
+        double focused = 0.0;
+        double unfocused = 0.0;
+    };
+
+    std::unordered_map<std::string, FocusSplit> splits;
+
+    while (sqlite3_step(stmt) == SQLITE_ROW) {
+        const char *category_txt = reinterpret_cast<const char *>(sqlite3_column_text(stmt, 0));
+        const std::string category = category_txt ? category_txt : "uncategorized";
+        int state = sqlite3_column_int(stmt, 1);
+        double total_seconds = sqlite3_column_double(stmt, 2);
+
+        auto &entry = splits[category];
+        if (state == 1) {
+            entry.focused += total_seconds;
+        } else if (state == 2) {
+            entry.unfocused += total_seconds;
+        }
+    }
+
+    sqlite3_finalize(stmt);
+
+    std::vector<std::pair<std::string, FocusSplit>> ordered(splits.begin(), splits.end());
+    std::sort(ordered.begin(), ordered.end(), [](const auto &a, const auto &b) {
+        const double totalA = a.second.focused + a.second.unfocused;
+        const double totalB = b.second.focused + b.second.unfocused;
+        return totalA > totalB;
+    });
+
+    nlohmann::json rows = nlohmann::json::array();
+    for (const auto &entry : ordered) {
+        const double total = entry.second.focused + entry.second.unfocused;
+        const double focused_pct = total > 0.0 ? (entry.second.focused / total) * 100.0 : 0.0;
+        const double unfocused_pct = total > 0.0 ? (entry.second.unfocused / total) * 100.0 : 0.0;
+
+        rows.push_back({{"category", entry.first},
+                        {"focused_seconds", entry.second.focused},
+                        {"unfocused_seconds", entry.second.unfocused},
+                        {"focused_pct", focused_pct},
+                        {"unfocused_pct", unfocused_pct}});
     }
 
     return rows;
@@ -664,3 +774,4 @@ void SQLite::ExecIgnoringErrors(const std::string &sql) {
         sqlite3_free(errmsg);
     }
 }
+

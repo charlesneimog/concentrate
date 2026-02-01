@@ -20,6 +20,7 @@ class FocusApp {
         this.anytypeError = null;
         this.amIFocused = false;
         this.monitoringEnabled = true;
+        this.categoryColorMap = {};
 
         this.pomodoro = {
             isRunning: false,
@@ -780,6 +781,29 @@ class FocusApp {
         return palette[hash];
     }
 
+    async ensureCategoryColors() {
+        if (this.categoryColorMap && Object.keys(this.categoryColorMap).length) return;
+        try {
+            const res = await fetch("/api/v1/anytype/tasks_categories");
+            if (!res.ok) return;
+            const body = await res.json();
+            const categories = body?.data || [];
+            categories.forEach((cat) => {
+                if (!cat?.name || !cat?.color) return;
+                this.categoryColorMap[String(cat.name).toLowerCase()] = `var(--anytype-color-tag-${cat.color})`;
+            });
+        } catch (err) {
+            console.warn("Failed to load category colors", err);
+        }
+    }
+
+    getCategoryColor(category) {
+        const key = String(category || "").toLowerCase();
+        if (this.categoryColorMap && this.categoryColorMap[key]) return this.categoryColorMap[key];
+        const hue = this.hashStringToHue(key || "uncategorized");
+        return `hsl(${hue} 70% 45%)`;
+    }
+
     //╭─────────────────────────────────────╮
     //│             API METHODS             │
     //╰─────────────────────────────────────╯
@@ -902,6 +926,11 @@ class FocusApp {
 
         const body = await res.json();
         const categories = body.data;
+        this.categoryColorMap = {};
+        categories.forEach((cat) => {
+            if (!cat?.name || !cat?.color) return;
+            this.categoryColorMap[String(cat.name).toLowerCase()] = `var(--anytype-color-tag-${cat.color})`;
+        });
         const legend = document.getElementById("tasks-categories");
 
         legend.innerHTML = categories
@@ -1999,6 +2028,89 @@ class FocusApp {
         this.amIFocused = false;
     }
 
+    async renderHistoryCategoryStats(days) {
+        const timeEl = document.getElementById("history-category-time");
+        const focusEl = document.getElementById("history-category-focus");
+        if (!timeEl || !focusEl) return;
+
+        timeEl.innerHTML = `<div class="text-xs text-gray-400 dark:text-gray-300">Loading...</div>`;
+        focusEl.innerHTML = `<div class="text-xs text-gray-400 dark:text-gray-300">Loading...</div>`;
+
+        try {
+            await this.ensureCategoryColors();
+            const [timeRes, focusRes] = await Promise.all([
+                fetch(`/api/v1/history/category-time?days=${days}`, { cache: "no-store" }),
+                fetch(`/api/v1/history/category-focus?days=${days}`, { cache: "no-store" }),
+            ]);
+
+            if (timeRes.ok) {
+                const timeRows = await timeRes.json();
+                const rows = Array.isArray(timeRows) ? timeRows : [];
+                if (!rows.length) {
+                    timeEl.innerHTML = `<div class="text-xs text-gray-400 dark:text-gray-300">No data for this range.</div>`;
+                } else {
+                    timeEl.innerHTML = "";
+                    rows.forEach((row) => {
+                        const category = String(row?.category || "uncategorized");
+                        const seconds = Number(row?.total_seconds || 0);
+                        const color = this.getCategoryColor(category);
+                        const line = document.createElement("div");
+                        line.className = "flex items-center justify-between";
+                        line.innerHTML = `
+                            <div class="flex items-center gap-2">
+                                <span class="w-2.5 h-2.5 rounded-full" style="background:${color}"></span>
+                                <span class="font-medium" style="color:${color}">${this.escapeHtml(category)}</span>
+                            </div>
+                            <span class="font-medium text-gray-900 dark:text-white">${this.fmtDuration(seconds)}</span>
+                        `;
+                        timeEl.appendChild(line);
+                    });
+                }
+            } else {
+                timeEl.innerHTML = `<div class="text-xs text-gray-400 dark:text-gray-300">Failed to load.</div>`;
+            }
+
+            if (focusRes.ok) {
+                const focusRows = await focusRes.json();
+                const rows = Array.isArray(focusRows) ? focusRows : [];
+                if (!rows.length) {
+                    focusEl.innerHTML = `<div class="text-xs text-gray-400 dark:text-gray-300">No data for this range.</div>`;
+                } else {
+                    focusEl.innerHTML = "";
+                    rows.forEach((row) => {
+                        const category = String(row?.category || "uncategorized");
+                        const focusedPct = Number(row?.focused_pct ?? 0);
+                        const unfocusedPct = Number(row?.unfocused_pct ?? 0);
+                        const color = this.getCategoryColor(category);
+                        const line = document.createElement("div");
+                        line.className = "flex items-center justify-between";
+                        line.innerHTML = `
+                            <div class="flex items-center gap-2">
+                                <span class="w-2.5 h-2.5 rounded-full" style="background:${color}"></span>
+                                <span class="font-medium" style="color:${color}">${this.escapeHtml(category)}</span>
+                            </div>
+                            <div class="flex items-center gap-2 text-xs">
+                                <span class="text-emerald-600 dark:text-emerald-400">
+                                      ${String(focusedPct.toFixed(0)).padStart(3, '0')}%
+                                </span>
+                                <span class="text-rose-600 dark:text-rose-400">
+                                      ${String(unfocusedPct.toFixed(0)).padStart(3, '0')}%
+                                </span>
+                            </div>
+                        `;
+                        focusEl.appendChild(line);
+                    });
+                }
+            } else {
+                focusEl.innerHTML = `<div class="text-xs text-gray-400 dark:text-gray-300">Failed to load.</div>`;
+            }
+        } catch (err) {
+            timeEl.innerHTML = `<div class="text-xs text-gray-400 dark:text-gray-300">Failed to load.</div>`;
+            focusEl.innerHTML = `<div class="text-xs text-gray-400 dark:text-gray-300">Failed to load.</div>`;
+            console.warn("Failed to render history category stats", err);
+        }
+    }
+
     async renderHistory() {
         const days = this.historyDays;
         const list = document.getElementById("history-list");
@@ -2014,6 +2126,7 @@ class FocusApp {
         }
 
         const data = await res.json();
+        await this.renderHistoryCategoryStats(days);
         const dayKeys = Object.keys(data).sort((a, b) => (a < b ? 1 : -1));
         list.innerHTML = "";
 

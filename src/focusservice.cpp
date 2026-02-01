@@ -334,7 +334,7 @@ void FocusService::UpdateAllowedApps() {
 // ─────────────────────────────────────
 bool FocusService::InitServer() {
     m_Server.set_keep_alive_max_count(1);
-    m_Server.set_keep_alive_timeout(5);         // segundos
+    m_Server.set_keep_alive_timeout(1);         // segundos
     m_Server.set_payload_max_length(64 * 1024); // 64 KB
 
     m_Server.set_read_timeout(5, 0);
@@ -838,6 +838,54 @@ bool FocusService::InitServer() {
 
     // Get History
     {
+        m_Server.Get("/api/v1/history/category-time",
+                     [&](const httplib::Request &req, httplib::Response &res) {
+                         try {
+                             int days = 30;
+                             if (req.has_param("days")) {
+                                 const auto &raw = req.get_param_value("days");
+                                 if (!raw.empty()) {
+                                     days = std::stoi(raw);
+                                     if (days < 1) {
+                                         days = 1;
+                                     }
+                                 }
+                             }
+
+                             nlohmann::json summary = m_SQLite->GetCategoryTimeSummary(days);
+                             res.status = 200;
+                             res.set_content(summary.dump(), "application/json");
+                         } catch (const std::exception &e) {
+                             res.status = 500;
+                             res.set_content(std::string(R"({"error":")") + e.what() + R"("})",
+                                             "application/json");
+                         }
+                     });
+
+        m_Server.Get("/api/v1/history/category-focus",
+                     [&](const httplib::Request &req, httplib::Response &res) {
+                         try {
+                             int days = 30;
+                             if (req.has_param("days")) {
+                                 const auto &raw = req.get_param_value("days");
+                                 if (!raw.empty()) {
+                                     days = std::stoi(raw);
+                                     if (days < 1) {
+                                         days = 1;
+                                     }
+                                 }
+                             }
+
+                             nlohmann::json summary = m_SQLite->GetCategoryFocusSplit(days);
+                             res.status = 200;
+                             res.set_content(summary.dump(), "application/json");
+                         } catch (const std::exception &e) {
+                             res.status = 500;
+                             res.set_content(std::string(R"({"error":")") + e.what() + R"("})",
+                                             "application/json");
+                         }
+                     });
+
         m_Server.Get("/api/v1/focus/category-percentages",
                      [&](const httplib::Request &req, httplib::Response &res) {
                          try {

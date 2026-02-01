@@ -630,33 +630,25 @@
                             </button>
                         </div>
                     </div>
-                    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div
-                            class="bg-white dark:bg-gray-800 p-5 rounded-xl shadow-sm dark:shadow-md flex flex-col gap-1"
+                            class="bg-white dark:bg-gray-800 p-5 rounded-xl shadow-sm dark:shadow-md flex flex-col gap-2"
                         >
                             <span class="text-xs font-semibold text-gray-500 uppercase tracking-wider"
-                                >Weekly Total</span
+                                >Time by Category</span
                             >
-                            <div class="flex items-end gap-2">
-                                <span id="history-weekly-total" class="text-2xl font-bold text-gray-900 dark:text-white"
-                                    >0m</span
-                                >
-                                <span id="history-weekly-note" class="text-xs text-gray-400 dark:text-gray-300 pb-1"
-                                    >Last 7 days</span
-                                >
+                            <div id="history-category-time" class="mt-2 space-y-2 text-sm">
+                                <div class="text-xs text-gray-400 dark:text-gray-300">Loading...</div>
                             </div>
                         </div>
                         <div
-                            class="bg-white dark:bg-gray-800 p-5 rounded-xl shadow-sm dark:shadow-md border-gray-200 dark:border-gray-700 shadow-subtle flex flex-col gap-1"
+                            class="bg-white dark:bg-gray-800 p-5 rounded-xl shadow-sm dark:shadow-md border-gray-200 dark:border-gray-700 shadow-subtle flex flex-col gap-2"
                         >
                             <span class="text-xs font-semibold text-gray-500 uppercase tracking-wider"
-                                >Average Session</span
+                                >Focus Split by Category</span
                             >
-                            <div class="flex items-end gap-2">
-                                <span id="history-avg-session" class="text-2xl font-bold text-gray-900 dark:text-white"
-                                    >0m</span
-                                >
-                                <span class="text-xs text-gray-400 dark:text-gray-300 pb-1">Per session</span>
+                            <div id="history-category-focus" class="mt-2 space-y-2 text-sm">
+                                <div class="text-xs text-gray-400 dark:text-gray-300">Loading...</div>
                             </div>
                         </div>
                     </div>
