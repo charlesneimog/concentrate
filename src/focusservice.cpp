@@ -43,6 +43,7 @@ FocusService::FocusService(const unsigned port, const unsigned ping, LogLevel lo
     // SQlite
     m_SQLite = std::make_unique<SQLite>(dbpath);
     spdlog::info("SQLite database initialized");
+    RefreshDailyActivities();
 
     // Anytype
     m_Anytype = std::make_unique<Anytype>();
@@ -240,11 +241,16 @@ double FocusService::ToUnixTime(std::chrono::steady_clock::time_point steady_tp)
 }
 
 // ─────────────────────────────────────
-FocusState FocusService::AmIFocused(FocusedWindow Fw) {
+FocusState FocusService::AmIFocused(FocusedWindow &Fw) {
     // If the focused window is invalid (no app_id and no title), treat as IDLE
     if (Fw.app_id.empty() && Fw.title.empty()) {
         spdlog::debug("FOCUSED: IDLE (no app_id or title)");
         return IDLE;
+    }
+
+    if (AmIDoingDailyActivities(Fw)) {
+        spdlog::debug("FOCUSED: DAILY ACTIVITY");
+        return FOCUSED;
     }
 
     bool isFocusedWindow = true;
@@ -275,6 +281,91 @@ FocusState FocusService::AmIFocused(FocusedWindow Fw) {
 
     spdlog::debug("FOCUSED: {}", isFocusedWindow ? "YES" : "NO");
     return isFocusedWindow ? FOCUSED : UNFOCUSED;
+}
+
+// ─────────────────────────────────────
+bool FocusService::AmIDoingDailyActivities(FocusedWindow &Fw) {
+    std::vector<DailyActivity> snapshot;
+    {
+        std::lock_guard<std::mutex> lock(m_GlobalMutex);
+        snapshot = m_DailyActivities;
+    }
+
+    if (snapshot.empty()) {
+        return false;
+    }
+
+    for (const auto &activity : snapshot) {
+        bool matches = false;
+        for (const auto &appId : activity.appIds) {
+            if (!appId.empty() && Fw.app_id.find(appId) != std::string::npos) {
+                matches = true;
+                break;
+            }
+        }
+
+        if (!matches) {
+            for (const auto &title : activity.appTitles) {
+                if (!title.empty() && Fw.title.find(title) != std::string::npos) {
+                    matches = true;
+                    break;
+                }
+            }
+        }
+
+        if (matches) {
+            if (!activity.name.empty()) {
+                m_CurrentTaskCategory = activity.name;
+            }
+            return true;
+        }
+    }
+
+    return false;
+}
+
+// ─────────────────────────────────────
+void FocusService::RefreshDailyActivities() {
+    nlohmann::json tasks;
+    try {
+        tasks = m_SQLite->FetchRecurringTasks();
+    } catch (const std::exception &e) {
+        spdlog::warn("Failed to load daily activities: {}", e.what());
+        return;
+    }
+
+    std::vector<DailyActivity> updated;
+    if (tasks.is_array()) {
+        for (const auto &t : tasks) {
+            DailyActivity activity;
+            activity.name = t.value("name", "");
+
+            if (t.contains("app_ids") && t["app_ids"].is_array()) {
+                for (const auto &id : t["app_ids"]) {
+                    if (id.is_string()) {
+                        activity.appIds.push_back(id.get<std::string>());
+                    }
+                }
+            }
+
+            if (t.contains("app_titles") && t["app_titles"].is_array()) {
+                for (const auto &title : t["app_titles"]) {
+                    if (title.is_string()) {
+                        activity.appTitles.push_back(title.get<std::string>());
+                    }
+                }
+            }
+
+            if (!activity.name.empty()) {
+                updated.push_back(std::move(activity));
+            }
+        }
+    }
+
+    {
+        std::lock_guard<std::mutex> lock(m_GlobalMutex);
+        m_DailyActivities = std::move(updated);
+    }
 }
 
 // ─────────────────────────────────────
@@ -672,6 +763,8 @@ bool FocusService::InitServer() {
                     m_SQLite->AddRecurringTask(name, appIds, appTitles, icon, color);
                 }
 
+                RefreshDailyActivities();
+
                 res.status = 200;
                 res.set_content(R"({"success":true})", "application/json");
 
@@ -715,6 +808,8 @@ bool FocusService::InitServer() {
 
                                 // Remove from DB
                                 m_SQLite->ExcludeRecurringTask(name);
+
+                                RefreshDailyActivities();
 
                                 res.status = 200;
                                 res.set_content(R"({"success":true})", "application/json");
@@ -944,6 +1039,19 @@ bool FocusService::InitServer() {
                 res.set_content(nlohmann::json({{"error", e.what()}}).dump(), "application/json");
             }
         });
+
+        m_Server.Get("/api/v1/daily_activities/today",
+                     [&](const httplib::Request &, httplib::Response &res) {
+                         try {
+                             nlohmann::json summary = m_SQLite->GetTodayDailyActivitiesSummary();
+                             res.status = 200;
+                             res.set_content(summary.dump(), "application/json");
+                         } catch (const std::exception &e) {
+                             res.status = 500;
+                             res.set_content(std::string(R"({"error":")") + e.what() + R"("})",
+                                             "application/json");
+                         }
+                     });
     }
 
     // Special End Points

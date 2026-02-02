@@ -1250,6 +1250,26 @@ class FocusApp {
 
         const tasks = await tasksRes.json();
 
+        let durationsByName = new Map();
+        try {
+            const summaryRes = await fetch("/api/v1/daily_activities/today", { cache: "no-store" });
+            if (summaryRes.ok) {
+                const summary = await summaryRes.json();
+                if (Array.isArray(summary)) {
+                    summary.forEach((row) => {
+                        const name = String(row?.name || "");
+                        const seconds = Number(row?.total_seconds || 0);
+                        if (name) durationsByName.set(name, seconds);
+                    });
+                }
+            } else {
+                const text = await summaryRes.text().catch(() => "");
+                console.error(`Failed to fetch daily activities summary (status: ${summaryRes.status}): ${text}`);
+            }
+        } catch (err) {
+            console.error("Failed to fetch daily activities summary:", err);
+        }
+
         const container = document.getElementById("daily-classes");
         container.innerHTML = "";
 
@@ -1280,13 +1300,36 @@ class FocusApp {
             </div>
             <div class="flex items-center gap-2">
                 <span class="text-xs font-mono text-primary bg-primary/5 dark:bg-primary/10 px-2 py-1 rounded border border-primary/10 dark:border-primary/20">
-                    0m
+                    ${this.fmtDuration(durationsByName.get(task.name) || 0)}
                 </span>
+                <button class="edit-btn hover:text-primary rounded hover:cursor-pointer" title="Edit activity">
+                    <span class="material-symbols-outlined text-[18px]">edit</span>
+                </button>
                 <button class="exclude-btn hover:text-red-600 rounded hover:cursor-pointer">
                     <span class="material-symbols-outlined text-[18px]">delete</span>
                 </button>
             </div>
         `;
+
+            const editBtn = taskDiv.querySelector(".edit-btn");
+            editBtn.addEventListener("click", () => {
+                const modal = document.getElementById("daily-config-modal");
+                const nameEl = document.getElementById("daily-name");
+                const appIdsEl = document.getElementById("daily-appids");
+                const appTitlesEl = document.getElementById("daily-apptitles");
+                const iconEl = document.getElementById("daily-icon");
+                const colorEl = document.getElementById("daily-color");
+
+                if (nameEl) nameEl.value = String(task.name || "");
+                if (appIdsEl) appIdsEl.value = Array.isArray(task.app_ids) ? task.app_ids.join(";") : "";
+                if (appTitlesEl) {
+                    appTitlesEl.value = Array.isArray(task.app_titles) ? task.app_titles.join(";") : "";
+                }
+                if (iconEl) iconEl.value = String(task.icon || "");
+                if (colorEl) colorEl.value = String(task.color || "");
+
+                if (modal) modal.classList.remove("hidden");
+            });
 
             // Exclude button handler
             const btn = taskDiv.querySelector(".exclude-btn");
@@ -1923,19 +1966,28 @@ class FocusApp {
     renderCurrentStatus(current) {
         const status = document.getElementById("current-status");
         if (!status) return;
+        const statusText = document.getElementById("current-status-text");
 
         const activeDot = document.getElementById("activity-indicator-active");
         const idleDot = document.getElementById("activity-indicator-idle");
 
         if (!this.monitoringEnabled) {
-            status.textContent = "Not Monitoring Activities";
+            if (statusText) {
+                statusText.textContent = "Not Monitoring Activities";
+            } else {
+                status.textContent = "Not Monitoring Activities";
+            }
             if (activeDot) activeDot.classList.toggle("hidden", true);
             if (idleDot) idleDot.classList.toggle("hidden", false);
             return;
         }
 
         if (!current) {
-            status.textContent = "Idle";
+            if (statusText) {
+                statusText.textContent = "Idle";
+            } else {
+                status.textContent = "Idle";
+            }
             if (activeDot) activeDot.classList.toggle("hidden", true);
             if (idleDot) idleDot.classList.toggle("hidden", false);
             return;
@@ -1945,7 +1997,11 @@ class FocusApp {
         if (idleDot) idleDot.classList.toggle("hidden", true);
         const app = current.app_id || "(unknown)";
         const title = current.title || "(untitled)";
-        status.textContent = `${app} — ${title}`;
+        if (statusText) {
+            statusText.textContent = `${app} — ${title}`;
+        } else {
+            status.textContent = `${app} — ${title}`;
+        }
     }
 
     renderCurrentTask(tasks) {
@@ -2001,9 +2057,20 @@ class FocusApp {
     updateFocusWarning(current, tasks) {
         const warning = document.getElementById("focus-warning");
         if (!warning) return;
+        const activeDot = document.getElementById("activity-indicator-active");
+        const activePing = activeDot?.querySelector(".animate-ping");
+        const activeCore = activeDot?.querySelector(".relative.inline-flex");
         const task = Array.isArray(tasks) ? tasks.find((t) => String(t.id) === String(this.currentTaskId)) : null;
         if (!current || !task) {
             warning.classList.add("hidden");
+            if (activePing) {
+                activePing.classList.remove("bg-red-400");
+                activePing.classList.add("bg-emerald-400");
+            }
+            if (activeCore) {
+                activeCore.classList.remove("bg-red-500");
+                activeCore.classList.add("bg-emerald-500");
+            }
             this.lastFocusWarningKey = "";
             this.amIFocused = true;
             return;
@@ -2011,20 +2078,54 @@ class FocusApp {
 
         const allowed = this.isFocusAllowed(current, task);
         if (allowed) {
-            warning.classList.add("hidden");
+            warning.textContent = "Focused";
+            warning.classList.remove("hidden");
+            warning.classList.remove(
+                "bg-rose-100",
+                "text-rose-700",
+                "dark:bg-rose-900/40",
+                "dark:text-rose-300",
+                "bg-red-100",
+                "text-red-700",
+                "dark:bg-red-900/40",
+                "dark:text-red-300",
+            );
+            warning.classList.add(
+                "bg-emerald-100",
+                "text-emerald-700",
+                "dark:bg-emerald-900/40",
+                "dark:text-emerald-300",
+            );
+            if (activePing) {
+                activePing.classList.remove("bg-red-400");
+                activePing.classList.add("bg-emerald-400");
+            }
+            if (activeCore) {
+                activeCore.classList.remove("bg-red-500");
+                activeCore.classList.add("bg-emerald-500");
+            }
             this.lastFocusWarningKey = "";
             this.amIFocused = true;
             return;
         }
 
         warning.classList.remove("hidden");
-        const appId = String(current.app_id || "").trim() || "(unknown app)";
-        const title = String(current.title || "").trim() || "(untitled)";
-        const allowedApps = this.normalizeAllowList(task.allowed_app_ids);
-        const allowedTitles = this.normalizeAllowList(task.allowed_titles);
-        const allowedAppLabel = allowedApps.length ? allowedApps.join(", ") : "Any app";
-        const allowedTitleLabel = allowedTitles.length ? allowedTitles.join(", ") : "Any title";
-        warning.textContent = `Not focused: ${appId} — ${title}.`;
+        warning.textContent = "Not focused";
+        warning.classList.remove("bg-emerald-100", "text-emerald-700", "dark:bg-emerald-900/40", "dark:text-emerald-300");
+        warning.classList.add(
+            "bg-red-100",
+            "text-red-700",
+            "dark:bg-red-900/40",
+            "dark:text-red-300",
+        );
+        if (activePing) {
+            activePing.classList.remove("bg-emerald-400");
+            activePing.classList.add("bg-red-400");
+        }
+        if (activeCore) {
+            activeCore.classList.remove("bg-emerald-500");
+            activeCore.classList.add("bg-red-500");
+        }
         this.amIFocused = false;
     }
 
@@ -3716,7 +3817,21 @@ class FocusApp {
         const saveBtn = document.getElementById("daily-config-save");
         const cancelBtn = document.getElementById("daily-config-cancel");
 
-        openBtn.onclick = () => modal.classList.remove("hidden");
+        openBtn.onclick = () => {
+            const nameEl = document.getElementById("daily-name");
+            const appIdsEl = document.getElementById("daily-appids");
+            const appTitlesEl = document.getElementById("daily-apptitles");
+            const iconEl = document.getElementById("daily-icon");
+            const colorEl = document.getElementById("daily-color");
+
+            if (nameEl) nameEl.value = "";
+            if (appIdsEl) appIdsEl.value = "";
+            if (appTitlesEl) appTitlesEl.value = "";
+            if (iconEl) iconEl.value = "";
+            if (colorEl) colorEl.value = "";
+
+            modal.classList.remove("hidden");
+        };
         closeBtn.onclick = cancelBtn.onclick = () => modal.classList.add("hidden");
 
         saveBtn.onclick = async () => {

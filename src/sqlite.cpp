@@ -12,9 +12,14 @@ SQLite::SQLite(const std::string &db_path) : m_Db(nullptr), m_DbPath(db_path) {
     spdlog::debug("SQLite database opened: {}", m_DbPath);
     sqlite3_busy_timeout(m_Db, 2000);
     ExecIgnoringErrors("PRAGMA journal_mode=WAL");
+    ExecIgnoringErrors("PRAGMA wal_autocheckpoint=1000");
+    ExecIgnoringErrors("PRAGMA journal_size_limit=10485760");
     ExecIgnoringErrors("PRAGMA synchronous=NORMAL");
     ExecIgnoringErrors("PRAGMA temp_store=MEMORY");
     ExecIgnoringErrors("PRAGMA cache_size = -1000;");
+    ExecIgnoringErrors("PRAGMA secure_delete=ON");
+    ExecIgnoringErrors("PRAGMA auto_vacuum=INCREMENTAL");
+    ExecIgnoringErrors("PRAGMA optimize");
 
     Init();
 }
@@ -261,6 +266,39 @@ nlohmann::json SQLite::GetTodayFocusTimeSummary() {
                   unfocused, idle);
 
     return {{"focused_seconds", focused}, {"unfocused_seconds", unfocused}, {"idle_seconds", idle}};
+}
+
+// ─────────────────────────────────────
+nlohmann::json SQLite::GetTodayDailyActivitiesSummary() {
+    sqlite3_stmt *stmt = nullptr;
+
+    const char *sql =
+        "SELECT task_category AS name, SUM(duration) AS total_seconds "
+        "FROM focus_log "
+        "WHERE state = 1 "
+        "  AND date(start_time, 'unixepoch', 'localtime') = date('now', 'localtime') "
+        "  AND task_category IN (SELECT name FROM recurring_tasks) "
+        "GROUP BY task_category "
+        "ORDER BY total_seconds DESC";
+
+    if (sqlite3_prepare_v2(m_Db, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+        spdlog::error("db prepare failed in GetTodayDailyActivitiesSummary: {}",
+                      sqlite3_errmsg(m_Db));
+        throw std::runtime_error("db prepare failed");
+    }
+
+    nlohmann::json rows = nlohmann::json::array();
+
+    while (sqlite3_step(stmt) == SQLITE_ROW) {
+        const char *name_txt = reinterpret_cast<const char *>(sqlite3_column_text(stmt, 0));
+        double total_seconds = sqlite3_column_double(stmt, 1);
+
+        rows.push_back({{"name", name_txt ? name_txt : ""},
+                        {"total_seconds", total_seconds}});
+    }
+
+    sqlite3_finalize(stmt);
+    return rows;
 }
 
 // ─────────────────────────────────────

@@ -29,6 +29,7 @@ class SQLite {
     // What I did
     nlohmann::json GetFocusSummary(int days);
     nlohmann::json GetTodayFocusTimeSummary();
+    nlohmann::json GetTodayDailyActivitiesSummary();
 
     // Recurring Tasks
     void AddRecurringTask(const std::string &name, const std::vector<std::string> &appIds,

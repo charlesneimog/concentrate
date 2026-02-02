@@ -30,8 +30,10 @@ class FocusService {
     std::filesystem::path GetBinaryPath();
     std::filesystem::path GetDBPath();
     void UpdateAllowedApps();
+    void RefreshDailyActivities();
     bool InitServer();
-    FocusState AmIFocused(FocusedWindow Fw);
+    FocusState AmIFocused(FocusedWindow &Fw);
+    bool AmIDoingDailyActivities(FocusedWindow &Fw);
     double ToUnixTime(std::chrono::steady_clock::time_point steady_tp);
 
   private:
@@ -63,6 +65,14 @@ class FocusService {
     std::vector<std::string> m_AllowedApps;
     std::vector<std::string> m_AllowedWindowTitles;
     std::string m_CurrentTaskCategory;
+
+    struct DailyActivity {
+      std::string name;
+      std::vector<std::string> appIds;
+      std::vector<std::string> appTitles;
+    };
+
+    std::vector<DailyActivity> m_DailyActivities;
 
     // Special API (When wayland info is not enough)
     std::string m_SpecialProjectTitle;
