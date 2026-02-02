@@ -764,6 +764,16 @@ bool Concentrate::InitServer() {
                         return;
                     }
                     std::string id = json_body["id"].get<std::string>();
+
+                    // Avoid expensive Anytype calls when clients re-send the same task id.
+                    // This also prevents log spam if the UI posts repeatedly.
+                    const std::string prev = m_Secrets->LoadSecret("current_task_id");
+                    if (prev == id) {
+                        res.status = 200;
+                        res.set_content("Task unchanged", "text/plain");
+                        return;
+                    }
+
                     m_Secrets->SaveSecret("current_task_id", id);
                     UpdateAllowedApps();
                     res.status = 200;
@@ -830,9 +840,29 @@ bool Concentrate::InitServer() {
                     }
                 }
 
+                // Cache results briefly to avoid expensive DB scans when the UI polls frequently.
+                const auto now = std::chrono::steady_clock::now();
+                {
+                    std::lock_guard<std::mutex> lock(m_ApiCacheMutex);
+                    auto it = m_FocusSummaryCache.find(days);
+                    if (it != m_FocusSummaryCache.end()) {
+                        const auto age = now - it->second.first;
+                        if (age < std::chrono::seconds(60)) {
+                            res.status = 200;
+                            res.set_content(it->second.second.dump(), "application/json");
+                            return;
+                        }
+                    }
+                }
+
                 nlohmann::json summary = m_SQLite->GetFocusSummary(days);
                 nlohmann::json result = {{"focused_seconds", summary.value("focused", 0.0)},
                                          {"unfocused_seconds", summary.value("unfocused", 0.0)}};
+
+                {
+                    std::lock_guard<std::mutex> lock(m_ApiCacheMutex);
+                    m_FocusSummaryCache[days] = {now, result};
+                }
 
                 res.status = 200;
                 res.set_content(result.dump(), "application/json");
@@ -909,7 +939,24 @@ bool Concentrate::InitServer() {
         m_Server.Get("/api/v1/task/recurring_tasks",
                      [&](const httplib::Request &, httplib::Response &res) {
                          try {
+                             const auto now = std::chrono::steady_clock::now();
+                             {
+                                 std::lock_guard<std::mutex> lock(m_ApiCacheMutex);
+                                 if (!m_RecurringTasksCache.is_null() &&
+                                     (now - m_RecurringTasksCacheAt) < std::chrono::seconds(60)) {
+                                     res.status = 200;
+                                     res.set_content(m_RecurringTasksCache.dump(), "application/json");
+                                     return;
+                                 }
+                             }
+
                              nlohmann::json tasks = m_SQLite->FetchRecurringTasks();
+                             {
+                                 std::lock_guard<std::mutex> lock(m_ApiCacheMutex);
+                                 m_RecurringTasksCache = tasks;
+                                 m_RecurringTasksCacheAt = now;
+                             }
+
                              res.status = 200;
                              res.set_content(tasks.dump(), "application/json");
 
@@ -1356,7 +1403,7 @@ bool Concentrate::InitServer() {
     }
 
     // clang-format on
-    const std::string host = "0.0.0.0";
+    const std::string host = "127.0.0.1";
     int port = static_cast<int>(m_Port);
     m_Thread = std::thread([this, host, port] { m_Server.listen(host, port); });
     return true;

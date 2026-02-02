@@ -2,6 +2,7 @@
 #include <memory>
 #include <mutex>
 #include <fstream>
+#include <unordered_map>
 
 // Libs
 #include <httplib.h>
@@ -41,6 +42,13 @@ class Concentrate {
     const unsigned m_Ping;
     std::filesystem::path m_Root;
     std::mutex m_GlobalMutex;
+
+    // Lightweight API caches to avoid expensive work on high-frequency polling
+    std::mutex m_ApiCacheMutex;
+    std::chrono::steady_clock::time_point m_RecurringTasksCacheAt{};
+    nlohmann::json m_RecurringTasksCache = nlohmann::json::array();
+    std::unordered_map<int, std::pair<std::chrono::steady_clock::time_point, nlohmann::json>>
+      m_FocusSummaryCache;
 
     // Parts
     std::unique_ptr<Anytype> m_Anytype;
