@@ -72,16 +72,26 @@ Concentrate::Concentrate(const unsigned port, const unsigned ping, LogLevel log_
 
     // monitoring
     if (!m_MonitoringEnabled) {
-        m_Notification->SendNotification("dialog-warning", "Concentrate",
-                                         "Apps monitoring is off");
+        m_Notification->SendNotification("dialog-warning", "Concentrate", "Apps monitoring is off");
     }
     auto lastMonitoringNotification = std::chrono::steady_clock::now() - std::chrono::minutes(10);
 
-    FocusState lastState{};
+    FocusState lastState = IDLE;
     auto stateSince = std::chrono::steady_clock::now();
     auto lastRecord = stateSince;
     std::string lastAppId;
     std::string lastTitle;
+    std::string lastCategory;
+
+    {
+        std::lock_guard<std::mutex> lock(m_GlobalMutex);
+        m_LastRecord = lastRecord;
+        m_LastState = lastState;
+        m_LastAppId = lastAppId;
+        m_LastTitle = lastTitle;
+        m_LastCategory = lastCategory;
+        m_HasLastRecord = true;
+    }
 
     UpdateAllowedApps();
     RefreshDailyActivities();
@@ -102,6 +112,16 @@ Concentrate::Concentrate(const unsigned port, const unsigned ping, LogLevel log_
             stateSince = now;
             lastAppId.clear();
             lastTitle.clear();
+            lastCategory.clear();
+            {
+                std::lock_guard<std::mutex> lock(m_GlobalMutex);
+                m_LastRecord = lastRecord;
+                m_LastState = lastState;
+                m_LastAppId = lastAppId;
+                m_LastTitle = lastTitle;
+                m_LastCategory = lastCategory;
+                m_HasLastRecord = true;
+            }
             std::this_thread::sleep_for(std::chrono::seconds(m_Ping));
             continue;
         }
@@ -112,10 +132,13 @@ Concentrate::Concentrate(const unsigned port, const unsigned ping, LogLevel log_
         if (m_SpecialProjectFocused) {
             m_Fw.app_id = m_SpecialAppId;
             m_Fw.title = m_SpecialProjectTitle;
+            spdlog::debug("Special project focus override: app_id='{}', title='{}'", m_Fw.app_id,
+                          m_Fw.title);
         }
 
         if (m_CurrentTaskCategory.empty()) {
-            m_CurrentTaskCategory = "uncategorized";
+            m_CurrentTaskCategory = "Uncategorized";
+            spdlog::debug("Current task category defaulted to '{}'", m_CurrentTaskCategory);
         }
 
         // IDLE: close nothing, record nothing, reset clocks
@@ -127,8 +150,8 @@ Concentrate::Concentrate(const unsigned port, const unsigned ping, LogLevel log_
                 double duration = endUnix - startUnix;
 
                 if (duration > 0.0) {
-                    m_SQLite->InsertEventNew(m_Fw.app_id, m_Fw.title, m_CurrentTaskCategory,
-                                             startUnix, endUnix, duration, lastState);
+                    m_SQLite->InsertEventNew(lastAppId, lastTitle, lastCategory, startUnix,
+                                             endUnix, duration, lastState);
                     spdlog::info(
                         "Focus event before idle: state={}, app_id='{}', title='{}', duration={}",
                         static_cast<int>(lastState), lastAppId, lastTitle, duration);
@@ -140,6 +163,16 @@ Concentrate::Concentrate(const unsigned port, const unsigned ping, LogLevel log_
             stateSince = now;
             lastAppId.clear();
             lastTitle.clear();
+            lastCategory.clear();
+            {
+                std::lock_guard<std::mutex> lock(m_GlobalMutex);
+                m_LastRecord = lastRecord;
+                m_LastState = lastState;
+                m_LastAppId = lastAppId;
+                m_LastTitle = lastTitle;
+                m_LastCategory = lastCategory;
+                m_HasLastRecord = true;
+            }
 
             std::this_thread::sleep_for(std::chrono::seconds(m_Ping));
             continue;
@@ -168,7 +201,8 @@ Concentrate::Concentrate(const unsigned port, const unsigned ping, LogLevel log_
         }
 
         bool stateChanged = (currentState != lastState);
-        bool appChanged = (m_Fw.app_id != lastAppId) || (m_Fw.title != lastTitle);
+        bool appChanged = (m_Fw.app_id != lastAppId) || (m_Fw.title != lastTitle) ||
+                  (m_Fw.category != lastCategory);
 
         // Handle state or app changes
         if ((stateChanged || appChanged) && lastState != IDLE) {
@@ -177,8 +211,8 @@ Concentrate::Concentrate(const unsigned port, const unsigned ping, LogLevel log_
             double endUnix = ToUnixTime(now);
             double duration = endUnix - startUnix;
             if (duration > 0.0) {
-                m_SQLite->InsertEventNew(m_Fw.app_id, m_Fw.title, m_CurrentTaskCategory, startUnix,
-                                         endUnix, duration, lastState);
+                m_SQLite->InsertEventNew(lastAppId, lastTitle, lastCategory, startUnix, endUnix,
+                                         duration, lastState);
                 spdlog::info("Focus event: state={}, app_id='{}', title='{}', duration={}",
                              static_cast<int>(lastState), lastAppId, lastTitle, duration);
             }
@@ -194,8 +228,8 @@ Concentrate::Concentrate(const unsigned port, const unsigned ping, LogLevel log_
             double duration = endUnix - ToUnixTime(lastRecord);
 
             if (duration > 0.0) {
-                m_SQLite->UpdateEventNew(m_Fw.app_id, m_Fw.title, m_CurrentTaskCategory, endUnix,
-                                         duration, lastState);
+                m_SQLite->UpdateEventNew(lastAppId, lastTitle, lastCategory, endUnix, duration,
+                                         lastState);
                 lastRecord = now;
             }
         }
@@ -216,6 +250,17 @@ Concentrate::Concentrate(const unsigned port, const unsigned ping, LogLevel log_
         if (appChanged) {
             lastAppId = m_Fw.app_id;
             lastTitle = m_Fw.title;
+            lastCategory = m_Fw.category;
+        }
+
+        {
+            std::lock_guard<std::mutex> lock(m_GlobalMutex);
+            m_LastRecord = lastRecord;
+            m_LastState = lastState;
+            m_LastAppId = lastAppId;
+            m_LastTitle = lastTitle;
+            m_LastCategory = lastCategory;
+            m_HasLastRecord = true;
         }
 
         std::this_thread::sleep_for(std::chrono::seconds(m_Ping));
@@ -224,6 +269,42 @@ Concentrate::Concentrate(const unsigned port, const unsigned ping, LogLevel log_
 
 // ─────────────────────────────────────
 Concentrate::~Concentrate() {
+    FocusState lastStateSnapshot = IDLE;
+    std::chrono::steady_clock::time_point lastRecordSnapshot;
+    std::string lastAppIdSnapshot;
+    std::string lastTitleSnapshot;
+    std::string lastCategorySnapshot;
+    bool hasLastRecordSnapshot = false;
+
+    {
+        std::lock_guard<std::mutex> lock(m_GlobalMutex);
+        lastStateSnapshot = m_LastState;
+        lastRecordSnapshot = m_LastRecord;
+        lastAppIdSnapshot = m_LastAppId;
+        lastTitleSnapshot = m_LastTitle;
+        lastCategorySnapshot = m_LastCategory;
+        hasLastRecordSnapshot = m_HasLastRecord;
+    }
+
+    if (hasLastRecordSnapshot && lastStateSnapshot != IDLE) {
+        auto now = std::chrono::steady_clock::now();
+        double startUnix = ToUnixTime(lastRecordSnapshot);
+        double endUnix = ToUnixTime(now);
+        double duration = endUnix - startUnix;
+        const std::string category =
+            lastCategorySnapshot.empty() ? "uncategorized" : lastCategorySnapshot;
+
+        if (duration > 0.0) {
+            m_SQLite->InsertEventNew(lastAppIdSnapshot, lastTitleSnapshot, category, startUnix,
+                                     endUnix, duration, lastStateSnapshot);
+            spdlog::info(
+                "Final focus event saved: state={}, app_id='{}', title='{}', category='{}', "
+                "duration={}",
+                static_cast<int>(lastStateSnapshot), lastAppIdSnapshot, lastTitleSnapshot,
+                category, duration);
+        }
+    }
+
     m_Server.stop();
     if (m_Thread.joinable()) {
         m_Thread.join();
@@ -246,12 +327,10 @@ FocusState Concentrate::AmIFocused(FocusedWindow &Fw) {
     // If the focused window is invalid (no app_id and no title), treat as IDLE
     if (Fw.app_id.empty() && Fw.title.empty()) {
         spdlog::debug("FOCUSED: IDLE (no app_id or title)");
+        Fw.category.clear();
+        m_CurrentLiveTaskCategory.clear();
+        spdlog::debug("Live category cleared (idle)");
         return IDLE;
-    }
-
-    if (AmIDoingDailyActivities(Fw)) {
-        spdlog::debug("FOCUSED: DAILY ACTIVITY");
-        return FOCUSED;
     }
 
     bool isFocusedWindow = true;
@@ -279,6 +358,23 @@ FocusState Concentrate::AmIFocused(FocusedWindow &Fw) {
             }
         }
     }
+
+    if (!isFocusedWindow) {
+        if (AmIDoingDailyActivities(Fw)) {
+            spdlog::debug("FOCUSED: DAILY ACTIVITY");
+            Fw.category = m_CurrentDailyTaskCategory;
+            m_CurrentLiveTaskCategory = Fw.category;
+            spdlog::debug("Daily activity category set: '{}'", Fw.category);
+            return FOCUSED;
+        }
+    }
+
+    const std::string taskCategory =
+        m_CurrentTaskCategory.empty() ? "Uncategorized" : m_CurrentTaskCategory;
+    m_CurrentDailyTaskCategory.clear();
+    Fw.category = taskCategory;
+    m_CurrentLiveTaskCategory = Fw.category;
+    spdlog::debug("Task category set: '{}'", Fw.category);
 
     spdlog::debug("FOCUSED: {}", isFocusedWindow ? "YES" : "NO");
     return isFocusedWindow ? FOCUSED : UNFOCUSED;
@@ -316,7 +412,8 @@ bool Concentrate::AmIDoingDailyActivities(FocusedWindow &Fw) {
 
         if (matches) {
             if (!activity.name.empty()) {
-                m_CurrentTaskCategory = activity.name;
+                m_CurrentDailyTaskCategory = activity.name;
+                spdlog::debug("Matched daily activity category: '{}'", m_CurrentDailyTaskCategory);
             }
             return true;
         }
@@ -624,6 +721,7 @@ bool Concentrate::InitServer() {
                 j["window_id"] = current.window_id;
                 j["title"] = current.title;
                 j["app_id"] = current.app_id;
+                j["category"] = current.category;
             }
 
             res.status = 200;
@@ -718,7 +816,8 @@ bool Concentrate::InitServer() {
             res.set_content(R"({"status":"ok"})", "application/json");
         });
 
-        m_Server.Get("/api/v1/focus/today", [&](const httplib::Request &req, httplib::Response &res) {
+        m_Server.Get("/api/v1/focus/today", [&](const httplib::Request &req,
+                                                httplib::Response &res) {
             try {
                 int days = 1;
                 if (req.has_param("days")) {
@@ -932,7 +1031,8 @@ bool Concentrate::InitServer() {
             res.set_content(R"({"status":"ok"})", "application/json");
         });
 
-        m_Server.Get("/api/v1/focus/today", [&](const httplib::Request &req, httplib::Response &res) {
+        m_Server.Get("/api/v1/focus/today", [&](const httplib::Request &req,
+                                                httplib::Response &res) {
             try {
                 int days = 1;
                 if (req.has_param("days")) {

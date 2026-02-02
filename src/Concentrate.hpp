@@ -65,6 +65,8 @@ class Concentrate {
     std::vector<std::string> m_AllowedApps;
     std::vector<std::string> m_AllowedWindowTitles;
     std::string m_CurrentTaskCategory;
+    std::string m_CurrentDailyTaskCategory;
+    std::string m_CurrentLiveTaskCategory;
 
     struct DailyActivity {
       std::string name;
@@ -77,9 +79,17 @@ class Concentrate {
     // Special API (When wayland info is not enough)
     std::string m_SpecialProjectTitle;
     std::string m_SpecialAppId;
-    bool m_SpecialProjectFocused;
+    bool m_SpecialProjectFocused = false;
 
     // Monitoring Notification
     std::chrono::system_clock m_LastMonitoringDisabledNotification;
     bool m_MonitoringEnabled = true;
+
+    // Last tracked interval (for graceful shutdown)
+    std::chrono::steady_clock::time_point m_LastRecord;
+    FocusState m_LastState = IDLE;
+    std::string m_LastAppId;
+    std::string m_LastTitle;
+    std::string m_LastCategory;
+    bool m_HasLastRecord = false;
 };

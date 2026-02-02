@@ -11,4 +11,5 @@ struct FocusedWindow {
     std::string title;
     std::string app_id;
     bool valid = false;
+    std::string category;
 };
