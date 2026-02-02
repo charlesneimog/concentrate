@@ -28,11 +28,13 @@
         >
             <div class="p-6 flex items-center gap-3 bg-white text-gray-900 dark:bg-gray-800 dark:text-white">
                 <div
-                    class="h-8 w-8 rounded-lg bg-primary dark:bg-primary-dark flex items-center justify-center shadow-sm dark:shadow-md"
+                    class="h-8 w-8 rounded-lg flex items-center justify-center shadow-sm dark:shadow-md"
                 >
-                    <span class="material-symbols-outlined text-white" style="font-size: 20px">bolt</span>
+                    <!-- Put here the ./favicon.svg 20x20-->
+                    <img src="./favicon.svg" alt="Concentrate Logo" class="h-8 w-8 dark:invert"/>
+
                 </div>
-                <h1 class="text-lg font-bold tracking-tight text-gray-900 dark:text-white">FocusService</h1>
+                <h1 class="text-lg font-bold tracking-tight text-gray-900 dark:text-white">Concentrate</h1>
             </div>
             <nav class="flex-1 px-4 space-y-1 overflow-y-auto bg-white text-gray-900 dark:bg-gray-800 dark:text-white">
                 <a
@@ -230,6 +232,8 @@
                                 <label class="text-xs text-gray-500 dark:text-gray-400">
                                     Icon (Material Symbols)
                                 </label>
+                                <!-- put small mention to https://fonts.google.com/icons-->
+                                <small class="text-xs text-gray-400 dark:text-gray-600">See available icons at <a href="https://fonts.google.com/icons" target="_blank" class="underline">Google Fonts Icons</a></small>
                                 <input
                                     type="text"
                                     id="daily-icon"
@@ -251,11 +255,15 @@
                                     class="w-full rounded-md border border-gray-300 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
                                 >
                                     <option value="">Select a color</option>
-                                    <option value="red">Red</option>
-                                    <option value="blue">Blue</option>
-                                    <option value="yellow">Yellow</option>
-                                    <option value="green">Green</option>
-                                    <option value="purple">Purple</option>
+                                    <option value="anytype-yellow">Yellow</option>
+                                    <option value="anytype-orange">Orange</option>
+                                    <option value="anytype-red">Red</option>
+                                    <option value="anytype-pink">Pink</option>
+                                    <option value="anytype-purple">Purple</option>
+                                    <option value="anytype-blue">Blue</option>
+                                    <option value="anytype-ice">Ice</option>
+                                    <option value="anytype-teal">Teal</option>
+                                    <option value="anytype-lime">Lime</option>
                                 </select>
                             </div>
 

@@ -40,7 +40,7 @@ Anytype::~Anytype() {}
 std::string Anytype::LoginChallengeId() {
     const char *BASE_URL = "http://localhost:31009";
     const char *API_VERSION = "2025-11-08";
-    const char *APP_NAME = "FocusService";
+    const char *APP_NAME = "Concentrate";
 
     httplib::Client client(BASE_URL);
     client.set_default_headers({
@@ -159,7 +159,7 @@ nlohmann::json Anytype::GetPage(const std::string &id) {
 
     if (api_key.empty() || space_id.empty()) {
         spdlog::error("Anytype: API key or default space ID is missing");
-        return {};
+        return nlohmann::json::object();
     }
 
     // Build URL
@@ -206,6 +206,10 @@ nlohmann::json Anytype::GetTasks() {
 
     std::string api_key = m_Secrets.LoadSecret("api_key");
     std::string space_id = m_Secrets.LoadSecret("default_space_id");
+
+    if (api_key.empty() || space_id.empty()) {
+        throw std::runtime_error("Missing Anytype API key or space ID");
+    }
 
     httplib::Client client(base);
     client.set_default_headers({
@@ -341,7 +345,7 @@ nlohmann::json Anytype::GetCategoriesOfTasks() {
 
     if (api_key.empty() || space_id.empty()) {
         spdlog::error("Anytype: API key or default space ID is missing");
-        return {};
+        return nlohmann::json::object();
     }
 
     // Build URL

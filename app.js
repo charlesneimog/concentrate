@@ -804,6 +804,29 @@ class FocusApp {
         return `hsl(${hue} 70% 45%)`;
     }
 
+    getDailyColorClass(color) {
+        const key = String(color || "").trim().toLowerCase();
+        const anytypeMap = {
+            "anytype-yellow": "anytype-tag anytype-tag-yellow",
+            "anytype-orange": "anytype-tag anytype-tag-orange",
+            "anytype-red": "anytype-tag anytype-tag-red",
+            "anytype-pink": "anytype-tag anytype-tag-pink",
+            "anytype-purple": "anytype-tag anytype-tag-purple",
+            "anytype-blue": "anytype-tag anytype-tag-blue",
+            "anytype-ice": "anytype-tag anytype-tag-ice",
+            "anytype-teal": "anytype-tag anytype-tag-teal",
+            "anytype-lime": "anytype-tag anytype-tag-lime",
+        };
+
+        if (key && anytypeMap[key]) return anytypeMap[key];
+
+        if (!key) {
+            return "bg-slate-50 text-slate-600 dark:bg-slate-500/10 dark:text-slate-400";
+        }
+
+        return `bg-${key}-50 text-${key}-600 dark:bg-${key}-500/10 dark:text-${key}-400`;
+    }
+
     //╭─────────────────────────────────────╮
     //│             API METHODS             │
     //╰─────────────────────────────────────╯
@@ -1287,9 +1310,11 @@ class FocusApp {
             taskDiv.className =
                 "flex items-center justify-between p-4 rounded-lg shadow-sm border-b border-gray-200 dark:border-gray-700";
 
+            const colorClass = this.getDailyColorClass(task.color);
+
             taskDiv.innerHTML = `
             <div class="flex items-center gap-3 min-w-0">
-                <div class="h-8 w-8 rounded bg-${task.color}-50 text-${task.color}-600 dark:bg-${task.color}-500/10 dark:text-${task.color}-400 flex items-center justify-center">
+                <div class="h-8 w-8 rounded ${colorClass} flex items-center justify-center">
                     <span class="material-symbols-outlined text-[20px]">${task.icon}</span>
                 </div>
                 <div class="min-w-0">

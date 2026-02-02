@@ -48,7 +48,7 @@ void Notification::SendNotification(const std::string icon, const std::string su
     DBusMessageIter args;
     dbus_message_iter_init_append(msg_dbus, &args);
 
-    const char *app_name = "FocusService";
+    const char *app_name = "Concentrate";
     uint32_t replaces_id = 0;
     const char *body = msg.c_str();
 
@@ -91,7 +91,7 @@ uint32_t Notification::SendYesNoNotification(const std::string &icon, const std:
     DBusMessageIter args;
     dbus_message_iter_init_append(m, &args);
 
-    const char *app_name = "FocusService";
+    const char *app_name = "Concentrate";
     uint32_t replaces_id = 0;
     int32_t timeout = 0; // persistent
 

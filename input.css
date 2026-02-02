@@ -38,6 +38,55 @@
     --anytype-color-tag-lime: #64b90f;
 }
 
+.anytype-tag {
+    --anytype-tag-color: var(--anytype-color-tag-blue);
+    --anytype-tag-bg: color-mix(in srgb, var(--anytype-tag-color) 14%, transparent);
+    --anytype-tag-fg: color-mix(in srgb, var(--anytype-tag-color) 85%, black);
+    background-color: var(--anytype-tag-bg);
+    color: var(--anytype-tag-fg);
+}
+
+.dark .anytype-tag {
+    --anytype-tag-bg: color-mix(in srgb, var(--anytype-tag-color) 20%, transparent);
+    --anytype-tag-fg: color-mix(in srgb, var(--anytype-tag-color) 80%, white);
+}
+
+.anytype-tag-yellow {
+    --anytype-tag-color: var(--anytype-color-tag-yellow);
+}
+
+.anytype-tag-orange {
+    --anytype-tag-color: var(--anytype-color-tag-orange);
+}
+
+.anytype-tag-red {
+    --anytype-tag-color: var(--anytype-color-tag-red);
+}
+
+.anytype-tag-pink {
+    --anytype-tag-color: var(--anytype-color-tag-pink);
+}
+
+.anytype-tag-purple {
+    --anytype-tag-color: var(--anytype-color-tag-purple);
+}
+
+.anytype-tag-blue {
+    --anytype-tag-color: var(--anytype-color-tag-blue);
+}
+
+.anytype-tag-ice {
+    --anytype-tag-color: var(--anytype-color-tag-ice);
+}
+
+.anytype-tag-teal {
+    --anytype-tag-color: var(--anytype-color-tag-teal);
+}
+
+.anytype-tag-lime {
+    --anytype-tag-color: var(--anytype-color-tag-lime);
+}
+
 .task-markdown-content h1:first-child,
 .task-markdown-content h2:first-child,
 .task-markdown-content h3:first-child {

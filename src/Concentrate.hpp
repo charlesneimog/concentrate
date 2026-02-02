@@ -21,10 +21,10 @@
 // Register current focus state periodically if it persists this long
 #define REGISTER_STATE_AFTER 30 // seconds
 
-class FocusService {
+class Concentrate {
   public:
-    FocusService(const unsigned port, const unsigned ping, LogLevel log_level);
-    ~FocusService();
+    Concentrate(const unsigned port, const unsigned ping, LogLevel log_level);
+    ~Concentrate();
 
   private:
     std::filesystem::path GetBinaryPath();

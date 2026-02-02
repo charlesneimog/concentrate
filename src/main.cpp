@@ -1,4 +1,4 @@
-#include "focusservice.hpp"
+#include "Concentrate.hpp"
 
 // ─────────────────────────────────────
 int main(int argc, char *argv[]) {
@@ -20,6 +20,6 @@ int main(int argc, char *argv[]) {
 
     unsigned ServerPort = 7079;
     unsigned PingEach = 2; // Seconds to request AppID from Window
-    FocusService FocusService(ServerPort, PingEach, log_level);
+    Concentrate Concentrate(ServerPort, PingEach, log_level);
     return 0;
 }

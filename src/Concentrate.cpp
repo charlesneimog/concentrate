@@ -1,4 +1,4 @@
-#include "focusservice.hpp"
+#include "Concentrate.hpp"
 
 #include <string>
 #include <limits.h>
@@ -9,7 +9,7 @@
 // TODO: Know how is my focus by category
 
 // ─────────────────────────────────────
-FocusService::FocusService(const unsigned port, const unsigned ping, LogLevel log_level)
+Concentrate::Concentrate(const unsigned port, const unsigned ping, LogLevel log_level)
     : m_Port(port), m_Ping(ping) {
 
     if (log_level == LOG_DEBUG) {
@@ -43,12 +43,10 @@ FocusService::FocusService(const unsigned port, const unsigned ping, LogLevel lo
     // SQlite
     m_SQLite = std::make_unique<SQLite>(dbpath);
     spdlog::info("SQLite database initialized");
-    RefreshDailyActivities();
 
     // Anytype
     m_Anytype = std::make_unique<Anytype>();
     spdlog::info("Anytype client initialized");
-    UpdateAllowedApps();
 
     // Windows API (get AppID, Title)
     m_Window = std::make_unique<Window>();
@@ -74,7 +72,7 @@ FocusService::FocusService(const unsigned port, const unsigned ping, LogLevel lo
 
     // monitoring
     if (!m_MonitoringEnabled) {
-        m_Notification->SendNotification("dialog-warning", "FocusService",
+        m_Notification->SendNotification("dialog-warning", "Concentrate",
                                          "Apps monitoring is off");
     }
     auto lastMonitoringNotification = std::chrono::steady_clock::now() - std::chrono::minutes(10);
@@ -85,12 +83,15 @@ FocusService::FocusService(const unsigned port, const unsigned ping, LogLevel lo
     std::string lastAppId;
     std::string lastTitle;
 
+    UpdateAllowedApps();
+    RefreshDailyActivities();
+
     while (true) {
         auto now = std::chrono::steady_clock::now();
 
         // Notify if monitoring is disabled every 5 minutes
         if (!m_MonitoringEnabled && now - lastMonitoringNotification >= std::chrono::minutes(5)) {
-            m_Notification->SendNotification("dialog-warning", "FocusService",
+            m_Notification->SendNotification("dialog-warning", "Concentrate",
                                              "Application monitoring is currently disabled.");
             lastMonitoringNotification = now;
         }
@@ -160,7 +161,7 @@ FocusService::FocusService(const unsigned port, const unsigned ping, LogLevel lo
         if (now - lastHydrationNotification >=
             std::chrono::minutes(static_cast<int>(hydrationIntervalMinutes))) {
             m_Notification->SendNotification(
-                "dialog-info", "FocusService",
+                "dialog-info", "Concentrate",
                 fmt::format("Time to drink water! ~{:.2f} L since last reminder.",
                             litersPerReminder));
             lastHydrationNotification = now;
@@ -222,7 +223,7 @@ FocusService::FocusService(const unsigned port, const unsigned ping, LogLevel lo
 }
 
 // ─────────────────────────────────────
-FocusService::~FocusService() {
+Concentrate::~Concentrate() {
     m_Server.stop();
     if (m_Thread.joinable()) {
         m_Thread.join();
@@ -230,7 +231,7 @@ FocusService::~FocusService() {
 }
 
 // ─────────────────────────────────────
-double FocusService::ToUnixTime(std::chrono::steady_clock::time_point steady_tp) {
+double Concentrate::ToUnixTime(std::chrono::steady_clock::time_point steady_tp) {
     auto now_steady = std::chrono::steady_clock::now();
     auto now_system = std::chrono::system_clock::now();
 
@@ -241,7 +242,7 @@ double FocusService::ToUnixTime(std::chrono::steady_clock::time_point steady_tp)
 }
 
 // ─────────────────────────────────────
-FocusState FocusService::AmIFocused(FocusedWindow &Fw) {
+FocusState Concentrate::AmIFocused(FocusedWindow &Fw) {
     // If the focused window is invalid (no app_id and no title), treat as IDLE
     if (Fw.app_id.empty() && Fw.title.empty()) {
         spdlog::debug("FOCUSED: IDLE (no app_id or title)");
@@ -284,7 +285,7 @@ FocusState FocusService::AmIFocused(FocusedWindow &Fw) {
 }
 
 // ─────────────────────────────────────
-bool FocusService::AmIDoingDailyActivities(FocusedWindow &Fw) {
+bool Concentrate::AmIDoingDailyActivities(FocusedWindow &Fw) {
     std::vector<DailyActivity> snapshot;
     {
         std::lock_guard<std::mutex> lock(m_GlobalMutex);
@@ -325,7 +326,7 @@ bool FocusService::AmIDoingDailyActivities(FocusedWindow &Fw) {
 }
 
 // ─────────────────────────────────────
-void FocusService::RefreshDailyActivities() {
+void Concentrate::RefreshDailyActivities() {
     nlohmann::json tasks;
     try {
         tasks = m_SQLite->FetchRecurringTasks();
@@ -369,19 +370,38 @@ void FocusService::RefreshDailyActivities() {
 }
 
 // ─────────────────────────────────────
-void FocusService::UpdateAllowedApps() {
+void Concentrate::UpdateAllowedApps() {
     // Update the current task from page id
     std::string id = m_Secrets->LoadSecret("current_task_id");
     spdlog::info("Anytype: Updating allowed apps for task ID: {}", id);
+
+    if (id.empty()) {
+        spdlog::warn("Anytype: No current task ID set; skipping allowed apps update");
+        std::lock_guard<std::mutex> lock(m_GlobalMutex);
+        m_TaskTitle.clear();
+        m_AllowedApps.clear();
+        m_AllowedWindowTitles.clear();
+        return;
+    }
+
     nlohmann::json currentTaskPage = m_Anytype->GetPage(id);
     std::vector<std::string> allowedApps;
     std::vector<std::string> allowedWindowTitles;
 
-    if (currentTaskPage.contains("object") && currentTaskPage["object"].contains("properties")) {
+    if (!currentTaskPage.contains("object") || !currentTaskPage["object"].is_object()) {
+        spdlog::warn("Anytype: Task page is missing object data; skipping allowed apps update");
+        std::lock_guard<std::mutex> lock(m_GlobalMutex);
+        m_TaskTitle.clear();
+        m_AllowedApps.clear();
+        m_AllowedWindowTitles.clear();
+        return;
+    }
+
+    if (currentTaskPage["object"].contains("properties") &&
+        currentTaskPage["object"]["properties"].is_array()) {
         const auto &props = currentTaskPage["object"]["properties"];
-        const auto &cat = currentTaskPage["object"]["properties"];
         for (const auto &prop : props) {
-            if (!prop.contains("key")) {
+            if (!prop.contains("key") || !prop["key"].is_string()) {
                 continue;
             }
 
@@ -405,15 +425,23 @@ void FocusService::UpdateAllowedApps() {
             }
 
             if (key == "category") {
-                m_CurrentTaskCategory = prop["select"]["name"];
-                spdlog::info("Current category is {}", m_CurrentTaskCategory);
+                if (prop.contains("select") && prop["select"].is_object() &&
+                    prop["select"].contains("name") && prop["select"]["name"].is_string()) {
+                    m_CurrentTaskCategory = prop["select"]["name"].get<std::string>();
+                    spdlog::info("Current category is {}", m_CurrentTaskCategory);
+                }
             }
         }
     }
 
     {
         std::lock_guard<std::mutex> lock(m_GlobalMutex);
-        m_TaskTitle = currentTaskPage["object"]["name"].get<std::string>();
+        if (currentTaskPage["object"].contains("name") &&
+            currentTaskPage["object"]["name"].is_string()) {
+            m_TaskTitle = currentTaskPage["object"]["name"].get<std::string>();
+        } else {
+            m_TaskTitle.clear();
+        }
         m_AllowedApps = allowedApps;
         m_AllowedWindowTitles = allowedWindowTitles;
 
@@ -423,7 +451,7 @@ void FocusService::UpdateAllowedApps() {
 }
 
 // ─────────────────────────────────────
-bool FocusService::InitServer() {
+bool Concentrate::InitServer() {
     m_Server.set_keep_alive_max_count(1);
     m_Server.set_keep_alive_timeout(1);         // segundos
     m_Server.set_payload_max_length(64 * 1024); // 64 KB
@@ -1102,7 +1130,7 @@ bool FocusService::InitServer() {
 }
 
 // ─────────────────────────────────────
-std::filesystem::path FocusService::GetBinaryPath() {
+std::filesystem::path Concentrate::GetBinaryPath() {
     char buf[PATH_MAX];
     ssize_t len = readlink("/proc/self/exe", buf, sizeof(buf) - 1);
     if (len == -1) {
@@ -1114,12 +1142,12 @@ std::filesystem::path FocusService::GetBinaryPath() {
     binDir = binDir.parent_path();
 
     if (binDir.filename() == "bin") {
-        binDir = binDir.parent_path() / "share" / "focusservice";
+        binDir = binDir.parent_path() / "share" / "Concentrate";
     }
 
     // Fallbacks if assets are not in the computed path
-    const std::vector<std::filesystem::path> candidates = {binDir, "/usr/local/share/focusservice",
-                                                           "/usr/share/focusservice"};
+    const std::vector<std::filesystem::path> candidates = {binDir, "/usr/local/share/Concentrate",
+                                                           "/usr/share/Concentrate"};
 
     for (const auto &p : candidates) {
         if (std::filesystem::exists(p / "index.html")) {
@@ -1131,7 +1159,7 @@ std::filesystem::path FocusService::GetBinaryPath() {
 }
 
 // ─────────────────────────────────────
-std::filesystem::path FocusService::GetDBPath() {
+std::filesystem::path Concentrate::GetDBPath() {
     std::string home_dir;
     const char *home_env = std::getenv("HOME");
     if (home_env && *home_env) {
@@ -1140,7 +1168,7 @@ std::filesystem::path FocusService::GetDBPath() {
         std::cerr << "Error: HOME environment variable not set\n";
         exit(1);
     }
-    std::filesystem::path path(home_dir + "/.local/focusservice/data.sqlite");
+    std::filesystem::path path(home_dir + "/.local/Concentrate/data.sqlite");
     std::error_code ec;
     std::filesystem::create_directories(path.parent_path(), ec);
     return path;
