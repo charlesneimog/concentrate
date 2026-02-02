@@ -6,7 +6,7 @@ from odf.text import P
 
 # SQLite path
 home = os.path.expanduser("~")
-db_path = os.path.join(home, ".local", "focusservice", "data.sqlite")
+db_path = os.path.join(home, ".local", "Concentrate", "data.sqlite")
 
 # Open SQLite database
 conn = sqlite3.connect(db_path)

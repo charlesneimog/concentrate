@@ -1,12 +1,12 @@
 cmake_minimum_required(VERSION 3.21)
 project(Concentrate LANGUAGES CXX)
 
-set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
-
 set(SPDLOG_BUILD_SHARED OFF)
+
 # ╭──────────────────────────────────────╮
 # │                 CPM                  │
 # ╰──────────────────────────────────────╯
@@ -54,21 +54,16 @@ add_executable(
 
 # Find tailwindcss executable
 find_program(TAILWINDCSS_EXECUTABLE tailwindcss)
-if (NOT TAILWINDCSS_EXECUTABLE)
+if(NOT TAILWINDCSS_EXECUTABLE)
     message(FATAL_ERROR "tailwindcss is not installed or not in PATH")
 endif()
 
-add_custom_target(tailwindcss ALL
-    COMMAND ${TAILWINDCSS_EXECUTABLE}
-            -i ${CMAKE_SOURCE_DIR}/input.css
-            -o $<TARGET_FILE_DIR:Concentrate>/style.css
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            ${CMAKE_SOURCE_DIR}/index.html
-            $<TARGET_FILE_DIR:Concentrate>/index.html
+add_custom_target(
+    tailwindcss ALL
+    COMMAND ${TAILWINDCSS_EXECUTABLE} -i ${CMAKE_SOURCE_DIR}/input.css -o $<TARGET_FILE_DIR:Concentrate>/style.css
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different ${CMAKE_SOURCE_DIR}/index.html $<TARGET_FILE_DIR:Concentrate>/index.html
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
-    COMMENT "Building Tailwind CSS"
-)
-
+    COMMENT "Building Tailwind CSS")
 
 add_custom_target(
     webfiles
@@ -83,9 +78,17 @@ target_include_directories(Concentrate PRIVATE ${PC_DBUS_INCLUDE_DIRS})
 target_link_directories(Concentrate PRIVATE ${PC_DBUS_LIBRARY_DIRS})
 target_compile_definitions(Concentrate PRIVATE ${PC_DBUS_CFLAGS_OTHER})
 
-target_link_libraries(Concentrate PRIVATE httplib::httplib nlohmann_json::nlohmann_json SQLite::SQLite3 ${PC_LIBSECRET_LIBRARIES} ${PC_DBUS_LIBRARIES} spdlog)
+target_link_libraries(
+    Concentrate
+    PRIVATE httplib::httplib
+            nlohmann_json::nlohmann_json #
+            SQLite::SQLite3
+            spdlog
+            # Others
+            ${PC_LIBSECRET_LIBRARIES}
+            ${PC_DBUS_LIBRARIES})
 target_compile_options(Concentrate PRIVATE $<$<CONFIG:Release>:-O3 -march=native -DNDEBUG>)
-set_target_properties(Concentrate PROPERTIES INTERPROCEDURAL_OPTIMIZATION_RELEASE ON)
 
 install(TARGETS Concentrate RUNTIME DESTINATION bin)
-install(FILES ${CMAKE_SOURCE_DIR}/index.html ${CMAKE_SOURCE_DIR}/app.js ${CMAKE_SOURCE_DIR}/favicon.svg ${CMAKE_SOURCE_DIR}/style.css DESTINATION share/Concentrate)
+install(CODE "execute_process(COMMAND ${TAILWINDCSS_EXECUTABLE} -i ${CMAKE_SOURCE_DIR}/input.css -o ${CMAKE_BINARY_DIR}/style.css WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})")
+install(FILES ${CMAKE_SOURCE_DIR}/index.html ${CMAKE_SOURCE_DIR}/app.js ${CMAKE_SOURCE_DIR}/favicon.svg ${CMAKE_BINARY_DIR}/style.css DESTINATION share/Concentrate)
