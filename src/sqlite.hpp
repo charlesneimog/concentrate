@@ -53,6 +53,12 @@ class SQLite {
     nlohmann::json GetCategoryTimeSummary(int days);
     nlohmann::json GetCategoryFocusSplit(int days);
 
+    // Pomodoro
+    nlohmann::json GetPomodoroState();
+    bool SavePomodoroState(const nlohmann::json &state, std::string &error);
+    nlohmann::json GetPomodoroTodayStats();
+    bool IncrementPomodoroFocusToday(int focusSeconds, std::string &error);
+
   private:
     void Init();
     void UpsertCategory(const std::string &category, const nlohmann::json &allowedAppIds,

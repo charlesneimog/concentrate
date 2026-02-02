@@ -56,6 +56,31 @@ void SQLite::Init() {
                        "color TEXT,"
                        "updated_at REAL)");
 
+    // Pomodoro: last known state (single-row)
+    ExecIgnoringErrors(
+        "CREATE TABLE IF NOT EXISTS pomodoro_state ("
+        "id INTEGER PRIMARY KEY CHECK (id = 1),"
+        "phase TEXT NOT NULL,"
+        "cycle_step INTEGER NOT NULL,"
+        "is_running INTEGER NOT NULL,"
+        "is_paused INTEGER NOT NULL,"
+        "time_left INTEGER NOT NULL,"
+        "focus_duration INTEGER NOT NULL,"
+        "short_break_duration INTEGER NOT NULL,"
+        "long_break_duration INTEGER NOT NULL,"
+        "auto_start_breaks INTEGER NOT NULL,"
+        "updated_at REAL NOT NULL"
+        ")");
+
+    // Pomodoro: per-day focus counts/totals
+    ExecIgnoringErrors(
+        "CREATE TABLE IF NOT EXISTS pomodoro_daily ("
+        "day TEXT PRIMARY KEY,"
+        "focus_sessions INTEGER NOT NULL DEFAULT 0,"
+        "focus_seconds INTEGER NOT NULL DEFAULT 0,"
+        "updated_at REAL NOT NULL"
+        ")");
+
     spdlog::debug("SQLite database tables initialized");
 }
 
@@ -506,6 +531,190 @@ nlohmann::json SQLite::FetchDailyAppUsageByAppId(int days) {
 
     sqlite3_finalize(stmt);
     return result;
+}
+
+// ─────────────────────────────────────
+static nlohmann::json DefaultPomodoroState() {
+    const int focus = 25 * 60;
+    const int shortBreak = 5 * 60;
+    const int longBreak = 15 * 60;
+    return {
+        {"phase", "focus-1"},
+        {"cycle_step", 0},
+        {"is_running", false},
+        {"is_paused", false},
+        {"time_left", focus},
+        {"focus_duration", focus},
+        {"short_break_duration", shortBreak},
+        {"long_break_duration", longBreak},
+        {"auto_start_breaks", true},
+        {"updated_at", static_cast<double>(std::time(nullptr))},
+    };
+}
+
+// ─────────────────────────────────────
+nlohmann::json SQLite::GetPomodoroState() {
+    sqlite3_stmt *stmt = nullptr;
+    const char *sql =
+        "SELECT phase, cycle_step, is_running, is_paused, time_left, focus_duration, "
+        "short_break_duration, long_break_duration, auto_start_breaks, updated_at "
+        "FROM pomodoro_state WHERE id = 1";
+
+    if (sqlite3_prepare_v2(m_Db, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+        spdlog::error("db prepare failed in GetPomodoroState: {}", sqlite3_errmsg(m_Db));
+        return DefaultPomodoroState();
+    }
+
+    nlohmann::json state = DefaultPomodoroState();
+    if (sqlite3_step(stmt) == SQLITE_ROW) {
+        const char *phaseTxt = reinterpret_cast<const char *>(sqlite3_column_text(stmt, 0));
+        const int cycleStep = sqlite3_column_int(stmt, 1);
+        const int isRunning = sqlite3_column_int(stmt, 2);
+        const int isPaused = sqlite3_column_int(stmt, 3);
+        const int timeLeft = sqlite3_column_int(stmt, 4);
+        const int focusDuration = sqlite3_column_int(stmt, 5);
+        const int shortBreakDuration = sqlite3_column_int(stmt, 6);
+        const int longBreakDuration = sqlite3_column_int(stmt, 7);
+        const int autoStartBreaks = sqlite3_column_int(stmt, 8);
+        const double updatedAt = sqlite3_column_double(stmt, 9);
+
+        state["phase"] = phaseTxt ? phaseTxt : "focus-1";
+        state["cycle_step"] = cycleStep;
+        state["is_running"] = (isRunning != 0);
+        state["is_paused"] = (isPaused != 0);
+        state["time_left"] = timeLeft;
+        state["focus_duration"] = focusDuration;
+        state["short_break_duration"] = shortBreakDuration;
+        state["long_break_duration"] = longBreakDuration;
+        state["auto_start_breaks"] = (autoStartBreaks != 0);
+        state["updated_at"] = updatedAt;
+    }
+
+    sqlite3_finalize(stmt);
+    return state;
+}
+
+// ─────────────────────────────────────
+bool SQLite::SavePomodoroState(const nlohmann::json &state, std::string &error) {
+    error.clear();
+    sqlite3_stmt *stmt = nullptr;
+
+    const char *sql =
+        "INSERT INTO pomodoro_state (id, phase, cycle_step, is_running, is_paused, time_left, "
+        "focus_duration, short_break_duration, long_break_duration, auto_start_breaks, updated_at) "
+        "VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
+        "ON CONFLICT(id) DO UPDATE SET "
+        "phase=excluded.phase, "
+        "cycle_step=excluded.cycle_step, "
+        "is_running=excluded.is_running, "
+        "is_paused=excluded.is_paused, "
+        "time_left=excluded.time_left, "
+        "focus_duration=excluded.focus_duration, "
+        "short_break_duration=excluded.short_break_duration, "
+        "long_break_duration=excluded.long_break_duration, "
+        "auto_start_breaks=excluded.auto_start_breaks, "
+        "updated_at=excluded.updated_at";
+
+    if (sqlite3_prepare_v2(m_Db, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+        error = std::string("db prepare failed: ") + sqlite3_errmsg(m_Db);
+        spdlog::error("db prepare failed in SavePomodoroState: {}", sqlite3_errmsg(m_Db));
+        return false;
+    }
+
+    const std::string phase = state.value("phase", std::string("focus-1"));
+    const int cycleStep = state.value("cycle_step", 0);
+    const int isRunning = state.value("is_running", false) ? 1 : 0;
+    const int isPaused = state.value("is_paused", false) ? 1 : 0;
+    const int timeLeft = state.value("time_left", 25 * 60);
+    const int focusDuration = state.value("focus_duration", 25 * 60);
+    const int shortBreakDuration = state.value("short_break_duration", 5 * 60);
+    const int longBreakDuration = state.value("long_break_duration", 15 * 60);
+    const int autoStartBreaks = state.value("auto_start_breaks", true) ? 1 : 0;
+    const double updatedAt = state.value("updated_at", static_cast<double>(std::time(nullptr)));
+
+    sqlite3_bind_text(stmt, 1, phase.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_int(stmt, 2, cycleStep);
+    sqlite3_bind_int(stmt, 3, isRunning);
+    sqlite3_bind_int(stmt, 4, isPaused);
+    sqlite3_bind_int(stmt, 5, timeLeft);
+    sqlite3_bind_int(stmt, 6, focusDuration);
+    sqlite3_bind_int(stmt, 7, shortBreakDuration);
+    sqlite3_bind_int(stmt, 8, longBreakDuration);
+    sqlite3_bind_int(stmt, 9, autoStartBreaks);
+    sqlite3_bind_double(stmt, 10, updatedAt);
+
+    const int rc = sqlite3_step(stmt);
+    sqlite3_finalize(stmt);
+
+    if (rc != SQLITE_DONE) {
+        error = std::string("db write failed: ") + sqlite3_errmsg(m_Db);
+        spdlog::error("SavePomodoroState failed: {}", sqlite3_errmsg(m_Db));
+        return false;
+    }
+
+    return true;
+}
+
+// ─────────────────────────────────────
+nlohmann::json SQLite::GetPomodoroTodayStats() {
+    sqlite3_stmt *stmt = nullptr;
+    const char *sql =
+        "SELECT focus_sessions, focus_seconds, updated_at "
+        "FROM pomodoro_daily WHERE day = date('now', 'localtime')";
+
+    if (sqlite3_prepare_v2(m_Db, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+        spdlog::error("db prepare failed in GetPomodoroTodayStats: {}", sqlite3_errmsg(m_Db));
+        return {{"day", ""}, {"focus_sessions", 0}, {"focus_seconds", 0}};
+    }
+
+    nlohmann::json out = {{"day", ""}, {"focus_sessions", 0}, {"focus_seconds", 0}};
+    if (sqlite3_step(stmt) == SQLITE_ROW) {
+        out["day"] = "today";
+        out["focus_sessions"] = sqlite3_column_int(stmt, 0);
+        out["focus_seconds"] = sqlite3_column_int(stmt, 1);
+        out["updated_at"] = sqlite3_column_double(stmt, 2);
+    } else {
+        out["day"] = "today";
+        out["updated_at"] = static_cast<double>(std::time(nullptr));
+    }
+
+    sqlite3_finalize(stmt);
+    return out;
+}
+
+// ─────────────────────────────────────
+bool SQLite::IncrementPomodoroFocusToday(int focusSeconds, std::string &error) {
+    error.clear();
+    if (focusSeconds < 0) {
+        focusSeconds = 0;
+    }
+
+    sqlite3_stmt *stmt = nullptr;
+    const char *sql =
+        "INSERT INTO pomodoro_daily (day, focus_sessions, focus_seconds, updated_at) "
+        "VALUES (date('now', 'localtime'), 1, ?, strftime('%s','now')) "
+        "ON CONFLICT(day) DO UPDATE SET "
+        "focus_sessions = focus_sessions + 1, "
+        "focus_seconds = focus_seconds + excluded.focus_seconds, "
+        "updated_at = excluded.updated_at";
+
+    if (sqlite3_prepare_v2(m_Db, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+        error = std::string("db prepare failed: ") + sqlite3_errmsg(m_Db);
+        spdlog::error("db prepare failed in IncrementPomodoroFocusToday: {}", sqlite3_errmsg(m_Db));
+        return false;
+    }
+
+    sqlite3_bind_int(stmt, 1, focusSeconds);
+    const int rc = sqlite3_step(stmt);
+    sqlite3_finalize(stmt);
+
+    if (rc != SQLITE_DONE) {
+        error = std::string("db write failed: ") + sqlite3_errmsg(m_Db);
+        spdlog::error("IncrementPomodoroFocusToday failed: {}", sqlite3_errmsg(m_Db));
+        return false;
+    }
+
+    return true;
 }
 
 // ─────────────────────────────────────

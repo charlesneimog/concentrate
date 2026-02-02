@@ -994,6 +994,139 @@ bool Concentrate::InitServer() {
         });
     }
 
+    // Pomodoro
+    {
+        m_Server.Get("/api/v1/pomodoro/state",
+                     [this](const httplib::Request &, httplib::Response &res) {
+                         try {
+                             if (!m_SQLite) {
+                                 res.status = 503;
+                                 res.set_content(R"({"error":"database not ready"})",
+                                                 "application/json");
+                                 return;
+                             }
+                             nlohmann::json state = m_SQLite->GetPomodoroState();
+                             res.status = 200;
+                             res.set_content(state.dump(), "application/json");
+                         } catch (const std::exception &e) {
+                             res.status = 500;
+                             res.set_content(std::string(R"({"error":")") + e.what() +
+                                                 R"("})",
+                                             "application/json");
+                         }
+                     });
+
+        m_Server.Post("/api/v1/pomodoro/state",
+                      [this](const httplib::Request &req, httplib::Response &res) {
+                          try {
+                              if (!m_SQLite) {
+                                  res.status = 503;
+                                  res.set_content(R"({"error":"database not ready"})",
+                                                  "application/json");
+                                  return;
+                              }
+                              if (req.body.empty()) {
+                                  res.status = 400;
+                                  res.set_content(R"({"error":"empty request body"})",
+                                                  "application/json");
+                                  return;
+                              }
+                              auto body = nlohmann::json::parse(req.body);
+                              std::string error;
+                              if (!m_SQLite->SavePomodoroState(body, error)) {
+                                  res.status = 400;
+                                  res.set_content(
+                                      nlohmann::json({{"error", error.empty() ? "save failed" : error}})
+                                          .dump(),
+                                      "application/json");
+                                  return;
+                              }
+                              res.status = 200;
+                              res.set_content(R"({"success":true})", "application/json");
+                          } catch (const nlohmann::json::parse_error &e) {
+                              res.status = 400;
+                              res.set_content(
+                                  std::string(R"({"error":"invalid JSON: ")") + e.what() +
+                                      R"("})",
+                                  "application/json");
+                          } catch (const std::exception &e) {
+                              res.status = 500;
+                              res.set_content(std::string(R"({"error":")") + e.what() +
+                                                  R"("})",
+                                              "application/json");
+                          }
+                      });
+
+        m_Server.Get("/api/v1/pomodoro/today",
+                     [this](const httplib::Request &, httplib::Response &res) {
+                         try {
+                             if (!m_SQLite) {
+                                 res.status = 503;
+                                 res.set_content(R"({"error":"database not ready"})",
+                                                 "application/json");
+                                 return;
+                             }
+                             nlohmann::json stats = m_SQLite->GetPomodoroTodayStats();
+                             // Provide a convenient minutes field for the UI
+                             const int focusSeconds = stats.value("focus_seconds", 0);
+                             stats["focus_minutes"] = static_cast<int>(std::round(focusSeconds / 60.0));
+                             res.status = 200;
+                             res.set_content(stats.dump(), "application/json");
+                         } catch (const std::exception &e) {
+                             res.status = 500;
+                             res.set_content(std::string(R"({"error":")") + e.what() +
+                                                 R"("})",
+                                             "application/json");
+                         }
+                     });
+
+        // Call this when a focus block finishes (increments daily count and total focus seconds)
+        m_Server.Post("/api/v1/pomodoro/focus/complete",
+                      [this](const httplib::Request &req, httplib::Response &res) {
+                          try {
+                              if (!m_SQLite) {
+                                  res.status = 503;
+                                  res.set_content(R"({"error":"database not ready"})",
+                                                  "application/json");
+                                  return;
+                              }
+                              if (req.body.empty()) {
+                                  res.status = 400;
+                                  res.set_content(R"({"error":"empty request body"})",
+                                                  "application/json");
+                                  return;
+                              }
+                              auto body = nlohmann::json::parse(req.body);
+                              const int focusSeconds = body.value("focus_seconds", 0);
+                              std::string error;
+                              if (!m_SQLite->IncrementPomodoroFocusToday(focusSeconds, error)) {
+                                  res.status = 400;
+                                  res.set_content(
+                                      nlohmann::json({{"error", error.empty() ? "increment failed" : error}})
+                                          .dump(),
+                                      "application/json");
+                                  return;
+                              }
+                              nlohmann::json stats = m_SQLite->GetPomodoroTodayStats();
+                              const int focusSecondsOut = stats.value("focus_seconds", 0);
+                              stats["focus_minutes"] = static_cast<int>(std::round(focusSecondsOut / 60.0));
+                              res.status = 200;
+                              res.set_content(stats.dump(), "application/json");
+                          } catch (const nlohmann::json::parse_error &e) {
+                              res.status = 400;
+                              res.set_content(
+                                  std::string(R"({"error":"invalid JSON: ")") + e.what() +
+                                      R"("})",
+                                  "application/json");
+                          } catch (const std::exception &e) {
+                              res.status = 500;
+                              res.set_content(std::string(R"({"error":")") + e.what() +
+                                                  R"("})",
+                                              "application/json");
+                          }
+                      });
+    }
+
     // Update focus
     {
         m_Server.Post("/api/v1/focus/rules", [&](const httplib::Request &req,

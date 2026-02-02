@@ -26,12 +26,14 @@ class FocusApp {
             isRunning: false,
             isPaused: false,
             mode: "focus", // 'focus', 'short-break', 'long-break'
+            cycleStep: 0, // 0..4 => focus-1, short-break-1, focus-2, short-break-2, long-break
             focusDuration: 25 * 60,
             shortBreakDuration: 5 * 60,
             longBreakDuration: 15 * 60,
             timeLeft: 25 * 60,
             interval: null,
             autoStartBreaks: true,
+            lastSavedAt: 0,
         };
         this.initPomodoro();
 
@@ -2488,6 +2490,146 @@ class FocusApp {
 
     // ==================== POMODORO ====================
 
+    pomodoroPhaseFromStep(step) {
+        switch (Number(step) || 0) {
+            case 0:
+                return "focus-1";
+            case 1:
+                return "short-break-1";
+            case 2:
+                return "focus-2";
+            case 3:
+                return "short-break-2";
+            case 4:
+                return "long-break";
+            default:
+                return "focus-1";
+        }
+    }
+
+    pomodoroStepFromPhase(phase) {
+        const p = String(phase || "").toLowerCase();
+        if (p === "focus-1") return 0;
+        if (p === "short-break-1") return 1;
+        if (p === "focus-2") return 2;
+        if (p === "short-break-2") return 3;
+        if (p === "long-break") return 4;
+        // Back-compat with older/simple values
+        if (p === "focus") return 0;
+        if (p === "short-break") return 1;
+        if (p === "long-break") return 4;
+        return 0;
+    }
+
+    pomodoroModeFromStep(step) {
+        const s = Number(step) || 0;
+        if (s === 0 || s === 2) return "focus";
+        if (s === 1 || s === 3) return "short-break";
+        return "long-break";
+    }
+
+    pomodoroStepFromModePreference(mode, currentStep) {
+        const m = String(mode || "focus");
+        const s = Number(currentStep) || 0;
+        if (m === "focus") {
+            // If we're in the second half, keep second focus; otherwise first focus
+            if (s === 2 || s === 3) return 2;
+            return 0;
+        }
+        if (m === "short-break") {
+            if (s === 2 || s === 3) return 3;
+            return 1;
+        }
+        return 4;
+    }
+
+    getCurrentPomodoroStepDuration() {
+        const step = Number(this.pomodoro.cycleStep) || 0;
+        if (step === 0 || step === 2) return this.pomodoro.focusDuration;
+        if (step === 1 || step === 3) return this.pomodoro.shortBreakDuration;
+        return this.pomodoro.longBreakDuration;
+    }
+
+    async loadPomodoroStateFromServer() {
+        try {
+            const res = await fetch("/api/v1/pomodoro/state", { cache: "no-store" });
+            if (!res.ok) return null;
+            return await res.json();
+        } catch (e) {
+            console.warn("Failed to load pomodoro state", e);
+            return null;
+        }
+    }
+
+    async savePomodoroStateToServer() {
+        try {
+            const nowSec = Math.floor(Date.now() / 1000);
+            const payload = {
+                phase: this.pomodoroPhaseFromStep(this.pomodoro.cycleStep),
+                cycle_step: Number(this.pomodoro.cycleStep) || 0,
+                is_running: !!this.pomodoro.isRunning,
+                is_paused: !!this.pomodoro.isPaused,
+                time_left: Math.max(0, Number(this.pomodoro.timeLeft) || 0),
+                focus_duration: Math.max(0, Number(this.pomodoro.focusDuration) || 0),
+                short_break_duration: Math.max(0, Number(this.pomodoro.shortBreakDuration) || 0),
+                long_break_duration: Math.max(0, Number(this.pomodoro.longBreakDuration) || 0),
+                auto_start_breaks: !!this.pomodoro.autoStartBreaks,
+                updated_at: nowSec,
+            };
+
+            await fetch("/api/v1/pomodoro/state", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(payload),
+            });
+
+            this.pomodoro.lastSavedAt = Date.now();
+        } catch (e) {
+            console.warn("Failed to save pomodoro state", e);
+        }
+    }
+
+    async refreshPomodoroTodayStats() {
+        const sessionsEl = document.getElementById("pomodoro-sessions-today");
+        const totalEl = document.getElementById("pomodoro-total-focus");
+        if (!sessionsEl && !totalEl) return;
+        try {
+            const res = await fetch("/api/v1/pomodoro/today", { cache: "no-store" });
+            if (!res.ok) return;
+            const data = await res.json();
+            const sessions = Number(data?.focus_sessions ?? 0);
+            const minutes = Number(data?.focus_minutes ?? Math.round((Number(data?.focus_seconds ?? 0)) / 60));
+            if (sessionsEl) sessionsEl.textContent = String(sessions);
+            if (totalEl) totalEl.textContent = `${minutes} min`;
+        } catch (e) {
+            console.warn("Failed to load pomodoro today stats", e);
+        }
+    }
+
+    async incrementPomodoroFocusComplete(focusSeconds) {
+        try {
+            const res = await fetch("/api/v1/pomodoro/focus/complete", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ focus_seconds: Math.max(0, Number(focusSeconds) || 0) }),
+            });
+            if (res.ok) {
+                const data = await res.json();
+                const sessionsEl = document.getElementById("pomodoro-sessions-today");
+                const totalEl = document.getElementById("pomodoro-total-focus");
+                const sessions = Number(data?.focus_sessions ?? 0);
+                const minutes = Number(data?.focus_minutes ?? Math.round((Number(data?.focus_seconds ?? 0)) / 60));
+                if (sessionsEl) sessionsEl.textContent = String(sessions);
+                if (totalEl) totalEl.textContent = `${minutes} min`;
+            } else {
+                // fallback
+                await this.refreshPomodoroTodayStats();
+            }
+        } catch (e) {
+            console.warn("Failed to increment pomodoro focus", e);
+        }
+    }
+
     initPomodoro() {
         document.getElementById("pomodoro-focus-mode")?.addEventListener("click", () => this.setPomodoroMode("focus"));
         document
@@ -2536,10 +2678,96 @@ class FocusApp {
         // Auto-start toggle
         document.getElementById("auto-start-breaks")?.addEventListener("change", (e) => {
             this.pomodoro.autoStartBreaks = e.target.checked;
+            this.savePomodoroStateToServer();
         });
 
         // Initialize display
         this.updatePomodoroDisplay();
+
+        // Load persisted state + today's stats
+        setTimeout(async () => {
+            await this.restorePomodoroFromServer();
+            await this.refreshPomodoroTodayStats();
+        }, 0);
+    }
+
+    async restorePomodoroFromServer() {
+        const state = await this.loadPomodoroStateFromServer();
+        if (!state) return;
+
+        const step =
+            Number.isFinite(Number(state.cycle_step)) ? Number(state.cycle_step) : this.pomodoroStepFromPhase(state.phase);
+        this.pomodoro.cycleStep = Math.min(4, Math.max(0, step));
+        this.pomodoro.mode = this.pomodoroModeFromStep(this.pomodoro.cycleStep);
+
+        // durations
+        if (Number.isFinite(Number(state.focus_duration))) this.pomodoro.focusDuration = Number(state.focus_duration);
+        if (Number.isFinite(Number(state.short_break_duration))) this.pomodoro.shortBreakDuration = Number(state.short_break_duration);
+        if (Number.isFinite(Number(state.long_break_duration))) this.pomodoro.longBreakDuration = Number(state.long_break_duration);
+
+        // auto-start
+        this.pomodoro.autoStartBreaks = !!state.auto_start_breaks;
+        const autoEl = document.getElementById("auto-start-breaks");
+        if (autoEl) autoEl.checked = !!this.pomodoro.autoStartBreaks;
+
+        // sliders (minutes)
+        const focusSlider = document.getElementById("focus-duration-slider");
+        const shortSlider = document.getElementById("short-break-slider");
+        const longSlider = document.getElementById("long-break-slider");
+        const focusVal = document.getElementById("focus-duration-value");
+        const shortVal = document.getElementById("short-break-value");
+        const longVal = document.getElementById("long-break-value");
+        if (focusSlider) focusSlider.value = String(Math.round(this.pomodoro.focusDuration / 60));
+        if (shortSlider) shortSlider.value = String(Math.round(this.pomodoro.shortBreakDuration / 60));
+        if (longSlider) longSlider.value = String(Math.round(this.pomodoro.longBreakDuration / 60));
+        if (focusVal) focusVal.textContent = `${Math.round(this.pomodoro.focusDuration / 60)} min`;
+        if (shortVal) shortVal.textContent = `${Math.round(this.pomodoro.shortBreakDuration / 60)} min`;
+        if (longVal) longVal.textContent = `${Math.round(this.pomodoro.longBreakDuration / 60)} min`;
+
+        // time left
+        let timeLeft = Number(state.time_left);
+        if (!Number.isFinite(timeLeft)) timeLeft = this.getCurrentPomodoroStepDuration();
+
+        const isRunning = !!state.is_running;
+        const isPaused = !!state.is_paused;
+        const updatedAt = Number(state.updated_at);
+
+        if (isRunning && !isPaused && Number.isFinite(updatedAt)) {
+            const nowSec = Math.floor(Date.now() / 1000);
+            const elapsed = Math.max(0, nowSec - Math.floor(updatedAt));
+            timeLeft = Math.max(0, timeLeft - elapsed);
+        }
+
+        this.pomodoro.timeLeft = Math.max(0, timeLeft);
+        this.pomodoro.isRunning = isRunning && this.pomodoro.timeLeft > 0;
+        this.pomodoro.isPaused = isPaused;
+
+        // Update button states
+        if (this.pomodoro.isRunning) {
+            document.getElementById("pomodoro-start")?.classList.add("hidden");
+            document.getElementById("pomodoro-pause")?.classList.remove("hidden");
+        } else {
+            document.getElementById("pomodoro-start")?.classList.remove("hidden");
+            document.getElementById("pomodoro-pause")?.classList.add("hidden");
+        }
+
+        this.updatePomodoroDisplay();
+
+        // Resume interval if needed
+        if (this.pomodoro.isRunning && !this.pomodoro.isPaused && !this.pomodoro.interval) {
+            this.pomodoro.interval = setInterval(() => {
+                this.pomodoro.timeLeft--;
+                if (this.pomodoro.timeLeft <= 0) {
+                    this.pomodoroComplete();
+                }
+                // light autosave every ~15s
+                const now = Date.now();
+                if (!this.pomodoro.lastSavedAt || now - this.pomodoro.lastSavedAt >= 15000) {
+                    this.savePomodoroStateToServer();
+                }
+                this.updatePomodoroDisplay();
+            }, 1000);
+        }
     }
 
     setPomodoroMode(mode) {
@@ -2548,7 +2776,9 @@ class FocusApp {
             this.resetPomodoro();
         }
 
-        this.pomodoro.mode = mode;
+        // Map the 3-mode UI into the 5-step cycle
+        this.pomodoro.cycleStep = this.pomodoroStepFromModePreference(mode, this.pomodoro.cycleStep);
+        this.pomodoro.mode = this.pomodoroModeFromStep(this.pomodoro.cycleStep);
 
         // Update button styles
         const focusBtn = document.getElementById("pomodoro-focus-mode");
@@ -2594,20 +2824,11 @@ class FocusApp {
             );
         }
 
-        // Set timer based on mode
-        switch (mode) {
-            case "focus":
-                this.pomodoro.timeLeft = this.pomodoro.focusDuration;
-                break;
-            case "short-break":
-                this.pomodoro.timeLeft = this.pomodoro.shortBreakDuration;
-                break;
-            case "long-break":
-                this.pomodoro.timeLeft = this.pomodoro.longBreakDuration;
-                break;
-        }
+        // Set timer based on current step
+        this.pomodoro.timeLeft = this.getCurrentPomodoroStepDuration();
 
         this.updatePomodoroDisplay();
+        this.savePomodoroStateToServer();
     }
 
     togglePomodoro() {
@@ -2635,7 +2856,15 @@ class FocusApp {
             }
 
             this.updatePomodoroDisplay();
+
+            // light autosave every ~15s
+            const now = Date.now();
+            if (!this.pomodoro.lastSavedAt || now - this.pomodoro.lastSavedAt >= 15000) {
+                this.savePomodoroStateToServer();
+            }
         }, 1000);
+
+        this.savePomodoroStateToServer();
     }
 
     pausePomodoro() {
@@ -2656,6 +2885,8 @@ class FocusApp {
             <span class="text-lg font-bold tracking-tight">Resume</span>
         `;
         }
+
+        this.savePomodoroStateToServer();
     }
 
     resetPomodoro() {
@@ -2664,18 +2895,8 @@ class FocusApp {
         this.pomodoro.isPaused = false;
         this.pomodoro.interval = null;
 
-        // Reset timer to current mode's duration
-        switch (this.pomodoro.mode) {
-            case "focus":
-                this.pomodoro.timeLeft = this.pomodoro.focusDuration;
-                break;
-            case "short-break":
-                this.pomodoro.timeLeft = this.pomodoro.shortBreakDuration;
-                break;
-            case "long-break":
-                this.pomodoro.timeLeft = this.pomodoro.longBreakDuration;
-                break;
-        }
+        // Reset timer to current step's duration
+        this.pomodoro.timeLeft = this.getCurrentPomodoroStepDuration();
 
         // Update button states
         document.getElementById("pomodoro-start")?.classList.remove("hidden");
@@ -2692,6 +2913,7 @@ class FocusApp {
         }
 
         this.updatePomodoroDisplay();
+        this.savePomodoroStateToServer();
     }
 
     pomodoroComplete() {
@@ -2704,19 +2926,27 @@ class FocusApp {
         // Show notification
         this.showPomodoroNotification();
 
-        // Auto-start next session if enabled
-        if (this.pomodoro.autoStartBreaks && this.pomodoro.mode === "focus") {
+        // If a focus block completed, increment daily focus count/total
+        const completedStep = Number(this.pomodoro.cycleStep) || 0;
+        const completedWasFocus = completedStep === 0 || completedStep === 2;
+        if (completedWasFocus) {
+            const focusSeconds = this.pomodoro.focusDuration;
+            this.incrementPomodoroFocusComplete(focusSeconds);
+        }
+
+        // Advance to next step in the 5-step cycle
+        const nextStep = completedStep >= 4 ? 0 : completedStep + 1;
+        this.pomodoro.cycleStep = nextStep;
+        this.pomodoro.mode = this.pomodoroModeFromStep(nextStep);
+        this.pomodoro.timeLeft = this.getCurrentPomodoroStepDuration();
+        this.updatePomodoroDisplay();
+        this.savePomodoroStateToServer();
+
+        // Auto-start next step if enabled
+        if (this.pomodoro.autoStartBreaks) {
             setTimeout(() => {
-                this.setPomodoroMode("short-break");
                 this.startPomodoro();
             }, 1000);
-        } else if (this.pomodoro.autoStartBreaks && this.pomodoro.mode !== "focus") {
-            setTimeout(() => {
-                this.setPomodoroMode("focus");
-                this.startPomodoro();
-            }, 1000);
-        } else {
-            this.resetPomodoro();
         }
     }
 
@@ -2732,28 +2962,25 @@ class FocusApp {
         const seconds = this.pomodoro.timeLeft % 60;
         timerElement.textContent = `${minutes.toString().padStart(2, "0")}:${seconds.toString().padStart(2, "0")}`;
 
-        // Update phase text
-        switch (this.pomodoro.mode) {
-            case "focus":
-                phaseElement.textContent = "Focus";
-                phaseElement.className =
-                    "text-gray-600 dark:text-gray-400 uppercase tracking-[0.4em] text-xs mt-4 font-semibold";
-                break;
-            case "short-break":
-                phaseElement.textContent = "Short Break";
-                phaseElement.className =
-                    "text-emerald-600 dark:text-emerald-400 uppercase tracking-[0.4em] text-xs mt-4 font-semibold";
-                break;
-            case "long-break":
-                phaseElement.textContent = "Long Break";
-                phaseElement.className =
-                    "text-blue-600 dark:text-blue-400 uppercase tracking-[0.4em] text-xs mt-4 font-semibold";
-                break;
+        // Update phase text (5-step cycle)
+        const step = Number(this.pomodoro.cycleStep) || 0;
+        if (step === 0 || step === 2) {
+            phaseElement.textContent = step === 0 ? "Focus 1/2" : "Focus 2/2";
+            phaseElement.className =
+                "text-gray-600 dark:text-gray-400 uppercase tracking-[0.4em] text-xs mt-4 font-semibold";
+        } else if (step === 1 || step === 3) {
+            phaseElement.textContent = step === 1 ? "Short Break 1/2" : "Short Break 2/2";
+            phaseElement.className =
+                "text-emerald-600 dark:text-emerald-400 uppercase tracking-[0.4em] text-xs mt-4 font-semibold";
+        } else {
+            phaseElement.textContent = "Long Break";
+            phaseElement.className =
+                "text-blue-600 dark:text-blue-400 uppercase tracking-[0.4em] text-xs mt-4 font-semibold";
         }
 
         // Update progress ring
         if (progressElement) {
-            const totalDuration = this.getCurrentModeDuration();
+            const totalDuration = this.getCurrentPomodoroStepDuration();
             const progress = 1 - this.pomodoro.timeLeft / totalDuration;
             const circumference = 2 * Math.PI * 48; // r="48%" = 48% of 200 (circle diameter)
             const offset = circumference * progress;
@@ -2906,10 +3133,9 @@ class FocusApp {
             // Reset pomodoro display when switching to pomodoro view
             this.updatePomodoroDisplay();
 
-            // Stop any ongoing timer if pomodoro is paused
-            if (this.pomodoro.isPaused) {
-                this.resetPomodoro();
-            }
+            // Refresh persisted state/stats when entering pomodoro view
+            this.restorePomodoroFromServer();
+            this.refreshPomodoroTodayStats();
         }
 
         // Update page title
