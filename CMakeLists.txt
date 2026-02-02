@@ -52,15 +52,32 @@ add_executable(
     src/json.cpp
     src/sqlite.cpp)
 
+# Find tailwindcss executable
+find_program(TAILWINDCSS_EXECUTABLE tailwindcss)
+if (NOT TAILWINDCSS_EXECUTABLE)
+    message(FATAL_ERROR "tailwindcss is not installed or not in PATH")
+endif()
+
+add_custom_target(tailwindcss ALL
+    COMMAND ${TAILWINDCSS_EXECUTABLE}
+            -i ${CMAKE_SOURCE_DIR}/input.css
+            -o $<TARGET_FILE_DIR:Concentrate>/style.css
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            ${CMAKE_SOURCE_DIR}/index.html
+            $<TARGET_FILE_DIR:Concentrate>/index.html
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    COMMENT "Building Tailwind CSS"
+)
+
+
 add_custom_target(
     webfiles
     COMMAND ${CMAKE_COMMAND} -E copy_if_different ${CMAKE_SOURCE_DIR}/index.html $<TARGET_FILE_DIR:Concentrate>/index.html
     COMMAND ${CMAKE_COMMAND} -E copy_if_different ${CMAKE_SOURCE_DIR}/app.js $<TARGET_FILE_DIR:Concentrate>/app.js
     COMMAND ${CMAKE_COMMAND} -E copy_if_different ${CMAKE_SOURCE_DIR}/favicon.svg $<TARGET_FILE_DIR:Concentrate>/favicon.svg
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different ${CMAKE_SOURCE_DIR}/style.css $<TARGET_FILE_DIR:Concentrate>/style.css
     COMMENT "Copying webfiles")
 
-add_dependencies(Concentrate webfiles)
+add_dependencies(Concentrate webfiles tailwindcss)
 
 target_include_directories(Concentrate PRIVATE ${PC_DBUS_INCLUDE_DIRS})
 target_link_directories(Concentrate PRIVATE ${PC_DBUS_LIBRARY_DIRS})
