@@ -34,6 +34,7 @@ class FocusApp {
             interval: null,
             autoStartBreaks: true,
             lastSavedAt: 0,
+            disabledMonitoring: false,
         };
         this.initPomodoro();
 
@@ -870,6 +871,34 @@ class FocusApp {
             }
         } catch (err) {
             console.error("Failed to load monitoring state", err);
+        }
+    }
+
+    async setMonitoringEnabled(enabled) {
+        const desired = !!enabled;
+        if (this.monitoringEnabled === desired) return;
+
+        try {
+            const res = await fetch("/api/v1/monitoring", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ enabled: desired }),
+            });
+
+            if (!res.ok) {
+                throw new Error(await res.text().catch(() => "Failed to toggle monitoring"));
+            }
+
+            this.monitoringEnabled = desired;
+            const toggle = document.getElementById("monitoring-toggle");
+            if (toggle) toggle.checked = this.monitoringEnabled;
+
+            // keep UI consistent
+            this.renderCurrentStatus(this.lastCurrentFocus);
+        } catch (err) {
+            console.error("Failed to toggle monitoring", err);
+            const toggle = document.getElementById("monitoring-toggle");
+            if (toggle) toggle.checked = this.monitoringEnabled;
         }
     }
 
@@ -2843,6 +2872,19 @@ class FocusApp {
         this.pomodoro.isRunning = true;
         this.pomodoro.isPaused = false;
 
+        // Pomodoro policy:
+        // - Break timer running => disable monitoring
+        // - Focus timer running => enable monitoring
+        if (this.pomodoro.mode === "focus") {
+            if (this.pomodoro.disabledMonitoring) {
+                this.setMonitoringEnabled(true);
+                this.pomodoro.disabledMonitoring = false;
+            }
+        } else {
+            this.setMonitoringEnabled(false);
+            this.pomodoro.disabledMonitoring = true;
+        }
+
         // Update button states
         document.getElementById("pomodoro-start")?.classList.add("hidden");
         document.getElementById("pomodoro-pause")?.classList.remove("hidden");
@@ -2942,8 +2984,17 @@ class FocusApp {
         this.updatePomodoroDisplay();
         this.savePomodoroStateToServer();
 
-        // Auto-start next step if enabled
-        if (this.pomodoro.autoStartBreaks) {
+        // If we just finished a focus session, we're entering a break.
+        // Disable monitoring immediately (even if the break won't auto-start).
+        if (completedWasFocus) {
+            this.setMonitoringEnabled(false);
+            this.pomodoro.disabledMonitoring = true;
+        }
+
+        // Auto-start only breaks (never auto-start focus).
+        // This matches the UI label "Automatically start breaks after focus sessions"
+        // and avoids starting a new focus session after a long break.
+        if (this.pomodoro.autoStartBreaks && this.pomodoro.mode !== "focus") {
             setTimeout(() => {
                 this.startPomodoro();
             }, 1000);
@@ -3157,7 +3208,16 @@ class FocusApp {
         this.lastCurrentFocus = current;
         this.renderCurrentStatus(current);
         this.updateFocusWarning(current, this.lastTasks);
-        this.updateDailyFocus();
+    }
+
+    async refreshStatsOnly() {
+        if (!this.isPageActive()) return;
+
+        // Heavy/aggregated queries (keep these off the 1s polling path)
+        if (this.currentView === "tasks" || this.currentView === "history") {
+            await this.updateDailyFocus();
+            await this.updateTasksCategories();
+        }
     }
 
     async renderTotalTimeFocus() {
@@ -4049,7 +4109,7 @@ class FocusApp {
                 } else {
                     e.target.checked = this.monitoringEnabled; // revert
                 }
-                this.renderCurrentStatus(enabled);
+                this.renderCurrentStatus(this.lastCurrentFocus);
             } catch (err) {
                 console.error("Failed to toggle monitoring", err);
                 e.target.checked = this.monitoringEnabled; // revert
@@ -4114,6 +4174,7 @@ class FocusApp {
     }
 
     startPolling() {
+        // Fast UI polling: keep the "current" status and warnings fresh.
         setInterval(() => {
             const active = this.isPageActive();
             if (!active) {
@@ -4132,7 +4193,14 @@ class FocusApp {
             if (this.currentView === "tasks") {
                 this.refreshFocusOnly();
             }
-        }, 1000); // Keep existing 5-second interval for focus updates
+        }, 1000);
+
+        // Slow polling: refresh expensive stats at a lower frequency.
+        setInterval(() => {
+            const active = this.isPageActive();
+            if (!active) return;
+            this.refreshStatsOnly();
+        }, 60000);
     }
 
     init() {
@@ -4163,6 +4231,9 @@ class FocusApp {
 
         // Start polling
         this.startPolling();
+
+        // Initial stats refresh (so charts render without waiting 60s)
+        this.refreshStatsOnly();
 
         // refreshAll
         this.refreshAll();
