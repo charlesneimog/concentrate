@@ -7,6 +7,17 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 set(SPDLOG_BUILD_SHARED OFF)
 
+# Qt Widgets (tray icon via QSystemTrayIcon)
+# Default: Qt6. Use -DCONCENTRATE_USE_QT5=ON only if Qt6 is unavailable.
+option(CONCENTRATE_USE_QT5 "Use Qt5 Widgets instead of Qt6" OFF)
+if (CONCENTRATE_USE_QT5)
+    find_package(Qt5 COMPONENTS Widgets REQUIRED)
+    set(CONCENTRATE_QT_WIDGETS_TARGET Qt5::Widgets)
+else()
+    find_package(Qt6 COMPONENTS Widgets REQUIRED)
+    set(CONCENTRATE_QT_WIDGETS_TARGET Qt6::Widgets)
+endif()
+
 # ╭──────────────────────────────────────╮
 # │                 CPM                  │
 # ╰──────────────────────────────────────╯
@@ -86,7 +97,8 @@ target_link_libraries(
             spdlog
             # Others
             ${PC_LIBSECRET_LIBRARIES}
-            ${PC_DBUS_LIBRARIES})
+            ${PC_DBUS_LIBRARIES}
+            ${CONCENTRATE_QT_WIDGETS_TARGET})
 target_compile_options(Concentrate PRIVATE $<$<CONFIG:Release>:-O3 -march=native -DNDEBUG>)
 
 install(TARGETS Concentrate RUNTIME DESTINATION bin)
