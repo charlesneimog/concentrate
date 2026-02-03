@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=Concentrate
+Comment=Focus tracker
+Exec=Concentrate
+TryExec=Concentrate
+Icon=concentrate
+Terminal=false
+Categories=Utility;Productivity;
+StartupNotify=true
+StartupWMClass=Concentrate

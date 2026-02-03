@@ -92,3 +92,7 @@ target_compile_options(Concentrate PRIVATE $<$<CONFIG:Release>:-O3 -march=native
 install(TARGETS Concentrate RUNTIME DESTINATION bin)
 install(CODE "execute_process(COMMAND ${TAILWINDCSS_EXECUTABLE} -i ${CMAKE_SOURCE_DIR}/input.css -o ${CMAKE_BINARY_DIR}/style.css WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})")
 install(FILES ${CMAKE_SOURCE_DIR}/index.html ${CMAKE_SOURCE_DIR}/app.js ${CMAKE_SOURCE_DIR}/favicon.svg ${CMAKE_BINARY_DIR}/style.css DESTINATION share/Concentrate)
+
+# Linux desktop integration
+install(FILES ${CMAKE_SOURCE_DIR}/resources/Concentrate.desktop DESTINATION share/applications)
+install(FILES ${CMAKE_SOURCE_DIR}/favicon.svg DESTINATION share/icons/hicolor/scalable/apps RENAME concentrate.svg)
