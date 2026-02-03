@@ -27,7 +27,7 @@ Notification::~Notification() {
 // ─────────────────────────────────────
 void Notification::SendNotification(const std::string icon, const std::string summary,
                                     const std::string msg) {
-    int32_t timeout = 3000; // ms
+    int32_t timeout = 5000; // ms
 
     std::chrono::time_point<std::chrono::system_clock> now = std::chrono::system_clock::now();
 

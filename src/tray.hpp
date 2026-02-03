@@ -1,31 +1,23 @@
 #pragma once
 
 #include <dbus/dbus.h>
-
 #include <string>
 
-// Minimal StatusNotifierItem (system tray) implementation using raw libdbus.
-// No Qt/GTK. Call Poll() regularly from your existing main loop.
+#include "common.hpp"
+
 class TrayIcon {
   public:
-    TrayIcon();
+    TrayIcon() = default;
     ~TrayIcon();
 
     TrayIcon(const TrayIcon &) = delete;
-    TrayIcon &operator=(const TrayIcon &) = delete;
-
-    // Initializes DBus connection, exports /StatusNotifierItem, and registers with the watcher.
-    // Returns true if connected and exported; false if DBus is unavailable.
     bool Start(std::string title);
-
-    // Non-blocking: dispatches pending DBus messages.
     void Poll();
-
-    // Switch between focused/unfocused icons (concentrate-focused / concentrate-unfocused).
-    void SetFocused(bool focused);
+    void SetFocused(FocusState state);
 
   private:
-    static DBusHandlerResult MessageHandler(DBusConnection *conn, DBusMessage *msg, void *user_data);
+    static DBusHandlerResult MessageHandler(DBusConnection *conn, DBusMessage *msg,
+                                            void *user_data);
     DBusHandlerResult HandleMessage(DBusConnection *conn, DBusMessage *msg);
 
     void RegisterWithWatcher();
@@ -44,6 +36,6 @@ class TrayIcon {
     std::string m_BusName;
     std::string m_Title;
     std::string m_IconName = "concentrate-unfocused";
-    bool m_Focused = false;
+    FocusState m_FocusState = IDLE;
     bool m_Started = false;
 };

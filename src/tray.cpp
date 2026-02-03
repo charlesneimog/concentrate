@@ -6,12 +6,12 @@
 #include <string>
 #include <unistd.h>
 
-namespace {
 static constexpr const char *kObjPath = "/StatusNotifierItem";
 static constexpr const char *kIfaceSNI = "org.kde.StatusNotifierItem";
 static constexpr const char *kIfaceProps = "org.freedesktop.DBus.Properties";
 static constexpr const char *kIfaceIntro = "org.freedesktop.DBus.Introspectable";
 
+// ─────────────────────────────────────
 static void append_variant_string(DBusMessageIter *iter, const char *value) {
     DBusMessageIter variant;
     const char *sig = "s";
@@ -20,6 +20,7 @@ static void append_variant_string(DBusMessageIter *iter, const char *value) {
     dbus_message_iter_close_container(iter, &variant);
 }
 
+// ─────────────────────────────────────
 static void dict_append_string(DBusMessageIter *dictIter, const char *key, const char *value) {
     DBusMessageIter entry;
     dbus_message_iter_open_container(dictIter, DBUS_TYPE_DICT_ENTRY, nullptr, &entry);
@@ -27,19 +28,17 @@ static void dict_append_string(DBusMessageIter *dictIter, const char *key, const
     append_variant_string(&entry, value);
     dbus_message_iter_close_container(dictIter, &entry);
 }
-} // namespace
 
-TrayIcon::TrayIcon() = default;
-
+// ─────────────────────────────────────
 TrayIcon::~TrayIcon() {
     if (m_Conn) {
         dbus_connection_unregister_object_path(m_Conn, kObjPath);
-        // Drop our reference; DBus will close when refcount hits zero.
         dbus_connection_unref(m_Conn);
         m_Conn = nullptr;
     }
 }
 
+// ─────────────────────────────────────
 bool TrayIcon::Start(std::string title) {
     if (m_Started) {
         return true;
@@ -65,8 +64,8 @@ bool TrayIcon::Start(std::string title) {
     const pid_t pid = getpid();
     m_BusName = "io.Concentrate.Tray.P" + std::to_string(static_cast<int>(pid));
 
-    const int req = dbus_bus_request_name(m_Conn, m_BusName.c_str(), DBUS_NAME_FLAG_REPLACE_EXISTING,
-                                         &err);
+    const int req =
+        dbus_bus_request_name(m_Conn, m_BusName.c_str(), DBUS_NAME_FLAG_REPLACE_EXISTING, &err);
     if (req != DBUS_REQUEST_NAME_REPLY_PRIMARY_OWNER) {
         if (dbus_error_is_set(&err)) {
             spdlog::warn("Tray: request_name failed: {}", err.message);
@@ -95,31 +94,50 @@ bool TrayIcon::Start(std::string title) {
     return true;
 }
 
+// ─────────────────────────────────────
 void TrayIcon::Poll() {
     if (!m_Conn) {
         return;
     }
 
-    // Non-blocking dispatch; integrate into existing loop.
     dbus_connection_read_write_dispatch(m_Conn, 0);
 }
 
-void TrayIcon::SetFocused(bool focused) {
+// ─────────────────────────────────────
+void TrayIcon::SetFocused(FocusState state) {
     if (!m_Started) {
         return;
     }
-    if (focused == m_Focused) {
+    if (state == m_FocusState) {
         return;
     }
 
-    m_Focused = focused;
-    m_IconName = m_Focused ? "concentrate-focused" : "concentrate-unfocused";
+    m_FocusState = state;
+    switch (state) {
+    case IDLE: {
+        printf("\n\n IDLE  \n\n");
+        m_IconName = "concentrate";
+        break;
+    }
+    case FOCUSED: {
+        printf("\n\n  FOCUSED \n\n");
+        m_IconName = "concentrate-focused";
+        break;
+    }
+    case UNFOCUSED: {
+        printf("\n\n  UNFOCUSED \n\n");
+        m_IconName = "concentrate-unfocused";
+        break;
+    }
+    }
 
     EmitNewIcon();
     EmitPropertiesChangedIconName();
 }
 
-DBusHandlerResult TrayIcon::MessageHandler(DBusConnection *conn, DBusMessage *msg, void *user_data) {
+// ─────────────────────────────────────
+DBusHandlerResult TrayIcon::MessageHandler(DBusConnection *conn, DBusMessage *msg,
+                                           void *user_data) {
     auto *self = static_cast<TrayIcon *>(user_data);
     if (!self) {
         return DBUS_HANDLER_RESULT_NOT_YET_HANDLED;
@@ -127,6 +145,7 @@ DBusHandlerResult TrayIcon::MessageHandler(DBusConnection *conn, DBusMessage *ms
     return self->HandleMessage(conn, msg);
 }
 
+// ─────────────────────────────────────
 DBusHandlerResult TrayIcon::HandleMessage(DBusConnection *conn, DBusMessage *msg) {
     // Introspection
     if (dbus_message_is_method_call(msg, kIfaceIntro, "Introspect")) {
@@ -157,15 +176,15 @@ DBusHandlerResult TrayIcon::HandleMessage(DBusConnection *conn, DBusMessage *msg
     return DBUS_HANDLER_RESULT_NOT_YET_HANDLED;
 }
 
+// ─────────────────────────────────────
 void TrayIcon::RegisterWithWatcher() {
     if (!m_Conn) {
         return;
     }
 
-    DBusMessage *msg = dbus_message_new_method_call("org.kde.StatusNotifierWatcher",
-                                                   "/StatusNotifierWatcher",
-                                                   "org.kde.StatusNotifierWatcher",
-                                                   "RegisterStatusNotifierItem");
+    DBusMessage *msg =
+        dbus_message_new_method_call("org.kde.StatusNotifierWatcher", "/StatusNotifierWatcher",
+                                     "org.kde.StatusNotifierWatcher", "RegisterStatusNotifierItem");
     if (!msg) {
         return;
     }
@@ -190,6 +209,7 @@ void TrayIcon::RegisterWithWatcher() {
     dbus_connection_flush(m_Conn);
 }
 
+// ─────────────────────────────────────
 void TrayIcon::EmitNewIcon() {
     if (!m_Conn) {
         return;
@@ -203,12 +223,14 @@ void TrayIcon::EmitNewIcon() {
     dbus_connection_flush(m_Conn);
 }
 
+// ─────────────────────────────────────
 void TrayIcon::EmitPropertiesChangedIconName() {
     if (!m_Conn) {
         return;
     }
 
-    // org.freedesktop.DBus.Properties.PropertiesChanged(s interface_name, a{sv} changed, as invalidated)
+    // org.freedesktop.DBus.Properties.PropertiesChanged(s interface_name, a{sv} changed, as
+    // invalidated)
     DBusMessage *sig = dbus_message_new_signal(kObjPath, kIfaceProps, "PropertiesChanged");
     if (!sig) {
         return;
@@ -234,51 +256,51 @@ void TrayIcon::EmitPropertiesChangedIconName() {
     dbus_connection_flush(m_Conn);
 }
 
+// ─────────────────────────────────────
 void TrayIcon::ReplyIntrospect(DBusConnection *conn, DBusMessage *msg) {
-    static const char *xml =
-        "<node>"
-        " <interface name='org.freedesktop.DBus.Introspectable'>"
-        "  <method name='Introspect'>"
-        "   <arg name='xml_data' type='s' direction='out'/>"
-        "  </method>"
-        " </interface>"
-        " <interface name='org.freedesktop.DBus.Properties'>"
-        "  <method name='Get'>"
-        "   <arg name='interface' type='s' direction='in'/>"
-        "   <arg name='prop' type='s' direction='in'/>"
-        "   <arg name='value' type='v' direction='out'/>"
-        "  </method>"
-        "  <method name='GetAll'>"
-        "   <arg name='interface' type='s' direction='in'/>"
-        "   <arg name='props' type='a{sv}' direction='out'/>"
-        "  </method>"
-        "  <signal name='PropertiesChanged'>"
-        "   <arg name='interface' type='s'/>"
-        "   <arg name='changed' type='a{sv}'/>"
-        "   <arg name='invalidated' type='as'/>"
-        "  </signal>"
-        " </interface>"
-        " <interface name='org.kde.StatusNotifierItem'>"
-        "  <property name='Category' type='s' access='read'/>"
-        "  <property name='Id' type='s' access='read'/>"
-        "  <property name='Title' type='s' access='read'/>"
-        "  <property name='Status' type='s' access='read'/>"
-        "  <property name='IconName' type='s' access='read'/>"
-        "  <method name='Activate'>"
-        "   <arg name='x' type='i' direction='in'/>"
-        "   <arg name='y' type='i' direction='in'/>"
-        "  </method>"
-        "  <method name='SecondaryActivate'>"
-        "   <arg name='x' type='i' direction='in'/>"
-        "   <arg name='y' type='i' direction='in'/>"
-        "  </method>"
-        "  <method name='ContextMenu'>"
-        "   <arg name='x' type='i' direction='in'/>"
-        "   <arg name='y' type='i' direction='in'/>"
-        "  </method>"
-        "  <signal name='NewIcon'/>"
-        " </interface>"
-        "</node>";
+    static const char *xml = "<node>"
+                             " <interface name='org.freedesktop.DBus.Introspectable'>"
+                             "  <method name='Introspect'>"
+                             "   <arg name='xml_data' type='s' direction='out'/>"
+                             "  </method>"
+                             " </interface>"
+                             " <interface name='org.freedesktop.DBus.Properties'>"
+                             "  <method name='Get'>"
+                             "   <arg name='interface' type='s' direction='in'/>"
+                             "   <arg name='prop' type='s' direction='in'/>"
+                             "   <arg name='value' type='v' direction='out'/>"
+                             "  </method>"
+                             "  <method name='GetAll'>"
+                             "   <arg name='interface' type='s' direction='in'/>"
+                             "   <arg name='props' type='a{sv}' direction='out'/>"
+                             "  </method>"
+                             "  <signal name='PropertiesChanged'>"
+                             "   <arg name='interface' type='s'/>"
+                             "   <arg name='changed' type='a{sv}'/>"
+                             "   <arg name='invalidated' type='as'/>"
+                             "  </signal>"
+                             " </interface>"
+                             " <interface name='org.kde.StatusNotifierItem'>"
+                             "  <property name='Category' type='s' access='read'/>"
+                             "  <property name='Id' type='s' access='read'/>"
+                             "  <property name='Title' type='s' access='read'/>"
+                             "  <property name='Status' type='s' access='read'/>"
+                             "  <property name='IconName' type='s' access='read'/>"
+                             "  <method name='Activate'>"
+                             "   <arg name='x' type='i' direction='in'/>"
+                             "   <arg name='y' type='i' direction='in'/>"
+                             "  </method>"
+                             "  <method name='SecondaryActivate'>"
+                             "   <arg name='x' type='i' direction='in'/>"
+                             "   <arg name='y' type='i' direction='in'/>"
+                             "  </method>"
+                             "  <method name='ContextMenu'>"
+                             "   <arg name='x' type='i' direction='in'/>"
+                             "   <arg name='y' type='i' direction='in'/>"
+                             "  </method>"
+                             "  <signal name='NewIcon'/>"
+                             " </interface>"
+                             "</node>";
 
     DBusMessage *reply = dbus_message_new_method_return(msg);
     if (!reply) {
@@ -290,6 +312,7 @@ void TrayIcon::ReplyIntrospect(DBusConnection *conn, DBusMessage *msg) {
     dbus_message_unref(reply);
 }
 
+// ─────────────────────────────────────
 const char *TrayIcon::GetPropString(const char *prop) const {
     if (std::strcmp(prop, "Category") == 0) {
         return "ApplicationStatus";
@@ -310,6 +333,7 @@ const char *TrayIcon::GetPropString(const char *prop) const {
     return "";
 }
 
+// ─────────────────────────────────────
 void TrayIcon::ReplyGetProperty(DBusConnection *conn, DBusMessage *msg) {
     const char *iface = nullptr;
     const char *prop = nullptr;
@@ -346,6 +370,7 @@ void TrayIcon::ReplyGetProperty(DBusConnection *conn, DBusMessage *msg) {
     dbus_message_unref(reply);
 }
 
+// ─────────────────────────────────────
 void TrayIcon::ReplyGetAllProperties(DBusConnection *conn, DBusMessage *msg) {
     const char *iface = nullptr;
 
@@ -383,6 +408,7 @@ void TrayIcon::ReplyGetAllProperties(DBusConnection *conn, DBusMessage *msg) {
     dbus_message_unref(reply);
 }
 
+// ─────────────────────────────────────
 void TrayIcon::ReplyEmptyMethodReturn(DBusConnection *conn, DBusMessage *msg) {
     DBusMessage *reply = dbus_message_new_method_return(msg);
     if (!reply) {
