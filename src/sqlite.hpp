@@ -4,6 +4,7 @@
 #include <nlohmann/json.hpp>
 
 #include <string>
+#include <array>
 
 #include "json.hpp"
 #include "common.hpp"
@@ -42,10 +43,10 @@ class SQLite {
     nlohmann::json FetchRecurringTasks();
 
     // Anytype
-    nlohmann::json FetchEvents();
+    nlohmann::json FetchEvents(int days = 7, int limit = 2000);
     nlohmann::json FetchTasks();
     nlohmann::json FetchCategories();
-    nlohmann::json FetchHistory();
+    nlohmann::json FetchHistory(int limit = 500);
 
     // History
     nlohmann::json GetFocusPercentageByCategory(int days);
@@ -60,7 +61,13 @@ class SQLite {
     bool IncrementPomodoroFocusToday(int focusSeconds, std::string &error);
 
   private:
+    // Returns Unix epoch seconds (UTC) for local midnight N days ago.
+    // days = 0 -> today at 00:00 local time
+    // days = 1 -> yesterday at 00:00 local time
+    double GetLocalDayStartEpoch(int days);
+
     void Init();
+    void PrepareStatements();
     void UpsertCategory(const std::string &category, const nlohmann::json &allowedAppIds,
                         const nlohmann::json &allowedTitles);
     void ExecIgnoringErrors(const std::string &sql);
@@ -69,4 +76,12 @@ class SQLite {
     sqlite3 *m_Db;
     std::string m_DbPath;
     JsonParse m_JsonParse;
+
+    sqlite3_stmt *m_InsertEventStmt = nullptr;
+    sqlite3_stmt *m_UpdateEventStmt = nullptr;
+
+    // Small deterministic lookaside buffer to reduce heap churn.
+    static constexpr int kLookasideSlotSize = 128;
+    static constexpr int kLookasideSlotCount = 256; // 32 KiB
+    std::array<unsigned char, kLookasideSlotSize * kLookasideSlotCount> m_Lookaside{};
 };

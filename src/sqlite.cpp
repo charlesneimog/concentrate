@@ -1,4 +1,5 @@
 #include "sqlite.hpp"
+#include <chrono>
 #include <spdlog/spdlog.h>
 #include <unordered_map>
 
@@ -10,25 +11,92 @@ SQLite::SQLite(const std::string &db_path) : m_Db(nullptr), m_DbPath(db_path) {
     }
 
     spdlog::debug("SQLite database opened: {}", m_DbPath);
+
+    // Reduce heap churn by enabling a small lookaside buffer.
+    // This gives deterministic per-connection memory and keeps small allocations off malloc.
+    sqlite3_db_config(m_Db, SQLITE_DBCONFIG_LOOKASIDE, m_Lookaside.data(), kLookasideSlotSize,
+                      kLookasideSlotCount);
+
     sqlite3_busy_timeout(m_Db, 2000);
     ExecIgnoringErrors("PRAGMA journal_mode=WAL");
     ExecIgnoringErrors("PRAGMA wal_autocheckpoint=1000");
     ExecIgnoringErrors("PRAGMA journal_size_limit=10485760");
     ExecIgnoringErrors("PRAGMA synchronous=NORMAL");
-    ExecIgnoringErrors("PRAGMA temp_store=MEMORY");
+    // For low RSS: avoid holding temp btrees in memory.
+    ExecIgnoringErrors("PRAGMA temp_store=FILE");
     ExecIgnoringErrors("PRAGMA cache_size = -1000;");
+    ExecIgnoringErrors("PRAGMA mmap_size=0;");
     ExecIgnoringErrors("PRAGMA secure_delete=ON");
     ExecIgnoringErrors("PRAGMA auto_vacuum=INCREMENTAL");
     ExecIgnoringErrors("PRAGMA optimize");
 
     Init();
+    PrepareStatements();
 }
 
 // ─────────────────────────────────────
 SQLite::~SQLite() {
+    if (m_InsertEventStmt) {
+        sqlite3_finalize(m_InsertEventStmt);
+        m_InsertEventStmt = nullptr;
+    }
+    if (m_UpdateEventStmt) {
+        sqlite3_finalize(m_UpdateEventStmt);
+        m_UpdateEventStmt = nullptr;
+    }
     if (m_Db) {
         sqlite3_close(m_Db);
         m_Db = nullptr;
+    }
+}
+
+// ─────────────────────────────────────
+double SQLite::GetLocalDayStartEpoch(int days) {
+    using namespace std::chrono;
+
+    if (days < 0) {
+        days = 0;
+    }
+
+    const auto now = system_clock::now();
+    const auto *tz = current_zone();
+    const zoned_time zt{tz, now};
+
+    const auto local_now = zt.get_local_time();
+    const auto local_midnight = floor<std::chrono::days>(local_now) - std::chrono::days{days};
+    const auto sys_midnight = tz->to_sys(local_midnight, choose::earliest);
+
+    return duration<double>(sys_midnight.time_since_epoch()).count();
+}
+
+// ─────────────────────────────────────
+void SQLite::PrepareStatements() {
+    {
+        const char *sql = R"(
+            INSERT INTO focus_log
+            (app_id, title, task_category, state, start_time, end_time, duration)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        )";
+        if (sqlite3_prepare_v2(m_Db, sql, -1, &m_InsertEventStmt, nullptr) != SQLITE_OK) {
+            spdlog::error("db prepare failed for InsertEvent stmt: {}", sqlite3_errmsg(m_Db));
+            m_InsertEventStmt = nullptr;
+        }
+    }
+
+    {
+        const char *sql = "UPDATE focus_log SET "
+                          "end_time = ?, "
+                          "duration = ?, "
+                          "task_category = ?, "
+                          "state = ? "
+                          "WHERE rowid = ("
+                          "  SELECT MAX(rowid) FROM focus_log "
+                          "  WHERE (app_id = ? AND title = ?) OR state = ?"
+                          ")";
+        if (sqlite3_prepare_v2(m_Db, sql, -1, &m_UpdateEventStmt, nullptr) != SQLITE_OK) {
+            spdlog::error("db prepare failed for UpdateEvent stmt: {}", sqlite3_errmsg(m_Db));
+            m_UpdateEventStmt = nullptr;
+        }
     }
 }
 
@@ -88,32 +156,29 @@ void SQLite::Init() {
 void SQLite::InsertEventNew(const std::string &appId, const std::string &title,
                             const std::string &taskCategory, double start_time, double end_time,
                             double duration, int state) {
-    sqlite3_stmt *stmt = nullptr;
-    const char *sql = R"(
-        INSERT INTO focus_log
-        (app_id, title, task_category, state, start_time, end_time, duration)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-    )";
-
-    if (sqlite3_prepare_v2(m_Db, sql, -1, &stmt, nullptr) != SQLITE_OK) {
-        spdlog::error("db prepare failed in InsertEvent: {}", sqlite3_errmsg(m_Db));
+    if (!m_InsertEventStmt) {
+        spdlog::error("InsertEvent stmt not prepared");
         return;
     }
 
-    sqlite3_bind_text(stmt, 1, appId.empty() ? nullptr : appId.c_str(), -1, SQLITE_TRANSIENT);
-    sqlite3_bind_text(stmt, 2, title.empty() ? nullptr : title.c_str(), -1, SQLITE_TRANSIENT);
-    sqlite3_bind_text(stmt, 3, taskCategory.empty() ? nullptr : taskCategory.c_str(), -1,
-                      SQLITE_TRANSIENT);
-    sqlite3_bind_int(stmt, 4, state);
-    sqlite3_bind_double(stmt, 5, start_time);
-    sqlite3_bind_double(stmt, 6, end_time);
-    sqlite3_bind_double(stmt, 7, duration);
+    sqlite3_reset(m_InsertEventStmt);
+    sqlite3_clear_bindings(m_InsertEventStmt);
 
-    int rc = sqlite3_step(stmt);
+    sqlite3_bind_text(m_InsertEventStmt, 1, appId.empty() ? nullptr : appId.c_str(), -1,
+                      SQLITE_TRANSIENT);
+    sqlite3_bind_text(m_InsertEventStmt, 2, title.empty() ? nullptr : title.c_str(), -1,
+                      SQLITE_TRANSIENT);
+    sqlite3_bind_text(m_InsertEventStmt, 3,
+                      taskCategory.empty() ? nullptr : taskCategory.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_int(m_InsertEventStmt, 4, state);
+    sqlite3_bind_double(m_InsertEventStmt, 5, start_time);
+    sqlite3_bind_double(m_InsertEventStmt, 6, end_time);
+    sqlite3_bind_double(m_InsertEventStmt, 7, duration);
+
+    int rc = sqlite3_step(m_InsertEventStmt);
     if (rc != SQLITE_DONE) {
         spdlog::error("InsertEvent failed: {}", sqlite3_errmsg(m_Db));
     }
-    sqlite3_finalize(stmt);
 
     spdlog::debug("Inserted log: app_id={}, title={}, category={}, state={}, duration={}", appId,
                   title, taskCategory, state, duration);
@@ -123,38 +188,29 @@ void SQLite::InsertEventNew(const std::string &appId, const std::string &title,
 bool SQLite::UpdateEventNew(const std::string &appId, const std::string &title,
                             const std::string &taskCategory, double end_time, double duration,
                             int state) {
-    sqlite3_stmt *stmt = nullptr;
-
-    // Update the most recent row matching either app event or focus state
-    const char *sql = "UPDATE focus_log SET "
-                      "end_time = ?, "
-                      "duration = ?, "
-                      "task_category = ?, "
-                      "state = ? "
-                      "WHERE rowid = ("
-                      "  SELECT MAX(rowid) FROM focus_log "
-                      "  WHERE (app_id = ? AND title = ?) OR state = ?"
-                      ")";
-
-    if (sqlite3_prepare_v2(m_Db, sql, -1, &stmt, nullptr) != SQLITE_OK) {
-        spdlog::error("db prepare failed in UpdateEventNew: {}", sqlite3_errmsg(m_Db));
+    if (!m_UpdateEventStmt) {
+        spdlog::error("UpdateEvent stmt not prepared");
         return false;
     }
 
+    sqlite3_reset(m_UpdateEventStmt);
+    sqlite3_clear_bindings(m_UpdateEventStmt);
+
     // Bind new values
-    sqlite3_bind_double(stmt, 1, end_time);
-    sqlite3_bind_double(stmt, 2, duration);
-    sqlite3_bind_text(stmt, 3, taskCategory.empty() ? nullptr : taskCategory.c_str(), -1,
-                      SQLITE_TRANSIENT);
-    sqlite3_bind_int(stmt, 4, state);
+    sqlite3_bind_double(m_UpdateEventStmt, 1, end_time);
+    sqlite3_bind_double(m_UpdateEventStmt, 2, duration);
+    sqlite3_bind_text(m_UpdateEventStmt, 3,
+                      taskCategory.empty() ? nullptr : taskCategory.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_int(m_UpdateEventStmt, 4, state);
 
     // Bind WHERE subquery values
-    sqlite3_bind_text(stmt, 5, appId.empty() ? nullptr : appId.c_str(), -1, SQLITE_TRANSIENT);
-    sqlite3_bind_text(stmt, 6, title.empty() ? nullptr : title.c_str(), -1, SQLITE_TRANSIENT);
-    sqlite3_bind_int(stmt, 7, state);
+    sqlite3_bind_text(m_UpdateEventStmt, 5, appId.empty() ? nullptr : appId.c_str(), -1,
+                      SQLITE_TRANSIENT);
+    sqlite3_bind_text(m_UpdateEventStmt, 6, title.empty() ? nullptr : title.c_str(), -1,
+                      SQLITE_TRANSIENT);
+    sqlite3_bind_int(m_UpdateEventStmt, 7, state);
 
-    int rc = sqlite3_step(stmt);
-    sqlite3_finalize(stmt);
+    int rc = sqlite3_step(m_UpdateEventStmt);
 
     if (rc != SQLITE_DONE) {
         spdlog::error("UpdateEventNew failed: {}", sqlite3_errmsg(m_Db));
@@ -170,11 +226,17 @@ bool SQLite::UpdateEventNew(const std::string &appId, const std::string &title,
 nlohmann::json SQLite::FetchTodayCategorySummary() {
     nlohmann::json rows = nlohmann::json::array();
 
+    const double from_epoch = GetLocalDayStartEpoch(0);
+    const double now_epoch = std::chrono::duration<double>(
+                               std::chrono::system_clock::now().time_since_epoch())
+                               .count();
+
     // Sum durations grouped by app_id category for today
     const char *sql = "SELECT task_category AS app_category, SUM(duration) AS total_seconds "
                       "FROM focus_log "
                       "WHERE task_category != '' "
-                      "  AND date(start_time, 'unixepoch', 'localtime') = date('now', 'localtime') "
+                      "  AND start_time >= ? "
+                      "  AND start_time < ? "
                       "GROUP BY task_category "
                       "ORDER BY total_seconds DESC";
 
@@ -183,6 +245,9 @@ nlohmann::json SQLite::FetchTodayCategorySummary() {
         spdlog::error("db prepare failed in FetchTodayCategorySummary: {}", sqlite3_errmsg(m_Db));
         return rows;
     }
+
+    sqlite3_bind_double(stmt, 1, from_epoch);
+    sqlite3_bind_double(stmt, 2, now_epoch);
 
     while (sqlite3_step(stmt) == SQLITE_ROW) {
         const char *category = reinterpret_cast<const char *>(sqlite3_column_text(stmt, 0));
@@ -205,10 +270,16 @@ nlohmann::json SQLite::GetFocusSummary(int days) {
         days = 1;
     }
 
+    const double from_epoch = GetLocalDayStartEpoch(days - 1);
+    const double now_epoch = std::chrono::duration<double>(
+                               std::chrono::system_clock::now().time_since_epoch())
+                               .count();
+
     const char *sql = "SELECT state, SUM(duration) AS total_duration "
                       "FROM focus_log "
                       "WHERE state IS NOT NULL "
-                      "  AND start_time >= strftime('%s','now','localtime', ? || ' days') "
+                      "  AND start_time >= ? "
+                      "  AND start_time < ? "
                       "GROUP BY state";
 
     if (sqlite3_prepare_v2(m_Db, sql, -1, &stmt, nullptr) != SQLITE_OK) {
@@ -216,8 +287,8 @@ nlohmann::json SQLite::GetFocusSummary(int days) {
         throw std::runtime_error("db prepare failed");
     }
 
-    std::string daysArg = "-" + std::to_string(days);
-    sqlite3_bind_text(stmt, 1, daysArg.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_double(stmt, 1, from_epoch);
+    sqlite3_bind_double(stmt, 2, now_epoch);
 
     double focused = 0.0;
     double unfocused = 0.0;
@@ -252,17 +323,26 @@ nlohmann::json SQLite::GetFocusSummary(int days) {
 nlohmann::json SQLite::GetTodayFocusTimeSummary() {
     sqlite3_stmt *stmt = nullptr;
 
+    const double from_epoch = GetLocalDayStartEpoch(0);
+    const double now_epoch = std::chrono::duration<double>(
+                               std::chrono::system_clock::now().time_since_epoch())
+                               .count();
+
     // Sum durations grouped by state for today
     const char *sql = "SELECT state, SUM(duration) AS total_duration "
                       "FROM focus_log "
                       "WHERE state IS NOT NULL "
-                      "  AND date(start_time, 'unixepoch', 'localtime') = date('now', 'localtime') "
+                      "  AND start_time >= ? "
+                      "  AND start_time < ? "
                       "GROUP BY state";
 
     if (sqlite3_prepare_v2(m_Db, sql, -1, &stmt, nullptr) != SQLITE_OK) {
         spdlog::error("db prepare failed in GetTodayFocusTimeSummary: {}", sqlite3_errmsg(m_Db));
         throw std::runtime_error("db prepare failed");
     }
+
+    sqlite3_bind_double(stmt, 1, from_epoch);
+    sqlite3_bind_double(stmt, 2, now_epoch);
 
     double focused = 0.0;
     double unfocused = 0.0;
@@ -297,11 +377,17 @@ nlohmann::json SQLite::GetTodayFocusTimeSummary() {
 nlohmann::json SQLite::GetTodayDailyActivitiesSummary() {
     sqlite3_stmt *stmt = nullptr;
 
+    const double from_epoch = GetLocalDayStartEpoch(0);
+    const double now_epoch = std::chrono::duration<double>(
+                               std::chrono::system_clock::now().time_since_epoch())
+                               .count();
+
     const char *sql =
         "SELECT task_category AS name, SUM(duration) AS total_seconds "
         "FROM focus_log "
         "WHERE state = 1 "
-        "  AND date(start_time, 'unixepoch', 'localtime') = date('now', 'localtime') "
+        "  AND start_time >= ? "
+        "  AND start_time < ? "
         "  AND task_category IN (SELECT name FROM recurring_tasks) "
         "GROUP BY task_category "
         "ORDER BY total_seconds DESC";
@@ -312,14 +398,16 @@ nlohmann::json SQLite::GetTodayDailyActivitiesSummary() {
         throw std::runtime_error("db prepare failed");
     }
 
+    sqlite3_bind_double(stmt, 1, from_epoch);
+    sqlite3_bind_double(stmt, 2, now_epoch);
+
     nlohmann::json rows = nlohmann::json::array();
 
     while (sqlite3_step(stmt) == SQLITE_ROW) {
         const char *name_txt = reinterpret_cast<const char *>(sqlite3_column_text(stmt, 0));
         double total_seconds = sqlite3_column_double(stmt, 1);
 
-        rows.push_back({{"name", name_txt ? name_txt : ""},
-                        {"total_seconds", total_seconds}});
+        rows.push_back({{"name", name_txt ? name_txt : ""}, {"total_seconds", total_seconds}});
     }
 
     sqlite3_finalize(stmt);
@@ -330,11 +418,21 @@ nlohmann::json SQLite::GetTodayDailyActivitiesSummary() {
 nlohmann::json SQLite::GetFocusPercentageByCategory(int days) {
     sqlite3_stmt *stmt = nullptr;
 
+    if (days < 1) {
+        days = 1;
+    }
+
+    const double from_epoch = GetLocalDayStartEpoch(days - 1);
+    const double now_epoch = std::chrono::duration<double>(
+                               std::chrono::system_clock::now().time_since_epoch())
+                               .count();
+
     // SQL: sum duration by category in the last `days` days
     const char *sql = "SELECT task_category, SUM(duration) AS total_seconds "
                       "FROM focus_log "
                       "WHERE task_category != '' "
-                      "  AND start_time >= strftime('%s', 'now', 'localtime', ? || ' days') "
+                      "  AND start_time >= ? "
+                      "  AND start_time < ? "
                       "GROUP BY task_category";
 
     if (sqlite3_prepare_v2(m_Db, sql, -1, &stmt, nullptr) != SQLITE_OK) {
@@ -343,9 +441,8 @@ nlohmann::json SQLite::GetFocusPercentageByCategory(int days) {
         throw std::runtime_error("db prepare failed");
     }
 
-    // Pass the negative number of days as string, e.g., "-1 days"
-    std::string daysArg = "-" + std::to_string(days);
-    sqlite3_bind_text(stmt, 1, daysArg.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_double(stmt, 1, from_epoch);
+    sqlite3_bind_double(stmt, 2, now_epoch);
 
     nlohmann::json rows = nlohmann::json::array();
     double totalDuration = 0.0;
@@ -380,12 +477,18 @@ nlohmann::json SQLite::GetCategoryTimeSummary(int days) {
         days = 1;
     }
 
+    const double from_epoch = GetLocalDayStartEpoch(days - 1);
+    const double now_epoch = std::chrono::duration<double>(
+                               std::chrono::system_clock::now().time_since_epoch())
+                               .count();
+
     const char *sql =
         "SELECT COALESCE(NULLIF(task_category, ''), 'uncategorized') AS category, "
         "SUM(duration) AS total_seconds "
         "FROM focus_log "
         "WHERE state IN (1, 2) "
-        "  AND start_time >= strftime('%s', 'now', 'localtime', ? || ' days') "
+        "  AND start_time >= ? "
+        "  AND start_time < ? "
         "GROUP BY category "
         "ORDER BY total_seconds DESC";
 
@@ -394,8 +497,8 @@ nlohmann::json SQLite::GetCategoryTimeSummary(int days) {
         return nlohmann::json::array();
     }
 
-    std::string daysArg = "-" + std::to_string(days);
-    sqlite3_bind_text(stmt, 1, daysArg.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_double(stmt, 1, from_epoch);
+    sqlite3_bind_double(stmt, 2, now_epoch);
 
     nlohmann::json rows = nlohmann::json::array();
 
@@ -419,12 +522,18 @@ nlohmann::json SQLite::GetCategoryFocusSplit(int days) {
         days = 1;
     }
 
+    const double from_epoch = GetLocalDayStartEpoch(days - 1);
+    const double now_epoch = std::chrono::duration<double>(
+                               std::chrono::system_clock::now().time_since_epoch())
+                               .count();
+
     const char *sql =
         "SELECT COALESCE(NULLIF(task_category, ''), 'uncategorized') AS category, "
         "state, SUM(duration) AS total_seconds "
         "FROM focus_log "
         "WHERE state IN (1, 2) "
-        "  AND start_time >= strftime('%s', 'now', 'localtime', ? || ' days') "
+        "  AND start_time >= ? "
+        "  AND start_time < ? "
         "GROUP BY category, state";
 
     if (sqlite3_prepare_v2(m_Db, sql, -1, &stmt, nullptr) != SQLITE_OK) {
@@ -432,8 +541,8 @@ nlohmann::json SQLite::GetCategoryFocusSplit(int days) {
         return nlohmann::json::array();
     }
 
-    std::string daysArg = "-" + std::to_string(days);
-    sqlite3_bind_text(stmt, 1, daysArg.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_double(stmt, 1, from_epoch);
+    sqlite3_bind_double(stmt, 2, now_epoch);
 
     struct FocusSplit {
         double focused = 0.0;
@@ -485,14 +594,14 @@ nlohmann::json SQLite::GetCategoryFocusSplit(int days) {
 nlohmann::json SQLite::FetchDailyAppUsageByAppId(int days) {
     sqlite3_stmt *stmt = nullptr;
 
-    // Start of today (00:00 local time)
-    std::time_t now = std::time(nullptr);
-    std::tm tm = *std::localtime(&now);
-    tm.tm_hour = 0;
-    tm.tm_min = 0;
-    tm.tm_sec = 0;
+    if (days < 1) {
+        days = 1;
+    }
 
-    std::time_t dayStart = std::mktime(&tm) - (days - 1) * 86400;
+    const double from_epoch = GetLocalDayStartEpoch(days - 1);
+    const double now_epoch = std::chrono::duration<double>(
+                               std::chrono::system_clock::now().time_since_epoch())
+                               .count();
 
     const char *sql = "SELECT "
                       "  strftime('%Y-%m-%d', start_time, 'unixepoch', 'localtime') AS day, "
@@ -501,6 +610,7 @@ nlohmann::json SQLite::FetchDailyAppUsageByAppId(int days) {
                       "  SUM(duration) AS total_seconds "
                       "FROM focus_log "
                       "WHERE start_time >= ? "
+                      "  AND start_time < ? "
                       "  AND app_id IS NOT NULL "
                       "  AND app_id <> '' "
                       "GROUP BY day, app_id, title "
@@ -511,7 +621,8 @@ nlohmann::json SQLite::FetchDailyAppUsageByAppId(int days) {
         return {};
     }
 
-    sqlite3_bind_int64(stmt, 1, static_cast<sqlite3_int64>(dayStart));
+    sqlite3_bind_double(stmt, 1, from_epoch);
+    sqlite3_bind_double(stmt, 2, now_epoch);
 
     nlohmann::json result = nlohmann::json::object();
 
@@ -919,18 +1030,39 @@ nlohmann::json SQLite::FetchRecurringTasks() {
 // ╭─────────────────────────────────────╮
 // │             Historical              │
 // ╰─────────────────────────────────────╯
-nlohmann::json SQLite::FetchEvents() {
+nlohmann::json SQLite::FetchEvents(int days, int limit) {
     sqlite3_stmt *stmt = nullptr;
+
+    if (days < 1) {
+        days = 1;
+    }
+    if (limit < 1) {
+        limit = 1;
+    }
+    if (limit > 20000) {
+        limit = 20000;
+    }
+
+    const double from_epoch = GetLocalDayStartEpoch(days - 1);
+    const double now_epoch = std::chrono::duration<double>(
+                               std::chrono::system_clock::now().time_since_epoch())
+                               .count();
 
     const char *sql = "SELECT app_id, title, task_category, state, duration "
                       "FROM focus_log "
-                      "WHERE start_time >= strftime('%s','now','-7 days') "
-                      "ORDER BY start_time";
+                      "WHERE start_time >= ? "
+                      "  AND start_time < ? "
+                      "ORDER BY start_time "
+                      "LIMIT ?";
 
     if (sqlite3_prepare_v2(m_Db, sql, -1, &stmt, nullptr) != SQLITE_OK) {
         spdlog::error("db prepare failed in FetchLast7Days: {}", sqlite3_errmsg(m_Db));
         return {};
     }
+
+    sqlite3_bind_double(stmt, 1, from_epoch);
+    sqlite3_bind_double(stmt, 2, now_epoch);
+    sqlite3_bind_int(stmt, 3, limit);
 
     nlohmann::json rows = nlohmann::json::array();
 
@@ -964,8 +1096,15 @@ nlohmann::json SQLite::FetchEvents() {
 }
 
 // ─────────────────────────────────────
-nlohmann::json SQLite::FetchHistory() {
+nlohmann::json SQLite::FetchHistory(int limit) {
     sqlite3_stmt *stmt = nullptr;
+
+    if (limit < 1) {
+        limit = 1;
+    }
+    if (limit > 10000) {
+        limit = 10000;
+    }
 
     const char *sql = R"(
         SELECT 
@@ -978,15 +1117,18 @@ nlohmann::json SQLite::FetchHistory() {
             SUM(duration) AS total_duration,
             MIN(start_time) AS first_start,
             MAX(end_time) AS last_end
-        FROM focus_events
+        FROM focus_log
         GROUP BY app_id, title
         ORDER BY total_duration DESC
+        LIMIT ?
     )";
 
     if (sqlite3_prepare_v2(m_Db, sql, -1, &stmt, nullptr) != SQLITE_OK) {
         spdlog::error("db prepare failed in FetchHistory: {}", sqlite3_errmsg(m_Db));
         return nlohmann::json::array();
     }
+
+    sqlite3_bind_int(stmt, 1, limit);
 
     nlohmann::json rows = nlohmann::json::array();
 

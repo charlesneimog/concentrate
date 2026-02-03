@@ -1021,7 +1021,9 @@ class FocusApp {
         }
 
         const data = await res.json();
-        const focusedSeconds = Number(data.focused_seconds ?? 0);
+        console.log(data);
+
+        const focusedSeconds = Number(data.focused_seconds ?? 0);1
         const unfocusedSeconds = Number(data.unfocused_seconds ?? 0);
         const totalSeconds = focusedSeconds + unfocusedSeconds;
         // aggregate app totals across the selected days for the history pie/legend
