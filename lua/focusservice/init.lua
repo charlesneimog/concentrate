@@ -41,7 +41,6 @@ end
 
 -- ─────────────────────────────────────
 function M.setup()
-    vim.notify("Here I am")
 	-- Autocmds for focus/unfocus
 	vim.api.nvim_create_autocmd("FocusGained", {
 		callback = function()
