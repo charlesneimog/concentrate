@@ -84,15 +84,19 @@ void SQLite::PrepareStatements() {
     }
 
     {
-        const char *sql = "UPDATE focus_log SET "
-                          "end_time = ?, "
-                          "duration = ?, "
-                          "task_category = ?, "
-                          "state = ? "
-                          "WHERE rowid = ("
-                          "  SELECT MAX(rowid) FROM focus_log "
-                          "  WHERE (app_id = ? AND title = ?) OR state = ?"
-                          ")";
+                // Update the most recent record for the exact (app_id, title, state).
+                // Use SQLite's NULL-safe `IS` operator so NULL app_id/title can still match.
+                const char *sql = R"(
+                        UPDATE focus_log SET
+                            end_time = ?,
+                            duration = ?,
+                            task_category = ?,
+                            state = ?
+                        WHERE rowid = (
+                            SELECT MAX(rowid) FROM focus_log
+                            WHERE app_id IS ? AND title IS ? AND state = ?
+                        )
+                )";
         if (sqlite3_prepare_v2(m_Db, sql, -1, &m_UpdateEventStmt, nullptr) != SQLITE_OK) {
             spdlog::error("db prepare failed for UpdateEvent stmt: {}", sqlite3_errmsg(m_Db));
             m_UpdateEventStmt = nullptr;
@@ -214,6 +218,13 @@ bool SQLite::UpdateEventNew(const std::string &appId, const std::string &title,
 
     if (rc != SQLITE_DONE) {
         spdlog::error("UpdateEventNew failed: {}", sqlite3_errmsg(m_Db));
+        return false;
+    }
+
+    if (sqlite3_changes(m_Db) == 0) {
+        spdlog::warn(
+            "UpdateEventNew affected 0 rows (app_id='{}', title='{}', state={}); record may not exist",
+            appId, title, state);
         return false;
     }
 

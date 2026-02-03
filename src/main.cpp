@@ -2,22 +2,6 @@
 
 #include <iostream>
 #include <string>
-#include <thread>
-
-#ifdef __linux__
-#include <QAction>
-#include <QApplication>
-#include <QCoreApplication>
-#include <QIcon>
-#include <QMenu>
-#include <QProcess>
-#include <QSystemTrayIcon>
-#include <QLockFile>
-#include <QDir>
-#include <QTimer>
-#else
-#error "This application is Linux-only."
-#endif
 
 // ─────────────────────────────────────
 int main(int argc, char *argv[]) {
@@ -28,11 +12,10 @@ int main(int argc, char *argv[]) {
     };
 
     unsigned ServerPort = 7079;
-    unsigned PingEach = 1;        // Seconds to request AppID from Window
+    unsigned PingEach = 1; // Seconds to request AppID from Window
     LogLevel log_level = LOG_OFF; // default
 
-    auto parse_u32 = [&](const std::string &value, const char *flag, unsigned long min,
-                         unsigned long max, unsigned &out) -> bool {
+    auto parse_u32 = [&](const std::string &value, const char *flag, unsigned long min, unsigned long max, unsigned &out) -> bool {
         try {
             if (value.empty()) {
                 std::cerr << flag << " requires a value" << std::endl;
@@ -45,8 +28,8 @@ int main(int argc, char *argv[]) {
                 return false;
             }
             if (parsed < min || parsed > max) {
-                std::cerr << "Out of range value for " << flag << ": " << value << " (expected "
-                          << min << ".." << max << ")" << std::endl;
+                std::cerr << "Out of range value for " << flag << ": " << value
+                          << " (expected " << min << ".." << max << ")" << std::endl;
                 return false;
             }
             out = static_cast<unsigned>(parsed);
@@ -123,49 +106,6 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
-    std::thread serverThread([=]() { Concentrate concentrate(ServerPort, PingEach, log_level); });
-    serverThread.detach();
-
-    QApplication app(argc, argv);
-    QApplication::setQuitOnLastWindowClosed(false);
-
-    QTimer::singleShot(2000, [&]() {
-        if (!QSystemTrayIcon::isSystemTrayAvailable()) {
-            std::cerr << "No system tray available." << std::endl;
-            return;
-        }
-
-        auto *tray = new QSystemTrayIcon(&app);
-        auto *menu = new QMenu();
-
-        QAction *openAction = new QAction("Open Web UI", tray);
-        QAction *quitAction = new QAction("Quit", tray);
-
-        menu->addAction(openAction);
-        menu->addSeparator();
-        menu->addAction(quitAction);
-
-        tray->setContextMenu(menu);
-
-        QIcon icon = QIcon::fromTheme("concentrate");
-        if (icon.isNull()) {
-            icon = QIcon::fromTheme("applications-internet");
-        }
-
-        tray->setIcon(icon);
-        tray->setToolTip("Concentrate");
-        tray->show();
-
-        QObject::connect(openAction, &QAction::triggered, [&]() {
-            const QString url = QStringLiteral("http://localhost:%1").arg(ServerPort);
-            QProcess::startDetached("xdg-open", {url});
-        });
-
-        QObject::connect(quitAction, &QAction::triggered, [&]() {
-            tray->hide();
-            QCoreApplication::quit();
-        });
-    });
-
-    return app.exec();
+    Concentrate concentrate(ServerPort, PingEach, log_level);
+    return 0;
 }

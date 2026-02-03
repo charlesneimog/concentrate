@@ -7,17 +7,6 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 set(SPDLOG_BUILD_SHARED OFF)
 
-# Qt Widgets (tray icon via QSystemTrayIcon)
-# Default: Qt6. Use -DCONCENTRATE_USE_QT5=ON only if Qt6 is unavailable.
-option(CONCENTRATE_USE_QT5 "Use Qt5 Widgets instead of Qt6" OFF)
-if (CONCENTRATE_USE_QT5)
-    find_package(Qt5 COMPONENTS Widgets REQUIRED)
-    set(CONCENTRATE_QT_WIDGETS_TARGET Qt5::Widgets)
-else()
-    find_package(Qt6 COMPONENTS Widgets REQUIRED)
-    set(CONCENTRATE_QT_WIDGETS_TARGET Qt6::Widgets)
-endif()
-
 # ╭──────────────────────────────────────╮
 # │                 CPM                  │
 # ╰──────────────────────────────────────╯
@@ -36,12 +25,12 @@ cpmaddpackage("gh:nlohmann/json@3.11.3")
 cpmaddpackage("gh:gabime/spdlog@1.17.0")
 
 find_package(SQLite3 REQUIRED)
+find_package(PkgConfig REQUIRED)
 pkg_check_modules(PC_DBUS REQUIRED dbus-1)
 
 # ╭──────────────────────────────────────╮
 # │            get libsecret             │
 # ╰──────────────────────────────────────╯
-find_package(PkgConfig REQUIRED)
 pkg_check_modules(PC_LIBSECRET REQUIRED libsecret-1)
 include_directories(${PC_LIBSECRET_INCLUDE_DIRS})
 link_directories(${PC_LIBSECRET_LIBRARY_DIRS})
@@ -55,6 +44,7 @@ add_executable(
     Concentrate
     src/main.cpp
     src/Concentrate.cpp
+    src/tray.cpp
     src/secrets.cpp
     src/notification.cpp
     src/window.cpp
@@ -80,7 +70,7 @@ add_custom_target(
     webfiles
     COMMAND ${CMAKE_COMMAND} -E copy_if_different ${CMAKE_SOURCE_DIR}/index.html $<TARGET_FILE_DIR:Concentrate>/index.html
     COMMAND ${CMAKE_COMMAND} -E copy_if_different ${CMAKE_SOURCE_DIR}/app.js $<TARGET_FILE_DIR:Concentrate>/app.js
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different ${CMAKE_SOURCE_DIR}/favicon.svg $<TARGET_FILE_DIR:Concentrate>/favicon.svg
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different ${CMAKE_SOURCE_DIR}/resources/favicon.svg $<TARGET_FILE_DIR:Concentrate>/favicon.svg
     COMMENT "Copying webfiles")
 
 add_dependencies(Concentrate webfiles tailwindcss)
@@ -98,13 +88,15 @@ target_link_libraries(
             # Others
             ${PC_LIBSECRET_LIBRARIES}
             ${PC_DBUS_LIBRARIES}
-            ${CONCENTRATE_QT_WIDGETS_TARGET})
+            )
 target_compile_options(Concentrate PRIVATE $<$<CONFIG:Release>:-O3 -march=native -DNDEBUG>)
 
 install(TARGETS Concentrate RUNTIME DESTINATION bin)
 install(CODE "execute_process(COMMAND ${TAILWINDCSS_EXECUTABLE} -i ${CMAKE_SOURCE_DIR}/input.css -o ${CMAKE_BINARY_DIR}/style.css WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})")
-install(FILES ${CMAKE_SOURCE_DIR}/index.html ${CMAKE_SOURCE_DIR}/app.js ${CMAKE_SOURCE_DIR}/favicon.svg ${CMAKE_BINARY_DIR}/style.css DESTINATION share/Concentrate)
+install(FILES ${CMAKE_SOURCE_DIR}/index.html ${CMAKE_SOURCE_DIR}/app.js ${CMAKE_SOURCE_DIR}/resources/favicon.svg ${CMAKE_BINARY_DIR}/style.css DESTINATION share/Concentrate)
 
 # Linux desktop integration
 install(FILES ${CMAKE_SOURCE_DIR}/resources/Concentrate.desktop DESTINATION share/applications)
-install(FILES ${CMAKE_SOURCE_DIR}/favicon.svg DESTINATION share/icons/hicolor/scalable/apps RENAME concentrate.svg)
+install(FILES ${CMAKE_SOURCE_DIR}/resources/favicon.svg DESTINATION share/icons/hicolor/scalable/apps RENAME concentrate.svg)
+install(FILES ${CMAKE_SOURCE_DIR}/resources/focused.svg DESTINATION share/icons/hicolor/scalable/apps RENAME concentrate-focused.svg)
+install(FILES ${CMAKE_SOURCE_DIR}/resources/unfocused.svg DESTINATION share/icons/hicolor/scalable/apps RENAME concentrate-unfocused.svg)

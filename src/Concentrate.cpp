@@ -56,6 +56,15 @@ Concentrate::Concentrate(const unsigned port, const unsigned ping, LogLevel log_
     m_Notification = std::make_unique<Notification>();
     spdlog::info("Notification system initialized");
 
+    // Tray icon (DBus StatusNotifierItem)
+    m_Tray = std::make_unique<TrayIcon>();
+    if (m_Tray->Start("Concentrate")) {
+        m_Tray->SetFocused(false);
+        spdlog::info("Tray icon initialized");
+    } else {
+        spdlog::warn("Tray icon not available (no DBus watcher or session bus)");
+    }
+
     // HydrationService
     m_Hydration = std::make_unique<HydrationService>();
     double hydrationIntervalMinutes = 10.0;
@@ -76,21 +85,25 @@ Concentrate::Concentrate(const unsigned port, const unsigned ping, LogLevel log_
     }
     auto lastMonitoringNotification = std::chrono::steady_clock::now() - std::chrono::minutes(10);
 
-    FocusState lastState = IDLE;
-    auto stateSince = std::chrono::steady_clock::now();
-    auto lastRecord = stateSince;
-    std::string lastAppId;
-    std::string lastTitle;
-    std::string lastCategory;
+    // Tracking model:
+    // - When an active interval starts, INSERT a row with start=end=now, duration=0.
+    // - While it continues, UPDATE that same row with end=now and duration=(now-start).
+    // - When it ends/changes, do a final UPDATE and then INSERT the next interval.
+    bool hasOpenInterval = false;
+    FocusState openState = IDLE;
+    auto intervalStart = std::chrono::steady_clock::now();
+    auto lastDbFlush = intervalStart;
+    std::string openAppId;
+    std::string openTitle;
+    std::string openCategory;
 
     {
         std::lock_guard<std::mutex> lock(m_GlobalMutex);
-        m_LastRecord = lastRecord;
-        m_LastState = lastState;
-        m_LastAppId = lastAppId;
-        m_LastTitle = lastTitle;
-        m_LastCategory = lastCategory;
-        m_HasLastRecord = true;
+        m_LastState = IDLE;
+        m_LastAppId.clear();
+        m_LastTitle.clear();
+        m_LastCategory.clear();
+        m_HasLastRecord = false;
     }
 
     UpdateAllowedApps();
@@ -98,6 +111,11 @@ Concentrate::Concentrate(const unsigned port, const unsigned ping, LogLevel log_
 
     while (true) {
         auto now = std::chrono::steady_clock::now();
+
+        // Pump tray DBus messages (non-blocking)
+        if (m_Tray) {
+            m_Tray->Poll();
+        }
 
         // Notify if monitoring is disabled every 5 minutes
         if (!m_MonitoringEnabled && now - lastMonitoringNotification >= std::chrono::minutes(5)) {
@@ -107,28 +125,41 @@ Concentrate::Concentrate(const unsigned port, const unsigned ping, LogLevel log_
         }
 
         if (!m_MonitoringEnabled) {
-            lastState = IDLE;
-            lastRecord = now;
-            stateSince = now;
-            lastAppId.clear();
-            lastTitle.clear();
-            lastCategory.clear();
+            // Close any open interval before entering the disabled/idle state.
+            if (hasOpenInterval && openState != IDLE) {
+                const double endUnix = ToUnixTime(now);
+                const double startUnix = ToUnixTime(intervalStart);
+                const double duration = endUnix - startUnix;
+                if (duration > 0.0) {
+                    if (!m_SQLite->UpdateEventNew(openAppId, openTitle, openCategory, endUnix,
+                                                  duration, openState)) {
+                        m_SQLite->InsertEventNew(openAppId, openTitle, openCategory, startUnix,
+                                                 endUnix, duration, openState);
+                    }
+                }
+            }
+
+            hasOpenInterval = false;
+            openState = IDLE;
+            openAppId.clear();
+            openTitle.clear();
+            openCategory.clear();
+
             {
                 std::lock_guard<std::mutex> lock(m_GlobalMutex);
-                m_LastRecord = lastRecord;
-                m_LastState = lastState;
-                m_LastAppId = lastAppId;
-                m_LastTitle = lastTitle;
-                m_LastCategory = lastCategory;
-                m_HasLastRecord = true;
+                m_LastState = IDLE;
+                m_LastAppId.clear();
+                m_LastTitle.clear();
+                m_LastCategory.clear();
+                m_HasLastRecord = false;
             }
+
             std::this_thread::sleep_for(std::chrono::seconds(m_Ping));
             continue;
         }
 
         // Get focused window and current state
         m_Fw = m_Window->GetFocusedWindow();
-        FocusState currentState = AmIFocused(m_Fw);
         if (m_SpecialProjectFocused) {
             m_Fw.app_id = m_SpecialAppId;
             m_Fw.title = m_SpecialProjectTitle;
@@ -136,42 +167,50 @@ Concentrate::Concentrate(const unsigned port, const unsigned ping, LogLevel log_
                           m_Fw.title);
         }
 
+        FocusState currentState = AmIFocused(m_Fw);
+
+        // Update tray icon state (focused/unfocused)
+        if (m_Tray) {
+            m_Tray->SetFocused(currentState == FOCUSED);
+        }
+
         if (m_CurrentTaskCategory.empty()) {
             m_CurrentTaskCategory = "Uncategorized";
             spdlog::debug("Current task category defaulted to '{}'", m_CurrentTaskCategory);
         }
 
-        // IDLE: close nothing, record nothing, reset clocks
+        // IDLE: close any open interval and reset tracking.
         if (currentState == IDLE) {
-            // If we were tracking something before going idle, close that interval
-            if (lastState != IDLE) {
-                double startUnix = ToUnixTime(lastRecord);
-                double endUnix = ToUnixTime(now);
-                double duration = endUnix - startUnix;
+            if (hasOpenInterval && openState != IDLE) {
+                const double endUnix = ToUnixTime(now);
+                const double startUnix = ToUnixTime(intervalStart);
+                const double duration = endUnix - startUnix;
 
                 if (duration > 0.0) {
-                    m_SQLite->InsertEventNew(lastAppId, lastTitle, lastCategory, startUnix,
-                                             endUnix, duration, lastState);
+                    if (!m_SQLite->UpdateEventNew(openAppId, openTitle, openCategory, endUnix,
+                                                  duration, openState)) {
+                        m_SQLite->InsertEventNew(openAppId, openTitle, openCategory, startUnix,
+                                                 endUnix, duration, openState);
+                    }
                     spdlog::info(
-                        "Focus event before idle: state={}, app_id='{}', title='{}', duration={}",
-                        static_cast<int>(lastState), lastAppId, lastTitle, duration);
+                        "Focus event closed (idle): state={}, app_id='{}', title='{}', duration={}",
+                        static_cast<int>(openState), openAppId, openTitle, duration);
                 }
             }
 
-            lastState = IDLE;
-            lastRecord = now;
-            stateSince = now;
-            lastAppId.clear();
-            lastTitle.clear();
-            lastCategory.clear();
+            hasOpenInterval = false;
+            openState = IDLE;
+            openAppId.clear();
+            openTitle.clear();
+            openCategory.clear();
+
             {
                 std::lock_guard<std::mutex> lock(m_GlobalMutex);
-                m_LastRecord = lastRecord;
-                m_LastState = lastState;
-                m_LastAppId = lastAppId;
-                m_LastTitle = lastTitle;
-                m_LastCategory = lastCategory;
-                m_HasLastRecord = true;
+                m_LastState = IDLE;
+                m_LastAppId.clear();
+                m_LastTitle.clear();
+                m_LastCategory.clear();
+                m_HasLastRecord = false;
             }
 
             std::this_thread::sleep_for(std::chrono::seconds(m_Ping));
@@ -200,67 +239,82 @@ Concentrate::Concentrate(const unsigned port, const unsigned ping, LogLevel log_
             lastHydrationNotification = now;
         }
 
-        bool stateChanged = (currentState != lastState);
-        bool appChanged = (m_Fw.app_id != lastAppId) || (m_Fw.title != lastTitle) ||
-                  (m_Fw.category != lastCategory);
+        const std::string currAppId = m_Fw.app_id;
+        const std::string currTitle = m_Fw.title;
+        const std::string currCategory = m_Fw.category;
 
-        // Handle state or app changes
-        if ((stateChanged || appChanged) && lastState != IDLE) {
-            // Compute duration from lastRecord to now
-            double startUnix = ToUnixTime(lastRecord);
-            double endUnix = ToUnixTime(now);
-            double duration = endUnix - startUnix;
-            if (duration > 0.0) {
-                m_SQLite->InsertEventNew(lastAppId, lastTitle, lastCategory, startUnix, endUnix,
-                                         duration, lastState);
-                spdlog::info("Focus event: state={}, app_id='{}', title='{}', duration={}",
-                             static_cast<int>(lastState), lastAppId, lastTitle, duration);
+        if (!hasOpenInterval) {
+            // Start a new active interval and INSERT immediately so subsequent UPDATEs have
+            // something to target.
+            hasOpenInterval = true;
+            openState = currentState;
+            openAppId = currAppId;
+            openTitle = currTitle;
+            openCategory = currCategory;
+            intervalStart = now;
+            lastDbFlush = now;
+
+            const double startUnix = ToUnixTime(intervalStart);
+            m_SQLite->InsertEventNew(openAppId, openTitle, openCategory, startUnix, startUnix,
+                                     0.0, openState);
+        } else {
+            const bool changed = (currentState != openState) || (currAppId != openAppId) ||
+                                 (currTitle != openTitle) || (currCategory != openCategory);
+
+            if (changed) {
+                // Close previous interval with a final UPDATE.
+                const double endUnix = ToUnixTime(now);
+                const double startUnix = ToUnixTime(intervalStart);
+                const double duration = endUnix - startUnix;
+                if (duration > 0.0) {
+                    if (!m_SQLite->UpdateEventNew(openAppId, openTitle, openCategory, endUnix,
+                                                  duration, openState)) {
+                        m_SQLite->InsertEventNew(openAppId, openTitle, openCategory, startUnix,
+                                                 endUnix, duration, openState);
+                    }
+                }
+
+                // Start next interval and INSERT.
+                openState = currentState;
+                openAppId = currAppId;
+                openTitle = currTitle;
+                openCategory = currCategory;
+                intervalStart = now;
+                lastDbFlush = now;
+
+                const double startUnix2 = ToUnixTime(intervalStart);
+                m_SQLite->InsertEventNew(openAppId, openTitle, openCategory, startUnix2, startUnix2,
+                                         0.0, openState);
+            } else if (now - lastDbFlush >= std::chrono::seconds(15)) {
+                // Periodic progress update: duration must be TOTAL (end - intervalStart), not just
+                // the last 15s slice.
+                const double endUnix = ToUnixTime(now);
+                const double startUnix = ToUnixTime(intervalStart);
+                const double duration = endUnix - startUnix;
+                if (duration > 0.0) {
+                    m_SQLite->UpdateEventNew(openAppId, openTitle, openCategory, endUnix, duration,
+                                             openState);
+                }
+                lastDbFlush = now;
             }
-
-            lastRecord = now;
-        }
-
-        // Periodic update (every 15 seconds) - UPDATE existing records instead of inserting new
-        // ones
-        else if (!stateChanged && !appChanged && now - lastRecord >= std::chrono::seconds(15)) {
-            // Update existing records with new end time and duration
-            double endUnix = ToUnixTime(now);
-            double duration = endUnix - ToUnixTime(lastRecord);
-
-            if (duration > 0.0) {
-                m_SQLite->UpdateEventNew(lastAppId, lastTitle, lastCategory, endUnix, duration,
-                                         lastState);
-                lastRecord = now;
-            }
-        }
-
-        // Handle transitions from IDLE to active state
-        if (lastState == IDLE && currentState != IDLE) {
-            // Start fresh interval
-            lastRecord = now;
-            stateSince = now;
-        }
-
-        // Update tracking variables
-        if (stateChanged) {
-            lastState = currentState;
-            stateSince = now;
-        }
-
-        if (appChanged) {
-            lastAppId = m_Fw.app_id;
-            lastTitle = m_Fw.title;
-            lastCategory = m_Fw.category;
         }
 
         {
             std::lock_guard<std::mutex> lock(m_GlobalMutex);
-            m_LastRecord = lastRecord;
-            m_LastState = lastState;
-            m_LastAppId = lastAppId;
-            m_LastTitle = lastTitle;
-            m_LastCategory = lastCategory;
-            m_HasLastRecord = true;
+            if (hasOpenInterval && openState != IDLE) {
+                m_LastRecord = intervalStart; // interval start, not last flush
+                m_LastState = openState;
+                m_LastAppId = openAppId;
+                m_LastTitle = openTitle;
+                m_LastCategory = openCategory;
+                m_HasLastRecord = true;
+            } else {
+                m_LastState = IDLE;
+                m_LastAppId.clear();
+                m_LastTitle.clear();
+                m_LastCategory.clear();
+                m_HasLastRecord = false;
+            }
         }
 
         std::this_thread::sleep_for(std::chrono::seconds(m_Ping));
@@ -288,18 +342,22 @@ Concentrate::~Concentrate() {
 
     if (hasLastRecordSnapshot && lastStateSnapshot != IDLE) {
         auto now = std::chrono::steady_clock::now();
-        double startUnix = ToUnixTime(lastRecordSnapshot);
-        double endUnix = ToUnixTime(now);
-        double duration = endUnix - startUnix;
+        const double startUnix = ToUnixTime(lastRecordSnapshot);
+        const double endUnix = ToUnixTime(now);
+        const double duration = endUnix - startUnix;
         const std::string category =
-            lastCategorySnapshot.empty() ? "uncategorized" : lastCategorySnapshot;
+            lastCategorySnapshot.empty() ? "Uncategorized" : lastCategorySnapshot;
 
         if (duration > 0.0) {
-            m_SQLite->InsertEventNew(lastAppIdSnapshot, lastTitleSnapshot, category, startUnix,
-                                     endUnix, duration, lastStateSnapshot);
+            // Prefer closing the already-inserted open interval.
+            if (!m_SQLite->UpdateEventNew(lastAppIdSnapshot, lastTitleSnapshot, category, endUnix,
+                                          duration, lastStateSnapshot)) {
+                // Fallback: insert a final record so the session isn't lost.
+                m_SQLite->InsertEventNew(lastAppIdSnapshot, lastTitleSnapshot, category, startUnix,
+                                         endUnix, duration, lastStateSnapshot);
+            }
             spdlog::info(
-                "Final focus event saved: state={}, app_id='{}', title='{}', category='{}', "
-                "duration={}",
+                "Final focus event saved: state={}, app_id='{}', title='{}', category='{}', duration={}",
                 static_cast<int>(lastStateSnapshot), lastAppIdSnapshot, lastTitleSnapshot,
                 category, duration);
         }

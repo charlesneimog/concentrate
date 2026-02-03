@@ -15,6 +15,7 @@
 #include "notification.hpp"
 #include "sqlite.hpp"
 #include "hydration.hpp"
+#include "tray.hpp"
 
 #include "common.hpp"
 
@@ -57,6 +58,7 @@ class Concentrate {
     std::unique_ptr<Notification> m_Notification;
     std::unique_ptr<SQLite> m_SQLite;
     std::unique_ptr<HydrationService> m_Hydration;
+    std::unique_ptr<TrayIcon> m_Tray;
 
     // Server
     std::thread m_Thread;
