@@ -64,8 +64,7 @@ static void dict_append_bool(DBusMessageIter *dictIter, const char *key, dbus_bo
 }
 
 // ─────────────────────────────────────
-static void dict_append_object_path(DBusMessageIter *dictIter, const char *key,
-                                   const char *value) {
+static void dict_append_object_path(DBusMessageIter *dictIter, const char *key, const char *value) {
     DBusMessageIter entry;
     dbus_message_iter_open_container(dictIter, DBUS_TYPE_DICT_ENTRY, nullptr, &entry);
     dbus_message_iter_append_basic(&entry, DBUS_TYPE_STRING, &key);
@@ -234,6 +233,10 @@ void TrayIcon::SetTrayIcon(FocusState state) {
         m_IconName = "concentrate";
         break;
     }
+    case DISABLE: {
+        m_IconName = "concentrate-off";
+        break;
+    }
     case FOCUSED: {
         m_IconName = "concentrate-focused";
         break;
@@ -326,9 +329,9 @@ DBusHandlerResult TrayIcon::HandleMessage(DBusConnection *conn, DBusMessage *msg
         if (dbus_message_is_method_call(msg, kIfaceSNI, "Activate")) {
             m_OpenUiRequested.store(true);
         }
-            // ContextMenu / SecondaryActivate should be handled by the host by showing our
-            // DBusMenu from the Menu property. We intentionally do not trigger actions here.
-            ReplyEmptyMethodReturn(conn, msg);
+        // ContextMenu / SecondaryActivate should be handled by the host by showing our
+        // DBusMenu from the Menu property. We intentionally do not trigger actions here.
+        ReplyEmptyMethodReturn(conn, msg);
         return DBUS_HANDLER_RESULT_HANDLED;
     }
 
@@ -446,7 +449,7 @@ void TrayIcon::ReplyIntrospect(DBusConnection *conn, DBusMessage *msg) {
                              "  <property name='Status' type='s' access='read'/>"
                              "  <property name='IconName' type='s' access='read'/>"
                              "  <property name='Menu' type='o' access='read'/>"
-                            "  <property name='ItemIsMenu' type='b' access='read'/>"
+                             "  <property name='ItemIsMenu' type='b' access='read'/>"
                              "  <method name='Activate'>"
                              "   <arg name='x' type='i' direction='in'/>"
                              "   <arg name='y' type='i' direction='in'/>"
@@ -475,59 +478,58 @@ void TrayIcon::ReplyIntrospect(DBusConnection *conn, DBusMessage *msg) {
 
 // ─────────────────────────────────────
 void TrayIcon::ReplyMenuIntrospect(DBusConnection *conn, DBusMessage *msg) {
-    static const char *xml =
-        "<node>"
-        " <interface name='org.freedesktop.DBus.Introspectable'>"
-        "  <method name='Introspect'>"
-        "   <arg name='xml_data' type='s' direction='out'/>"
-        "  </method>"
-        " </interface>"
-        " <interface name='com.canonical.dbusmenu'>"
-        "  <method name='GetLayout'>"
-        "   <arg name='parentId' type='i' direction='in'/>"
-        "   <arg name='recursionDepth' type='i' direction='in'/>"
-        "   <arg name='propertyNames' type='as' direction='in'/>"
-        "   <arg name='revision' type='u' direction='out'/>"
-        "   <arg name='layout' type='(ia{sv}av)' direction='out'/>"
-        "  </method>"
-        "  <method name='GetGroupProperties'>"
-        "   <arg name='ids' type='ai' direction='in'/>"
-        "   <arg name='propertyNames' type='as' direction='in'/>"
-        "   <arg name='properties' type='a(ia{sv})' direction='out'/>"
-        "  </method>"
-        "  <method name='GetProperty'>"
-        "   <arg name='id' type='i' direction='in'/>"
-        "   <arg name='name' type='s' direction='in'/>"
-        "   <arg name='value' type='v' direction='out'/>"
-        "  </method>"
-        "  <method name='Event'>"
-        "   <arg name='id' type='i' direction='in'/>"
-        "   <arg name='eventId' type='s' direction='in'/>"
-        "   <arg name='data' type='v' direction='in'/>"
-        "   <arg name='timestamp' type='u' direction='in'/>"
-        "  </method>"
-        "  <method name='EventGroup'>"
-        "   <arg name='events' type='a(isvu)' direction='in'/>"
-        "  </method>"
-        "  <method name='AboutToShow'>"
-        "   <arg name='id' type='i' direction='in'/>"
-        "   <arg name='needUpdate' type='b' direction='out'/>"
-        "  </method>"
-        "  <method name='AboutToShowGroup'>"
-        "   <arg name='ids' type='ai' direction='in'/>"
-        "   <arg name='updatesNeeded' type='ai' direction='out'/>"
-        "   <arg name='idErrors' type='ai' direction='out'/>"
-        "  </method>"
-        "  <signal name='LayoutUpdated'>"
-        "   <arg name='revision' type='u'/>"
-        "   <arg name='parent' type='i'/>"
-        "  </signal>"
-        "  <signal name='ItemsPropertiesUpdated'>"
-        "   <arg name='updatedProps' type='a(ia{sv})'/>"
-        "   <arg name='removedProps' type='a(ias)'/>"
-        "  </signal>"
-        " </interface>"
-        "</node>";
+    static const char *xml = "<node>"
+                             " <interface name='org.freedesktop.DBus.Introspectable'>"
+                             "  <method name='Introspect'>"
+                             "   <arg name='xml_data' type='s' direction='out'/>"
+                             "  </method>"
+                             " </interface>"
+                             " <interface name='com.canonical.dbusmenu'>"
+                             "  <method name='GetLayout'>"
+                             "   <arg name='parentId' type='i' direction='in'/>"
+                             "   <arg name='recursionDepth' type='i' direction='in'/>"
+                             "   <arg name='propertyNames' type='as' direction='in'/>"
+                             "   <arg name='revision' type='u' direction='out'/>"
+                             "   <arg name='layout' type='(ia{sv}av)' direction='out'/>"
+                             "  </method>"
+                             "  <method name='GetGroupProperties'>"
+                             "   <arg name='ids' type='ai' direction='in'/>"
+                             "   <arg name='propertyNames' type='as' direction='in'/>"
+                             "   <arg name='properties' type='a(ia{sv})' direction='out'/>"
+                             "  </method>"
+                             "  <method name='GetProperty'>"
+                             "   <arg name='id' type='i' direction='in'/>"
+                             "   <arg name='name' type='s' direction='in'/>"
+                             "   <arg name='value' type='v' direction='out'/>"
+                             "  </method>"
+                             "  <method name='Event'>"
+                             "   <arg name='id' type='i' direction='in'/>"
+                             "   <arg name='eventId' type='s' direction='in'/>"
+                             "   <arg name='data' type='v' direction='in'/>"
+                             "   <arg name='timestamp' type='u' direction='in'/>"
+                             "  </method>"
+                             "  <method name='EventGroup'>"
+                             "   <arg name='events' type='a(isvu)' direction='in'/>"
+                             "  </method>"
+                             "  <method name='AboutToShow'>"
+                             "   <arg name='id' type='i' direction='in'/>"
+                             "   <arg name='needUpdate' type='b' direction='out'/>"
+                             "  </method>"
+                             "  <method name='AboutToShowGroup'>"
+                             "   <arg name='ids' type='ai' direction='in'/>"
+                             "   <arg name='updatesNeeded' type='ai' direction='out'/>"
+                             "   <arg name='idErrors' type='ai' direction='out'/>"
+                             "  </method>"
+                             "  <signal name='LayoutUpdated'>"
+                             "   <arg name='revision' type='u'/>"
+                             "   <arg name='parent' type='i'/>"
+                             "  </signal>"
+                             "  <signal name='ItemsPropertiesUpdated'>"
+                             "   <arg name='updatedProps' type='a(ia{sv})'/>"
+                             "   <arg name='removedProps' type='a(ias)'/>"
+                             "  </signal>"
+                             " </interface>"
+                             "</node>";
 
     DBusMessage *reply = dbus_message_new_method_return(msg);
     if (!reply) {
@@ -652,8 +654,8 @@ void TrayIcon::ReplyMenuGetLayout(DBusConnection *conn, DBusMessage *msg) {
 
     DBusError err;
     dbus_error_init(&err);
-    dbus_message_get_args(msg, &err, DBUS_TYPE_INT32, &parentId, DBUS_TYPE_INT32,
-                          &recursionDepth, DBUS_TYPE_INVALID);
+    dbus_message_get_args(msg, &err, DBUS_TYPE_INT32, &parentId, DBUS_TYPE_INT32, &recursionDepth,
+                          DBUS_TYPE_INVALID);
     if (dbus_error_is_set(&err)) {
         dbus_error_free(&err);
     }
@@ -692,7 +694,8 @@ void TrayIcon::ReplyMenuGetGroupProperties(DBusConnection *conn, DBusMessage *ms
     dbus_message_iter_open_container(&out, DBUS_TYPE_ARRAY, "(ia{sv})", &array);
 
     DBusMessageIter args;
-    if (dbus_message_iter_init(msg, &args) && dbus_message_iter_get_arg_type(&args) == DBUS_TYPE_ARRAY) {
+    if (dbus_message_iter_init(msg, &args) &&
+        dbus_message_iter_get_arg_type(&args) == DBUS_TYPE_ARRAY) {
         DBusMessageIter ids;
         dbus_message_iter_recurse(&args, &ids);
         while (dbus_message_iter_get_arg_type(&ids) == DBUS_TYPE_INT32) {

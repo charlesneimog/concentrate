@@ -87,21 +87,28 @@ target_link_libraries(
             spdlog
             # Others
             ${PC_LIBSECRET_LIBRARIES}
-            ${PC_DBUS_LIBRARIES}
-            )
+            ${PC_DBUS_LIBRARIES})
 
 target_compile_options(Concentrate PRIVATE $<$<CONFIG:Release>:-O3 -march=native -DNDEBUG>)
 install(TARGETS Concentrate RUNTIME DESTINATION bin)
 
-install(FILES 
-    ${CMAKE_SOURCE_DIR}/index.html 
-    ${CMAKE_SOURCE_DIR}/app.js 
-    ${CMAKE_SOURCE_DIR}/resources/favicon.svg 
-    ${CMAKE_BINARY_DIR}/style.css 
-    DESTINATION share/Concentrate)
+install(FILES ${CMAKE_SOURCE_DIR}/index.html ${CMAKE_SOURCE_DIR}/app.js ${CMAKE_SOURCE_DIR}/resources/favicon.svg ${CMAKE_BINARY_DIR}/style.css DESTINATION share/Concentrate)
 
 # Linux desktop integration
 install(FILES ${CMAKE_SOURCE_DIR}/resources/Concentrate.desktop DESTINATION share/applications)
-install(FILES ${CMAKE_SOURCE_DIR}/resources/favicon.svg DESTINATION share/icons/hicolor/scalable/apps RENAME concentrate.svg)
-install(FILES ${CMAKE_SOURCE_DIR}/resources/focused.svg DESTINATION share/icons/hicolor/scalable/apps RENAME concentrate-focused.svg)
-install(FILES ${CMAKE_SOURCE_DIR}/resources/unfocused.svg DESTINATION share/icons/hicolor/scalable/apps RENAME concentrate-unfocused.svg)
+install(
+    FILES ${CMAKE_SOURCE_DIR}/resources/favicon.svg
+    DESTINATION share/icons/hicolor/scalable/apps
+    RENAME concentrate.svg)
+install(
+    FILES ${CMAKE_SOURCE_DIR}/resources/focused.svg
+    DESTINATION share/icons/hicolor/scalable/apps
+    RENAME concentrate-focused.svg)
+install(
+    FILES ${CMAKE_SOURCE_DIR}/resources/unfocused.svg
+    DESTINATION share/icons/hicolor/scalable/apps
+    RENAME concentrate-unfocused.svg)
+install(
+    FILES ${CMAKE_SOURCE_DIR}/resources/disable.svg
+    DESTINATION share/icons/hicolor/scalable/apps
+    RENAME concentrate-off.svg)

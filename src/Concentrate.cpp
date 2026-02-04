@@ -118,7 +118,7 @@ Concentrate::Concentrate(const unsigned port, const unsigned ping, LogLevel log_
         auto now = std::chrono::steady_clock::now();
 
         // Notify if monitoring is disabled every 5 minutes
-        if (!m_MonitoringEnabled && now - lastMonitoringNotification >= std::chrono::minutes(5)) {
+        if (!m_MonitoringEnabled && now - lastMonitoringNotification >= std::chrono::minutes(1)) {
             m_Notification->SendNotification("dialog-warning", "Concentrate",
                                              "Application monitoring is currently disabled.");
             lastMonitoringNotification = now;
@@ -144,17 +144,17 @@ Concentrate::Concentrate(const unsigned port, const unsigned ping, LogLevel log_
                 }
             }
 
-            m_Tray->SetTrayIcon(IDLE);
+            m_Tray->SetTrayIcon(DISABLE);
 
             hasOpenInterval = false;
-            openState = IDLE;
+            openState = DISABLE;
             openAppId.clear();
             openTitle.clear();
             openCategory.clear();
 
             {
                 std::lock_guard<std::mutex> lock(m_GlobalMutex);
-                m_LastState = IDLE;
+                m_LastState = DISABLE;
                 m_LastAppId.clear();
                 m_LastTitle.clear();
                 m_LastCategory.clear();
