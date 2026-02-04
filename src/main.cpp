@@ -1,7 +1,12 @@
 #include "Concentrate.hpp"
 
+#include <cerrno>
+#include <cstring>
+#include <fcntl.h>
 #include <iostream>
+#include <sys/file.h>
 #include <string>
+#include <unistd.h>
 
 // ─────────────────────────────────────
 int main(int argc, char *argv[]) {
@@ -103,6 +108,25 @@ int main(int argc, char *argv[]) {
 
         std::cerr << "Unknown argument: " << arg << std::endl;
         print_usage(argv[0]);
+        return 1;
+    }
+
+    // Single-instance guard (Linux): lock a per-user file in XDG_RUNTIME_DIR (or /tmp).
+    const char *runtime_dir = std::getenv("XDG_RUNTIME_DIR");
+    std::string lock_dir = runtime_dir && *runtime_dir ? runtime_dir : "/tmp";
+    std::string lock_path = lock_dir + "/concentrate_" + std::to_string(static_cast<unsigned long>(getuid())) + ".lock";
+    int lock_fd = ::open(lock_path.c_str(), O_RDWR | O_CREAT, 0600);
+    if (lock_fd < 0) {
+        std::cerr << "Failed to open lock file '" << lock_path << "': " << std::strerror(errno) << std::endl;
+        return 1;
+    }
+    (void)::fcntl(lock_fd, F_SETFD, FD_CLOEXEC);
+    if (::flock(lock_fd, LOCK_EX | LOCK_NB) != 0) {
+        if (errno == EWOULDBLOCK) {
+            std::cerr << "Concentrate is already running." << std::endl;
+            return 0;
+        }
+        std::cerr << "Failed to lock '" << lock_path << "': " << std::strerror(errno) << std::endl;
         return 1;
     }
 
