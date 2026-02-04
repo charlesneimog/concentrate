@@ -8,13 +8,20 @@ HydrationService::HydrationService() {
 // ─────────────────────────────────────
 HydrationService::Location HydrationService::GetLocation() {
     httplib::Client client("http://ip-api.com");
+    HydrationService::Location loc;
+
     client.set_connection_timeout(3, 0);
     client.set_read_timeout(10, 0);
 
     auto res = client.Get("/json");
     if (!res) {
         spdlog::error("Failed to get location info");
-        throw std::runtime_error("Location request failed");
+        loc.city = "";
+        loc.region = "";
+        loc.country = "";
+        loc.latitude = 0;
+        loc.longitude = 0;
+        return loc;
     }
 
     if (res->status != 200) {
@@ -23,7 +30,6 @@ HydrationService::Location HydrationService::GetLocation() {
     }
 
     auto j = nlohmann::json::parse(res->body);
-    HydrationService::Location loc;
     loc.city = j.value("city", "");
     loc.region = j.value("regionName", "");
     loc.country = j.value("country", "");
@@ -38,6 +44,8 @@ HydrationService::Location HydrationService::GetLocation() {
 // ─────────────────────────────────────
 void HydrationService::GetHydrationRecommendation(double weightKg) {
     httplib::Client client("https://api.open-meteo.com");
+    HydrationInfo info;
+
     client.set_connection_timeout(3, 0);
     client.set_read_timeout(10, 0);
 
@@ -47,17 +55,24 @@ void HydrationService::GetHydrationRecommendation(double weightKg) {
 
     auto res = client.Get(url.c_str());
     if (!res) {
-        throw std::runtime_error("Weather request failed");
+        spdlog::error("Failed to get temperature info");
+        info.temperatureC = 25;
+        info.humidity = 50;
+        m_Liters = info.recommendedLiters;
+        return;
     }
     if (res->status != 200) {
-        throw std::runtime_error("Weather API error");
+        spdlog::error("Weather API error");
+        info.temperatureC = 25;
+        info.humidity = 50;
+        m_Liters = info.recommendedLiters;
+        return;
     }
 
     auto j = nlohmann::json::parse(res->body);
     double temp = j["current_weather"].value("temperature", 20.0);
     double humidity = j["current_weather"].value("humidity", 50.0);
 
-    HydrationInfo info;
     info.temperatureC = temp;
     info.humidity = humidity;
 
@@ -88,4 +103,3 @@ void HydrationService::GetHydrationRecommendation(double weightKg) {
 
     m_Liters = info.recommendedLiters;
 }
-

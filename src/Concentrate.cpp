@@ -1534,16 +1534,27 @@ std::filesystem::path Concentrate::GetBinaryPath() {
 
 // ─────────────────────────────────────
 std::filesystem::path Concentrate::GetDBPath() {
-    std::string home_dir;
-    const char *home_env = std::getenv("HOME");
-    if (home_env && *home_env) {
-        home_dir = home_env;
+    const char* xdgDataHome = std::getenv("XDG_DATA_HOME");
+    std::filesystem::path baseDir;
+    if (xdgDataHome && *xdgDataHome) {
+        baseDir = xdgDataHome;
     } else {
-        std::cerr << "Error: HOME environment variable not set\n";
+        const char* home = std::getenv("HOME");
+        if (!home || !*home) {
+            std::cerr << "Error: HOME environment variable not set\n";
+            exit(1);
+        }
+        baseDir = std::filesystem::path(home) / ".local" / "share";
+    }
+
+    std::filesystem::path dbPath = baseDir / "Concentrate" / "data.sqlite";
+    std::error_code ec;
+    std::filesystem::create_directories(dbPath.parent_path(), ec);
+    if (ec) {
+        std::cerr << "Error creating directories: " << ec.message() << "\n";
         exit(1);
     }
-    std::filesystem::path path(home_dir + "/.local/Concentrate/data.sqlite");
-    std::error_code ec;
-    std::filesystem::create_directories(path.parent_path(), ec);
-    return path;
+
+    return dbPath;
 }
+
