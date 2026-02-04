@@ -89,11 +89,16 @@ target_link_libraries(
             ${PC_LIBSECRET_LIBRARIES}
             ${PC_DBUS_LIBRARIES}
             )
-target_compile_options(Concentrate PRIVATE $<$<CONFIG:Release>:-O3 -march=native -DNDEBUG>)
 
+target_compile_options(Concentrate PRIVATE $<$<CONFIG:Release>:-O3 -march=native -DNDEBUG>)
 install(TARGETS Concentrate RUNTIME DESTINATION bin)
-install(CODE "execute_process(COMMAND ${TAILWINDCSS_EXECUTABLE} -i ${CMAKE_SOURCE_DIR}/input.css -o ${CMAKE_BINARY_DIR}/style.css WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})")
-install(FILES ${CMAKE_SOURCE_DIR}/index.html ${CMAKE_SOURCE_DIR}/app.js ${CMAKE_SOURCE_DIR}/resources/favicon.svg ${CMAKE_BINARY_DIR}/style.css DESTINATION share/Concentrate)
+
+install(FILES 
+    ${CMAKE_SOURCE_DIR}/index.html 
+    ${CMAKE_SOURCE_DIR}/app.js 
+    ${CMAKE_SOURCE_DIR}/resources/favicon.svg 
+    ${CMAKE_BINARY_DIR}/style.css 
+    DESTINATION share/Concentrate)
 
 # Linux desktop integration
 install(FILES ${CMAKE_SOURCE_DIR}/resources/Concentrate.desktop DESTINATION share/applications)
