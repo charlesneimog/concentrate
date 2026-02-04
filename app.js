@@ -3714,7 +3714,7 @@ class FocusApp {
 
     initHistoryFilters() {
         const setActive = (activeId) => {
-            ["week", "month", "year"].forEach((k) => {
+            ["day", "week", "month", "year"].forEach((k) => {
                 const el = document.getElementById(`history-filter-${k}`);
                 if (!el) return;
 
@@ -3739,7 +3739,9 @@ class FocusApp {
             el.addEventListener("click", async () => {
                 this.historyDays = days;
                 setActive(id);
-                if (days == 7) {
+                if (days == 1) {
+                    t.textContent = "Day Focus";
+                } else if (days == 7) {
                     t.textContent = "Week Focus";
                 } else if (days == 30) {
                     t.textContent = "Month Focus";
@@ -3749,6 +3751,8 @@ class FocusApp {
                 await this.renderHistory(days);
             });
         };
+
+        bind("history-filter-day", 1);
 
         bind("history-filter-week", 7);
         bind("history-filter-month", 30);
