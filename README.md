@@ -1,4 +1,7 @@
-# Concentrate
+<p align="center">
+  <img src="https://github.com/charlesneimog/Concentrate/blob/master/resources/favicon.svg" alt="Logo" width=130 height=130>
+  <h1 align="center">Concentrate</h1>
+</p>
 
 Concentrate is a Linux background service that tracks focused/unfocused time based on the active window, stores activity in SQLite, and serves a local web UI. It integrates with Anytype to load task metadata and uses DBus notifications for reminders and warnings.
 
