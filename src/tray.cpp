@@ -7,9 +7,16 @@
 #include <unistd.h>
 
 static constexpr const char *kObjPath = "/StatusNotifierItem";
+static constexpr const char *kMenuPath = "/StatusNotifierItem/Menu";
 static constexpr const char *kIfaceSNI = "org.kde.StatusNotifierItem";
 static constexpr const char *kIfaceProps = "org.freedesktop.DBus.Properties";
 static constexpr const char *kIfaceIntro = "org.freedesktop.DBus.Introspectable";
+static constexpr const char *kIfaceMenu = "com.canonical.dbusmenu";
+
+// ─────────────────────────────────────
+static constexpr dbus_int32_t kMenuRootId = 0;
+static constexpr dbus_int32_t kMenuOpenUiId = 1;
+static constexpr dbus_int32_t kMenuExitId = 2;
 
 // ─────────────────────────────────────
 static void append_variant_string(DBusMessageIter *iter, const char *value) {
@@ -17,6 +24,24 @@ static void append_variant_string(DBusMessageIter *iter, const char *value) {
     const char *sig = "s";
     dbus_message_iter_open_container(iter, DBUS_TYPE_VARIANT, sig, &variant);
     dbus_message_iter_append_basic(&variant, DBUS_TYPE_STRING, &value);
+    dbus_message_iter_close_container(iter, &variant);
+}
+
+// ─────────────────────────────────────
+static void append_variant_bool(DBusMessageIter *iter, dbus_bool_t value) {
+    DBusMessageIter variant;
+    const char *sig = "b";
+    dbus_message_iter_open_container(iter, DBUS_TYPE_VARIANT, sig, &variant);
+    dbus_message_iter_append_basic(&variant, DBUS_TYPE_BOOLEAN, &value);
+    dbus_message_iter_close_container(iter, &variant);
+}
+
+// ─────────────────────────────────────
+static void append_variant_object_path(DBusMessageIter *iter, const char *value) {
+    DBusMessageIter variant;
+    const char *sig = "o";
+    dbus_message_iter_open_container(iter, DBUS_TYPE_VARIANT, sig, &variant);
+    dbus_message_iter_append_basic(&variant, DBUS_TYPE_OBJECT_PATH, &value);
     dbus_message_iter_close_container(iter, &variant);
 }
 
@@ -30,8 +55,81 @@ static void dict_append_string(DBusMessageIter *dictIter, const char *key, const
 }
 
 // ─────────────────────────────────────
+static void dict_append_bool(DBusMessageIter *dictIter, const char *key, dbus_bool_t value) {
+    DBusMessageIter entry;
+    dbus_message_iter_open_container(dictIter, DBUS_TYPE_DICT_ENTRY, nullptr, &entry);
+    dbus_message_iter_append_basic(&entry, DBUS_TYPE_STRING, &key);
+    append_variant_bool(&entry, value);
+    dbus_message_iter_close_container(dictIter, &entry);
+}
+
+// ─────────────────────────────────────
+static void dict_append_object_path(DBusMessageIter *dictIter, const char *key,
+                                   const char *value) {
+    DBusMessageIter entry;
+    dbus_message_iter_open_container(dictIter, DBUS_TYPE_DICT_ENTRY, nullptr, &entry);
+    dbus_message_iter_append_basic(&entry, DBUS_TYPE_STRING, &key);
+    append_variant_object_path(&entry, value);
+    dbus_message_iter_close_container(dictIter, &entry);
+}
+
+// ─────────────────────────────────────
+static void menu_append_properties(DBusMessageIter *props, dbus_int32_t id) {
+    dict_append_bool(props, "visible", true);
+    dict_append_bool(props, "enabled", true);
+    if (id == kMenuRootId) {
+        dict_append_string(props, "children-display", "submenu");
+        return;
+    }
+    if (id == kMenuOpenUiId) {
+        dict_append_string(props, "label", "Open Web UI");
+        dict_append_string(props, "type", "standard");
+        return;
+    }
+    if (id == kMenuExitId) {
+        dict_append_string(props, "label", "Exit");
+        dict_append_string(props, "type", "standard");
+        return;
+    }
+}
+
+// ─────────────────────────────────────
+static void menu_append_layout_node(DBusMessageIter *out, dbus_int32_t id,
+                                    bool includeChildrenForNode) {
+    DBusMessageIter nodeStruct;
+    dbus_message_iter_open_container(out, DBUS_TYPE_STRUCT, nullptr, &nodeStruct);
+
+    dbus_message_iter_append_basic(&nodeStruct, DBUS_TYPE_INT32, &id);
+
+    DBusMessageIter props;
+    dbus_message_iter_open_container(&nodeStruct, DBUS_TYPE_ARRAY, "{sv}", &props);
+    menu_append_properties(&props, id);
+    dbus_message_iter_close_container(&nodeStruct, &props);
+
+    DBusMessageIter children;
+    dbus_message_iter_open_container(&nodeStruct, DBUS_TYPE_ARRAY, "v", &children);
+
+    if (includeChildrenForNode && id == kMenuRootId) {
+        auto append_child_variant = [&](dbus_int32_t childId) {
+            DBusMessageIter childVar;
+            const char *variantSig = "(ia{sv}av)";
+            dbus_message_iter_open_container(&children, DBUS_TYPE_VARIANT, variantSig, &childVar);
+            menu_append_layout_node(&childVar, childId, false);
+            dbus_message_iter_close_container(&children, &childVar);
+        };
+
+        append_child_variant(kMenuOpenUiId);
+        append_child_variant(kMenuExitId);
+    }
+
+    dbus_message_iter_close_container(&nodeStruct, &children);
+    dbus_message_iter_close_container(out, &nodeStruct);
+}
+
+// ─────────────────────────────────────
 TrayIcon::~TrayIcon() {
     if (m_Conn) {
+        dbus_connection_unregister_object_path(m_Conn, kMenuPath);
         dbus_connection_unregister_object_path(m_Conn, kObjPath);
         dbus_connection_unref(m_Conn);
         m_Conn = nullptr;
@@ -88,6 +186,14 @@ bool TrayIcon::Start(std::string title) {
         return false;
     }
 
+    if (!dbus_connection_register_object_path(m_Conn, kMenuPath, &vtable, this)) {
+        spdlog::warn("Tray: failed to register menu object path {}", kMenuPath);
+        dbus_connection_unregister_object_path(m_Conn, kObjPath);
+        dbus_connection_unref(m_Conn);
+        m_Conn = nullptr;
+        return false;
+    }
+
     RegisterWithWatcher();
     m_Started = true;
     spdlog::info("Tray: StatusNotifierItem exported as {}{}", m_BusName, kObjPath);
@@ -104,7 +210,17 @@ void TrayIcon::Poll() {
 }
 
 // ─────────────────────────────────────
-void TrayIcon::SetFocused(FocusState state) {
+bool TrayIcon::TakeOpenUiRequested() {
+    return m_OpenUiRequested.exchange(false);
+}
+
+// ─────────────────────────────────────
+bool TrayIcon::TakeExitRequested() {
+    return m_ExitRequested.exchange(false);
+}
+
+// ─────────────────────────────────────
+void TrayIcon::SetTrayIcon(FocusState state) {
     if (!m_Started) {
         return;
     }
@@ -115,17 +231,14 @@ void TrayIcon::SetFocused(FocusState state) {
     m_FocusState = state;
     switch (state) {
     case IDLE: {
-        printf("\n\n IDLE  \n\n");
         m_IconName = "concentrate";
         break;
     }
     case FOCUSED: {
-        printf("\n\n  FOCUSED \n\n");
         m_IconName = "concentrate-focused";
         break;
     }
     case UNFOCUSED: {
-        printf("\n\n  UNFOCUSED \n\n");
         m_IconName = "concentrate-unfocused";
         break;
     }
@@ -147,10 +260,51 @@ DBusHandlerResult TrayIcon::MessageHandler(DBusConnection *conn, DBusMessage *ms
 
 // ─────────────────────────────────────
 DBusHandlerResult TrayIcon::HandleMessage(DBusConnection *conn, DBusMessage *msg) {
+    const char *path = dbus_message_get_path(msg);
+    const bool isMenu = (path && std::strcmp(path, kMenuPath) == 0);
+
     // Introspection
     if (dbus_message_is_method_call(msg, kIfaceIntro, "Introspect")) {
-        ReplyIntrospect(conn, msg);
+        if (isMenu) {
+            ReplyMenuIntrospect(conn, msg);
+        } else {
+            ReplyIntrospect(conn, msg);
+        }
         return DBUS_HANDLER_RESULT_HANDLED;
+    }
+
+    // com.canonical.dbusmenu
+    if (isMenu) {
+        if (dbus_message_is_method_call(msg, kIfaceMenu, "GetLayout")) {
+            ReplyMenuGetLayout(conn, msg);
+            return DBUS_HANDLER_RESULT_HANDLED;
+        }
+        if (dbus_message_is_method_call(msg, kIfaceMenu, "GetGroupProperties")) {
+            ReplyMenuGetGroupProperties(conn, msg);
+            return DBUS_HANDLER_RESULT_HANDLED;
+        }
+        if (dbus_message_is_method_call(msg, kIfaceMenu, "GetProperty")) {
+            ReplyMenuGetProperty(conn, msg);
+            return DBUS_HANDLER_RESULT_HANDLED;
+        }
+        if (dbus_message_is_method_call(msg, kIfaceMenu, "Event")) {
+            ReplyMenuEvent(conn, msg);
+            return DBUS_HANDLER_RESULT_HANDLED;
+        }
+        if (dbus_message_is_method_call(msg, kIfaceMenu, "EventGroup")) {
+            ReplyMenuEventGroup(conn, msg);
+            return DBUS_HANDLER_RESULT_HANDLED;
+        }
+        if (dbus_message_is_method_call(msg, kIfaceMenu, "AboutToShow")) {
+            ReplyMenuAboutToShow(conn, msg);
+            return DBUS_HANDLER_RESULT_HANDLED;
+        }
+        if (dbus_message_is_method_call(msg, kIfaceMenu, "AboutToShowGroup")) {
+            ReplyMenuAboutToShowGroup(conn, msg);
+            return DBUS_HANDLER_RESULT_HANDLED;
+        }
+
+        return DBUS_HANDLER_RESULT_NOT_YET_HANDLED;
     }
 
     // Properties
@@ -169,7 +323,12 @@ DBusHandlerResult TrayIcon::HandleMessage(DBusConnection *conn, DBusMessage *msg
         dbus_message_is_method_call(msg, kIfaceSNI, "SecondaryActivate") ||
         dbus_message_is_method_call(msg, kIfaceSNI, "ContextMenu") ||
         dbus_message_is_method_call(msg, kIfaceSNI, "Scroll")) {
-        ReplyEmptyMethodReturn(conn, msg);
+        if (dbus_message_is_method_call(msg, kIfaceSNI, "Activate")) {
+            m_OpenUiRequested.store(true);
+        }
+            // ContextMenu / SecondaryActivate should be handled by the host by showing our
+            // DBusMenu from the Menu property. We intentionally do not trigger actions here.
+            ReplyEmptyMethodReturn(conn, msg);
         return DBUS_HANDLER_RESULT_HANDLED;
     }
 
@@ -286,6 +445,8 @@ void TrayIcon::ReplyIntrospect(DBusConnection *conn, DBusMessage *msg) {
                              "  <property name='Title' type='s' access='read'/>"
                              "  <property name='Status' type='s' access='read'/>"
                              "  <property name='IconName' type='s' access='read'/>"
+                             "  <property name='Menu' type='o' access='read'/>"
+                            "  <property name='ItemIsMenu' type='b' access='read'/>"
                              "  <method name='Activate'>"
                              "   <arg name='x' type='i' direction='in'/>"
                              "   <arg name='y' type='i' direction='in'/>"
@@ -301,6 +462,72 @@ void TrayIcon::ReplyIntrospect(DBusConnection *conn, DBusMessage *msg) {
                              "  <signal name='NewIcon'/>"
                              " </interface>"
                              "</node>";
+
+    DBusMessage *reply = dbus_message_new_method_return(msg);
+    if (!reply) {
+        return;
+    }
+
+    dbus_message_append_args(reply, DBUS_TYPE_STRING, &xml, DBUS_TYPE_INVALID);
+    dbus_connection_send(conn, reply, nullptr);
+    dbus_message_unref(reply);
+}
+
+// ─────────────────────────────────────
+void TrayIcon::ReplyMenuIntrospect(DBusConnection *conn, DBusMessage *msg) {
+    static const char *xml =
+        "<node>"
+        " <interface name='org.freedesktop.DBus.Introspectable'>"
+        "  <method name='Introspect'>"
+        "   <arg name='xml_data' type='s' direction='out'/>"
+        "  </method>"
+        " </interface>"
+        " <interface name='com.canonical.dbusmenu'>"
+        "  <method name='GetLayout'>"
+        "   <arg name='parentId' type='i' direction='in'/>"
+        "   <arg name='recursionDepth' type='i' direction='in'/>"
+        "   <arg name='propertyNames' type='as' direction='in'/>"
+        "   <arg name='revision' type='u' direction='out'/>"
+        "   <arg name='layout' type='(ia{sv}av)' direction='out'/>"
+        "  </method>"
+        "  <method name='GetGroupProperties'>"
+        "   <arg name='ids' type='ai' direction='in'/>"
+        "   <arg name='propertyNames' type='as' direction='in'/>"
+        "   <arg name='properties' type='a(ia{sv})' direction='out'/>"
+        "  </method>"
+        "  <method name='GetProperty'>"
+        "   <arg name='id' type='i' direction='in'/>"
+        "   <arg name='name' type='s' direction='in'/>"
+        "   <arg name='value' type='v' direction='out'/>"
+        "  </method>"
+        "  <method name='Event'>"
+        "   <arg name='id' type='i' direction='in'/>"
+        "   <arg name='eventId' type='s' direction='in'/>"
+        "   <arg name='data' type='v' direction='in'/>"
+        "   <arg name='timestamp' type='u' direction='in'/>"
+        "  </method>"
+        "  <method name='EventGroup'>"
+        "   <arg name='events' type='a(isvu)' direction='in'/>"
+        "  </method>"
+        "  <method name='AboutToShow'>"
+        "   <arg name='id' type='i' direction='in'/>"
+        "   <arg name='needUpdate' type='b' direction='out'/>"
+        "  </method>"
+        "  <method name='AboutToShowGroup'>"
+        "   <arg name='ids' type='ai' direction='in'/>"
+        "   <arg name='updatesNeeded' type='ai' direction='out'/>"
+        "   <arg name='idErrors' type='ai' direction='out'/>"
+        "  </method>"
+        "  <signal name='LayoutUpdated'>"
+        "   <arg name='revision' type='u'/>"
+        "   <arg name='parent' type='i'/>"
+        "  </signal>"
+        "  <signal name='ItemsPropertiesUpdated'>"
+        "   <arg name='updatedProps' type='a(ia{sv})'/>"
+        "   <arg name='removedProps' type='a(ias)'/>"
+        "  </signal>"
+        " </interface>"
+        "</node>";
 
     DBusMessage *reply = dbus_message_new_method_return(msg);
     if (!reply) {
@@ -355,8 +582,6 @@ void TrayIcon::ReplyGetProperty(DBusConnection *conn, DBusMessage *msg) {
         return;
     }
 
-    const char *value = GetPropString(prop ? prop : "");
-
     DBusMessage *reply = dbus_message_new_method_return(msg);
     if (!reply) {
         return;
@@ -364,7 +589,16 @@ void TrayIcon::ReplyGetProperty(DBusConnection *conn, DBusMessage *msg) {
 
     DBusMessageIter iter;
     dbus_message_iter_init_append(reply, &iter);
-    append_variant_string(&iter, value);
+
+    const char *p = prop ? prop : "";
+    if (std::strcmp(p, "Menu") == 0) {
+        append_variant_object_path(&iter, kMenuPath);
+    } else if (std::strcmp(p, "ItemIsMenu") == 0) {
+        append_variant_bool(&iter, false);
+    } else {
+        const char *value = GetPropString(p);
+        append_variant_string(&iter, value);
+    }
 
     dbus_connection_send(conn, reply, nullptr);
     dbus_message_unref(reply);
@@ -402,7 +636,211 @@ void TrayIcon::ReplyGetAllProperties(DBusConnection *conn, DBusMessage *msg) {
     dict_append_string(&dict, "Title", GetPropString("Title"));
     dict_append_string(&dict, "Status", GetPropString("Status"));
     dict_append_string(&dict, "IconName", GetPropString("IconName"));
+    dict_append_object_path(&dict, "Menu", kMenuPath);
+    dict_append_bool(&dict, "ItemIsMenu", false);
     dbus_message_iter_close_container(&iter, &dict);
+
+    dbus_connection_send(conn, reply, nullptr);
+    dbus_message_unref(reply);
+}
+
+// ─────────────────────────────────────
+void TrayIcon::ReplyMenuGetLayout(DBusConnection *conn, DBusMessage *msg) {
+    // GetLayout(i parentId, i recursionDepth, as propertyNames) -> (u (ia{sv}av))
+    dbus_int32_t parentId = kMenuRootId;
+    dbus_int32_t recursionDepth = 1;
+
+    DBusError err;
+    dbus_error_init(&err);
+    dbus_message_get_args(msg, &err, DBUS_TYPE_INT32, &parentId, DBUS_TYPE_INT32,
+                          &recursionDepth, DBUS_TYPE_INVALID);
+    if (dbus_error_is_set(&err)) {
+        dbus_error_free(&err);
+    }
+
+    const bool includeChildren = (recursionDepth != 0);
+
+    DBusMessage *reply = dbus_message_new_method_return(msg);
+    if (!reply) {
+        return;
+    }
+
+    DBusMessageIter iter;
+    dbus_message_iter_init_append(reply, &iter);
+
+    const dbus_uint32_t revision = 1;
+    dbus_message_iter_append_basic(&iter, DBUS_TYPE_UINT32, &revision);
+
+    menu_append_layout_node(&iter, parentId, includeChildren);
+
+    dbus_connection_send(conn, reply, nullptr);
+    dbus_message_unref(reply);
+}
+
+// ─────────────────────────────────────
+void TrayIcon::ReplyMenuGetGroupProperties(DBusConnection *conn, DBusMessage *msg) {
+    // GetGroupProperties(ai ids, as propertyNames) -> a(ia{sv})
+    DBusMessage *reply = dbus_message_new_method_return(msg);
+    if (!reply) {
+        return;
+    }
+
+    DBusMessageIter out;
+    dbus_message_iter_init_append(reply, &out);
+
+    DBusMessageIter array;
+    dbus_message_iter_open_container(&out, DBUS_TYPE_ARRAY, "(ia{sv})", &array);
+
+    DBusMessageIter args;
+    if (dbus_message_iter_init(msg, &args) && dbus_message_iter_get_arg_type(&args) == DBUS_TYPE_ARRAY) {
+        DBusMessageIter ids;
+        dbus_message_iter_recurse(&args, &ids);
+        while (dbus_message_iter_get_arg_type(&ids) == DBUS_TYPE_INT32) {
+            dbus_int32_t id = 0;
+            dbus_message_iter_get_basic(&ids, &id);
+
+            DBusMessageIter entry;
+            dbus_message_iter_open_container(&array, DBUS_TYPE_STRUCT, nullptr, &entry);
+            dbus_message_iter_append_basic(&entry, DBUS_TYPE_INT32, &id);
+
+            DBusMessageIter props;
+            dbus_message_iter_open_container(&entry, DBUS_TYPE_ARRAY, "{sv}", &props);
+            menu_append_properties(&props, id);
+            dbus_message_iter_close_container(&entry, &props);
+
+            dbus_message_iter_close_container(&array, &entry);
+
+            dbus_message_iter_next(&ids);
+        }
+    }
+
+    dbus_message_iter_close_container(&out, &array);
+
+    dbus_connection_send(conn, reply, nullptr);
+    dbus_message_unref(reply);
+}
+
+// ─────────────────────────────────────
+void TrayIcon::ReplyMenuGetProperty(DBusConnection *conn, DBusMessage *msg) {
+    // GetProperty(i id, s name) -> v
+    dbus_int32_t id = 0;
+    const char *name = nullptr;
+
+    DBusError err;
+    dbus_error_init(&err);
+    if (!dbus_message_get_args(msg, &err, DBUS_TYPE_INT32, &id, DBUS_TYPE_STRING, &name,
+                               DBUS_TYPE_INVALID)) {
+        if (dbus_error_is_set(&err)) {
+            dbus_error_free(&err);
+        }
+        return;
+    }
+
+    DBusMessage *reply = dbus_message_new_method_return(msg);
+    if (!reply) {
+        return;
+    }
+
+    DBusMessageIter iter;
+    dbus_message_iter_init_append(reply, &iter);
+
+    if (name && std::strcmp(name, "visible") == 0) {
+        append_variant_bool(&iter, true);
+    } else if (name && std::strcmp(name, "enabled") == 0) {
+        append_variant_bool(&iter, true);
+    } else if (name && std::strcmp(name, "label") == 0) {
+        if (id == kMenuOpenUiId) {
+            append_variant_string(&iter, "Open Web UI");
+        } else if (id == kMenuExitId) {
+            append_variant_string(&iter, "Exit");
+        } else {
+            append_variant_string(&iter, "");
+        }
+    } else if (name && std::strcmp(name, "children-display") == 0) {
+        if (id == kMenuRootId) {
+            append_variant_string(&iter, "submenu");
+        } else {
+            append_variant_string(&iter, "");
+        }
+    } else if (name && std::strcmp(name, "type") == 0) {
+        append_variant_string(&iter, "standard");
+    } else {
+        append_variant_string(&iter, "");
+    }
+
+    dbus_connection_send(conn, reply, nullptr);
+    dbus_message_unref(reply);
+}
+
+// ─────────────────────────────────────
+void TrayIcon::ReplyMenuEvent(DBusConnection *conn, DBusMessage *msg) {
+    // Event(i id, s eventId, v data, u timestamp)
+    dbus_int32_t id = 0;
+    const char *eventId = nullptr;
+    DBusMessageIter args;
+
+    if (!dbus_message_iter_init(msg, &args)) {
+        ReplyEmptyMethodReturn(conn, msg);
+        return;
+    }
+
+    if (dbus_message_iter_get_arg_type(&args) == DBUS_TYPE_INT32) {
+        dbus_message_iter_get_basic(&args, &id);
+    }
+    dbus_message_iter_next(&args);
+    if (dbus_message_iter_get_arg_type(&args) == DBUS_TYPE_STRING) {
+        dbus_message_iter_get_basic(&args, &eventId);
+    }
+
+    if (eventId &&
+        (std::strcmp(eventId, "clicked") == 0 || std::strcmp(eventId, "activated") == 0)) {
+        if (id == kMenuOpenUiId) {
+            m_OpenUiRequested.store(true);
+        } else if (id == kMenuExitId) {
+            m_ExitRequested.store(true);
+        }
+    }
+
+    ReplyEmptyMethodReturn(conn, msg);
+}
+
+// ─────────────────────────────────────
+void TrayIcon::ReplyMenuEventGroup(DBusConnection *conn, DBusMessage *msg) {
+    // EventGroup(a(isvu) events) - no return data, but must return a method reply.
+    ReplyEmptyMethodReturn(conn, msg);
+}
+
+// ─────────────────────────────────────
+void TrayIcon::ReplyMenuAboutToShow(DBusConnection *conn, DBusMessage *msg) {
+    DBusMessage *reply = dbus_message_new_method_return(msg);
+    if (!reply) {
+        return;
+    }
+    dbus_bool_t needUpdate = false;
+    dbus_message_append_args(reply, DBUS_TYPE_BOOLEAN, &needUpdate, DBUS_TYPE_INVALID);
+    dbus_connection_send(conn, reply, nullptr);
+    dbus_message_unref(reply);
+}
+
+// ─────────────────────────────────────
+void TrayIcon::ReplyMenuAboutToShowGroup(DBusConnection *conn, DBusMessage *msg) {
+    DBusMessage *reply = dbus_message_new_method_return(msg);
+    if (!reply) {
+        return;
+    }
+
+    DBusMessageIter iter;
+    dbus_message_iter_init_append(reply, &iter);
+
+    // updatesNeeded: empty ai
+    DBusMessageIter updates;
+    dbus_message_iter_open_container(&iter, DBUS_TYPE_ARRAY, "i", &updates);
+    dbus_message_iter_close_container(&iter, &updates);
+
+    // idErrors: empty ai
+    DBusMessageIter errors;
+    dbus_message_iter_open_container(&iter, DBUS_TYPE_ARRAY, "i", &errors);
+    dbus_message_iter_close_container(&iter, &errors);
 
     dbus_connection_send(conn, reply, nullptr);
     dbus_message_unref(reply);

@@ -5,8 +5,7 @@
 #include <unistd.h>
 #include <thread>
 #include <chrono>
-
-// TODO: Know how is my focus by category
+#include <sys/wait.h>
 
 // ─────────────────────────────────────
 Concentrate::Concentrate(const unsigned port, const unsigned ping, LogLevel log_level)
@@ -59,7 +58,7 @@ Concentrate::Concentrate(const unsigned port, const unsigned ping, LogLevel log_
     // Tray icon (DBus StatusNotifierItem)
     m_Tray = std::make_unique<TrayIcon>();
     if (m_Tray->Start("Concentrate")) {
-        m_Tray->SetFocused(IDLE);
+        m_Tray->SetTrayIcon(IDLE);
         spdlog::info("Tray icon initialized");
     } else {
         spdlog::warn("Tray icon not available (no DBus watcher or session bus)");
@@ -109,19 +108,14 @@ Concentrate::Concentrate(const unsigned port, const unsigned ping, LogLevel log_
     UpdateAllowedApps();
     RefreshDailyActivities();
 
-    // Unfocused warning: if UNFOCUSED continuously for >15s, send a one-shot reminder.
+    // Unfocused warning: while UNFOCUSED, warn every 15 seconds (after an initial 15s grace).
     bool inUnfocusedStreak = false;
     auto unfocusedSince = std::chrono::steady_clock::now();
-    bool unfocusedWarningSent = false;
-    const auto unfocusedWarnAfter = std::chrono::seconds(15);
+    auto lastUnfocusedWarningAt = unfocusedSince;
+    const auto unfocusedWarnEvery = std::chrono::seconds(15);
 
     while (true) {
         auto now = std::chrono::steady_clock::now();
-
-        // Pump tray DBus messages (non-blocking)
-        if (m_Tray) {
-            m_Tray->Poll();
-        }
 
         // Notify if monitoring is disabled every 5 minutes
         if (!m_MonitoringEnabled && now - lastMonitoringNotification >= std::chrono::minutes(5)) {
@@ -133,7 +127,8 @@ Concentrate::Concentrate(const unsigned port, const unsigned ping, LogLevel log_
         if (!m_MonitoringEnabled) {
             // Reset unfocused streak tracking while monitoring is disabled.
             inUnfocusedStreak = false;
-            unfocusedWarningSent = false;
+            unfocusedSince = now;
+            lastUnfocusedWarningAt = now;
 
             // Close any open interval before entering the disabled/idle state.
             if (hasOpenInterval && openState != IDLE) {
@@ -148,6 +143,8 @@ Concentrate::Concentrate(const unsigned port, const unsigned ping, LogLevel log_
                     }
                 }
             }
+
+            m_Tray->SetTrayIcon(IDLE);
 
             hasOpenInterval = false;
             openState = IDLE;
@@ -164,6 +161,19 @@ Concentrate::Concentrate(const unsigned port, const unsigned ping, LogLevel log_
                 m_HasLastRecord = false;
             }
 
+            // Pump tray DBus messages (non-blocking)
+            if (m_Tray) {
+                m_Tray->Poll();
+
+                if (m_Tray->TakeOpenUiRequested()) {
+                    std::system(
+                        ("xdg-open http://127.0.0.1:" + std::to_string(m_Port) + "/ &").c_str());
+                }
+                if (m_Tray->TakeExitRequested()) {
+                    spdlog::info("Exit requested from tray");
+                    break;
+                }
+            }
             std::this_thread::sleep_for(std::chrono::seconds(m_Ping));
             continue;
         }
@@ -179,29 +189,26 @@ Concentrate::Concentrate(const unsigned port, const unsigned ping, LogLevel log_
 
         FocusState currentState = AmIFocused(m_Fw);
 
-        // Update tray icon state (focused/unfocused)
-        if (m_Tray) {
-            m_Tray->SetFocused(currentState);
-        }
-
-        // One-shot unfocused warning.
+        // Repeating unfocused warning.
         if (currentState == UNFOCUSED) {
             if (!inUnfocusedStreak) {
                 inUnfocusedStreak = true;
                 unfocusedSince = now;
-                unfocusedWarningSent = false;
-            } else if (!unfocusedWarningSent && (now - unfocusedSince) > unfocusedWarnAfter) {
+                lastUnfocusedWarningAt = now;
+            } else if ((now - unfocusedSince) >= unfocusedWarnEvery &&
+                       (now - lastUnfocusedWarningAt) >= unfocusedWarnEvery) {
                 if (m_Notification) {
                     m_Notification->SendNotification(
                         "concentrate-unfocused", "Concentrate",
                         "Focus: you've been unfocused for more than 15 seconds.");
                 }
-                unfocusedWarningSent = true;
+                lastUnfocusedWarningAt = now;
             }
         } else {
             // Reset streak when focused or idle.
             inUnfocusedStreak = false;
-            unfocusedWarningSent = false;
+            unfocusedSince = now;
+            lastUnfocusedWarningAt = now;
         }
 
         if (m_CurrentTaskCategory.empty()) {
@@ -344,6 +351,20 @@ Concentrate::Concentrate(const unsigned port, const unsigned ping, LogLevel log_
                 m_LastTitle.clear();
                 m_LastCategory.clear();
                 m_HasLastRecord = false;
+            }
+        }
+
+        // Update tray icon state (focused/unfocused)
+        if (m_Tray) {
+            m_Tray->SetTrayIcon(currentState);
+            m_Tray->Poll();
+            if (m_Tray->TakeOpenUiRequested()) {
+                std::system(
+                    ("xdg-open http://127.0.0.1:" + std::to_string(m_Port) + "/ &").c_str());
+            }
+            if (m_Tray->TakeExitRequested()) {
+                spdlog::info("Exit requested from tray");
+                break;
             }
         }
 

@@ -61,7 +61,7 @@ endif()
 
 add_custom_target(
     tailwindcss ALL
-    COMMAND ${TAILWINDCSS_EXECUTABLE} -i ${CMAKE_SOURCE_DIR}/input.css -o $<TARGET_FILE_DIR:Concentrate>/style.css
+    COMMAND ${TAILWINDCSS_EXECUTABLE} -i ${CMAKE_SOURCE_DIR}/input.css -o $<TARGET_FILE_DIR:Concentrate>/style.css > /dev/null 2>&1
     COMMAND ${CMAKE_COMMAND} -E copy_if_different ${CMAKE_SOURCE_DIR}/index.html $<TARGET_FILE_DIR:Concentrate>/index.html
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     COMMENT "Building Tailwind CSS")

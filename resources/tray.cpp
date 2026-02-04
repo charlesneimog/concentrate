@@ -12,7 +12,7 @@ static const char* IFACE     = "org.kde.StatusNotifierItem";
 DBusHandlerResult message_handler(DBusConnection* conn,
                                   DBusMessage* msg,
                                   void* /*user_data*/) {
-    if (dbus_message_is_method_call(msg, "org.freedesktop.DBus.Introspectable", "Introspect")) {
+    if (dbus_message_is_method_call(msg, "org.freedeStatusNotifierItemsktop.DBus.Introspectable", "Introspect")) {
         const char* xml =
             "<node>"
             " <interface name='org.kde.StatusNotifierItem'>"
