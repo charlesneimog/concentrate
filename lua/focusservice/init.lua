@@ -1,7 +1,7 @@
 local M = {}
 
 -- ─────────────────────────────────────
-function M.send_project_status(payload)
+function M.send_project_status(port, payload)
 	vim.fn.jobstart({
 		"curl",
 		"-s",
@@ -11,7 +11,7 @@ function M.send_project_status(payload)
 		"Content-Type: application/json",
 		"-d",
 		payload,
-		"http://localhost:7079/api/v1/special_project",
+		"http://localhost:" .. port .. "/api/v1/special_project",
 	}, {
 		on_stdout = function(_, data)
 			if data and #data > 0 then
@@ -40,13 +40,20 @@ function M.send_project_status(payload)
 end
 
 -- ─────────────────────────────────────
-function M.setup()
+function M.setup(config)
+	local port
+	if config.port ~= nil then
+		port = config.port
+	else
+		port = 7079
+	end
+
 	-- Autocmds for focus/unfocus
 	vim.api.nvim_create_autocmd("FocusGained", {
 		callback = function()
 			local project_name = vim.fn.fnamemodify(vim.fn.getcwd(), ":t")
 			local payload = vim.fn.json_encode({ app_id = "Neovim", title = project_name, focus = true })
-			M.send_project_status(payload)
+			M.send_project_status(port, payload)
 		end,
 	})
 
@@ -54,7 +61,7 @@ function M.setup()
 		callback = function()
 			local project_name = vim.fn.fnamemodify(vim.fn.getcwd(), ":t")
 			local payload = vim.fn.json_encode({ app_id = "Neovim", title = project_name, focus = false })
-			M.send_project_status(payload)
+			M.send_project_status(port, payload)
 		end,
 	})
 
@@ -66,7 +73,7 @@ function M.setup()
 				app_id = "Neovim",
 				focus = false,
 			})
-			M.send_project_status(payload)
+			M.send_project_status(port, payload)
 		end,
 	})
 end
