@@ -167,8 +167,11 @@ Concentrate::Concentrate(const unsigned port, const unsigned ping, LogLevel log_
                 m_Tray->Poll();
 
                 if (m_Tray->TakeOpenUiRequested()) {
-                    std::system(
+                    int result = std::system(
                         ("xdg-open http://127.0.0.1:" + std::to_string(m_Port) + "/ &").c_str());
+                    if (result != 0) {
+                        spdlog::error("Failed to open browser");
+                    }
                 }
                 if (m_Tray->TakeExitRequested()) {
                     spdlog::info("Exit requested from tray");
@@ -360,8 +363,11 @@ Concentrate::Concentrate(const unsigned port, const unsigned ping, LogLevel log_
             m_Tray->SetTrayIcon(currentState);
             m_Tray->Poll();
             if (m_Tray->TakeOpenUiRequested()) {
-                std::system(
+                int result = std::system(
                     ("xdg-open http://127.0.0.1:" + std::to_string(m_Port) + "/ &").c_str());
+                if (result != 0) {
+                    spdlog::error("Failed to open the browser");
+                }
             }
             if (m_Tray->TakeExitRequested()) {
                 spdlog::info("Exit requested from tray");
