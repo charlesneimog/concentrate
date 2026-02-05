@@ -1,0 +1,83 @@
+name: concentrate
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - master
+      
+env:
+  BUILD_TYPE: Release
+  SCCACHE_DIR: ~/.cache/sccache
+
+jobs:
+  concentrate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Install system dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential \
+            cmake \
+            ninja-build \
+            pkg-config \
+            libzstd-dev \
+            libsqlite3-dev \
+            libdbus-1-dev \
+            libsecret-1-dev
+
+      - name: Install tailwindcss
+        shell: bash
+        run: |
+          curl -sLO https://github.com/tailwindlabs/tailwindcss/releases/latest/download/tailwindcss-linux-x64
+          chmod +x tailwindcss-linux-x64
+          sudo mv tailwindcss-linux-x64 /usr/local/bin/tailwindcss
+          tailwindcss --version
+
+      # Cache CPM build deps (downloaded sources + build trees)
+      - name: Cache CMake dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            build/_deps
+          key: build-deps-${{ runner.os }}-${{ runner.arch }}-${{ env.BUILD_TYPE }}-${{ hashFiles('CMakeLists.txt', '**/*.cmake') }}
+          restore-keys: |
+            build-deps-${{ runner.os }}-${{ runner.arch }}-${{ env.BUILD_TYPE }}-
+            build-deps-${{ runner.os }}-${{ runner.arch }}-
+
+      - name: Configure
+        shell: bash
+        run: |
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }}
+
+      - name: Build
+        shell: bash
+        run: |
+          cmake --build build --config ${{ env.BUILD_TYPE }}
+
+      - name: Install to staging folder
+        shell: bash
+        run: |
+          rm -rf concentrate
+          cmake --install build --prefix "$PWD/concentrate"
+
+      - name: Create concentrate.zip
+        shell: bash
+        run: |
+          rm -f concentrate.zip
+          cmake -E tar cf concentrate.zip --format=zip -- concentrate
+
+      - name: Upload concentrate.zip
+        uses: actions/upload-artifact@v4
+        with:
+          name: concentrate-ubuntu
+          path: concentrate.zip
+          if-no-files-found: error
