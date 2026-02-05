@@ -6,6 +6,7 @@ async function readTextSafe(res) {
     }
 }
 
+// ─────────────────────────────────────
 export async function loadAnytypeTasks() {
     const res = await fetch("/api/v1/anytype/tasks", { cache: "no-store" });
     if (!res.ok) {
@@ -16,6 +17,7 @@ export async function loadAnytypeTasks() {
     return { ok: true, errorText: "", tasks: Array.isArray(tasks) ? tasks : [] };
 }
 
+// ─────────────────────────────────────
 export async function loadCurrent() {
     const res = await fetch("/api/v1/current", { cache: "no-store" });
     if (!res.ok) return null;
@@ -23,6 +25,7 @@ export async function loadCurrent() {
     return Object.keys(cur || {}).length ? cur : null;
 }
 
+// ─────────────────────────────────────
 export async function setMonitoringEnabled(enabled) {
     const res = await fetch("/api/v1/monitoring", {
         method: "POST",
@@ -36,12 +39,14 @@ export async function setMonitoringEnabled(enabled) {
     return true;
 }
 
+// ─────────────────────────────────────
 export async function loadSettings() {
     const res = await fetch("/api/v1/settings", { cache: "no-store" });
     if (!res.ok) return null;
     return await res.json();
 }
 
+// ─────────────────────────────────────
 export async function loadEvents() {
     const res = await fetch("/api/v1/events", { cache: "no-store" });
     if (!res.ok) return [];
@@ -49,6 +54,7 @@ export async function loadEvents() {
     return Array.isArray(events) ? events : [];
 }
 
+// ─────────────────────────────────────
 export async function loadHistoryRaw() {
     const res = await fetch("/api/v1/history", { cache: "no-store" });
     if (!res.ok) return [];
@@ -56,6 +62,7 @@ export async function loadHistoryRaw() {
     return Array.isArray(history) ? history : [];
 }
 
+// ─────────────────────────────────────
 export async function updateServerFocusRules(task) {
     const payload = task
         ? {
@@ -79,6 +86,7 @@ export async function updateServerFocusRules(task) {
     return true;
 }
 
+// ─────────────────────────────────────
 export async function setCurrentTaskOnServer(taskId) {
     const res = await fetch("/api/v1/task/set_current", {
         method: "POST",
@@ -88,6 +96,7 @@ export async function setCurrentTaskOnServer(taskId) {
     return res;
 }
 
+// ─────────────────────────────────────
 export async function loadAnytypeTasksCategories() {
     const res = await fetch("/api/v1/anytype/tasks_categories", { cache: "no-store" });
     if (!res.ok) return { ok: false, categories: [] };
@@ -96,6 +105,7 @@ export async function loadAnytypeTasksCategories() {
     return { ok: true, categories };
 }
 
+// ─────────────────────────────────────
 export async function loadFocusCategoryPercentages(days) {
     const res = await fetch(`/api/v1/focus/category-percentages?days=${days}`, {
         method: "GET",
@@ -107,6 +117,7 @@ export async function loadFocusCategoryPercentages(days) {
     return Array.isArray(rows) ? rows : [];
 }
 
+// ─────────────────────────────────────
 export async function loadFocusToday(days) {
     const res = await fetch(`/api/v1/focus/today?days=${days}`, { cache: "no-store" });
     if (!res.ok) {
@@ -121,12 +132,14 @@ export async function loadFocusToday(days) {
     }
 }
 
+// ─────────────────────────────────────
 export async function loadFocusAppUsage(days) {
     const res = await fetch(`/api/v1/focus/app-usage?days=${days}`, { cache: "no-store" });
     if (!res.ok) return { ok: false, data: null };
     return { ok: true, data: await res.json() };
 }
 
+// ─────────────────────────────────────
 export async function loadHistoryCategoryTime(days) {
     const res = await fetch(`/api/v1/history/category-time?days=${days}`, { cache: "no-store" });
     if (!res.ok) return { ok: false, rows: [] };
@@ -134,6 +147,7 @@ export async function loadHistoryCategoryTime(days) {
     return { ok: true, rows: Array.isArray(data) ? data : [] };
 }
 
+// ─────────────────────────────────────
 export async function loadHistoryCategoryFocus(days) {
     const res = await fetch(`/api/v1/history/category-focus?days=${days}`, { cache: "no-store" });
     if (!res.ok) return { ok: false, rows: [] };
@@ -141,7 +155,9 @@ export async function loadHistoryCategoryFocus(days) {
     return { ok: true, rows: Array.isArray(data) ? data : [] };
 }
 
-// Daily activities / recurring tasks
+//╭─────────────────────────────────────╮
+//│ Daily activities / recurring tasks  │
+//╰─────────────────────────────────────╯
 export async function loadRecurringTasks() {
     const res = await fetch("/api/v1/task/recurring_tasks", { cache: "no-store" });
     if (!res.ok) {
@@ -152,6 +168,7 @@ export async function loadRecurringTasks() {
     return { ok: true, status: res.status, errorText: "", tasks: Array.isArray(tasks) ? tasks : [] };
 }
 
+// ─────────────────────────────────────
 export async function loadDailyActivitiesSummaryToday() {
     const res = await fetch("/api/v1/daily_activities/today", { cache: "no-store" });
     if (!res.ok) {
@@ -162,17 +179,22 @@ export async function loadDailyActivitiesSummaryToday() {
     return { ok: true, status: res.status, errorText: "", summary: Array.isArray(summary) ? summary : [] };
 }
 
-// Backwards-compat alias used by modules/history.js
+//╭─────────────────────────────────────╮
+//│   Backwards-compat alias used by    │
+//│         modules/history.js          │
+//╰─────────────────────────────────────╯
 export async function loadDailyActivitiesTodaySummary() {
     return await loadDailyActivitiesSummaryToday();
 }
 
+// ─────────────────────────────────────
 export async function excludeRecurringTask(taskName) {
     const url = `/api/v1/task/recurring_tasks?name=${encodeURIComponent(taskName)}`;
     const res = await fetch(url, { method: "DELETE" });
     return { ok: res.ok, errorText: res.ok ? "" : await readTextSafe(res) };
 }
 
+// ─────────────────────────────────────
 export async function saveRecurringTask(data) {
     const res = await fetch("/api/v1/task/recurring_tasks", {
         method: "POST",
@@ -182,7 +204,9 @@ export async function saveRecurringTask(data) {
     return { ok: res.ok, errorText: res.ok ? "" : await readTextSafe(res) };
 }
 
-// Anytype auth/config
+//╭─────────────────────────────────────╮
+//│         Anytype auth/config         │
+//╰─────────────────────────────────────╯
 export async function createAnytypeChallenge() {
     const res = await fetch("/api/v1/anytype/auth/challenges", {
         method: "POST",
@@ -192,6 +216,7 @@ export async function createAnytypeChallenge() {
     return { ok: true, errorText: "", data: await res.json() };
 }
 
+// ─────────────────────────────────────
 export async function createAnytypeApiKey(challengeId, code) {
     const res = await fetch("/api/v1/anytype/auth/api_keys", {
         method: "POST",
@@ -202,6 +227,7 @@ export async function createAnytypeApiKey(challengeId, code) {
     return { ok: true, errorText: "", data: await res.json() };
 }
 
+// ─────────────────────────────────────
 export async function loadAnytypeSpaces() {
     const res = await fetch("/api/v1/anytype/spaces", { cache: "no-store" });
     if (!res.ok) return { ok: false, errorText: await readTextSafe(res), spaces: [] };
@@ -210,6 +236,7 @@ export async function loadAnytypeSpaces() {
     return { ok: true, errorText: "", spaces };
 }
 
+// ─────────────────────────────────────
 export async function saveAnytypeSpace(spaceId) {
     const res = await fetch("/api/v1/anytype/space", {
         method: "POST",
@@ -220,6 +247,8 @@ export async function saveAnytypeSpace(spaceId) {
     return { ok: true, errorText: "" };
 }
 
+// ─────────────────────────────────────
+// BUG: Not implemented on the server
 export async function saveAnytypeConfig(apiKey, spaceId) {
     const res = await fetch("/api/v1/anytype/config", {
         method: "POST",
@@ -230,13 +259,17 @@ export async function saveAnytypeConfig(apiKey, spaceId) {
     return { ok: true, errorText: "" };
 }
 
+// ─────────────────────────────────────
+// BUG: Not implemented on the server
 export async function refreshAnytypeCache() {
     const res = await fetch("/api/v1/anytype/refresh", { method: "POST" });
     if (!res.ok) return { ok: false, errorText: await readTextSafe(res) };
     return { ok: true, errorText: "" };
 }
 
-// Pomodoro
+//╭─────────────────────────────────────╮
+//│              Pomodoro               │
+//╰─────────────────────────────────────╯
 export async function loadPomodoroState() {
     try {
         const res = await fetch("/api/v1/pomodoro/state", { cache: "no-store" });
@@ -247,6 +280,7 @@ export async function loadPomodoroState() {
     }
 }
 
+// ─────────────────────────────────────
 export async function savePomodoroState(payload) {
     const res = await fetch("/api/v1/pomodoro/state", {
         method: "POST",
@@ -256,12 +290,14 @@ export async function savePomodoroState(payload) {
     return res.ok;
 }
 
+// ─────────────────────────────────────
 export async function loadPomodoroToday() {
     const res = await fetch("/api/v1/pomodoro/today", { cache: "no-store" });
     if (!res.ok) return null;
     return await res.json();
 }
 
+// ─────────────────────────────────────
 export async function incrementPomodoroFocusComplete(focusSeconds) {
     const res = await fetch("/api/v1/pomodoro/focus/complete", {
         method: "POST",
