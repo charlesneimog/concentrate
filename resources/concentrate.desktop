@@ -1,11 +1,11 @@
 [Desktop Entry]
 Type=Application
-Version=1.0
+Version=0.1.0
 Name=Concentrate
 Comment=Focus tracker
-Exec=sh -c 'Concentrate --logdebug >> /tmp/concentrate.log 2>&1'
+Exec=concentrate
 Icon=concentrate
 Terminal=false
 Categories=Utility;Productivity;
 StartupNotify=true
-StartupWMClass=Concentrate
+StartupWMClass=concentrate

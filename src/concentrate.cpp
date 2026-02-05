@@ -1,4 +1,4 @@
-#include "Concentrate.hpp"
+#include "concentrate.hpp"
 
 #include <string>
 #include <limits.h>
@@ -1569,12 +1569,12 @@ std::filesystem::path Concentrate::GetBinaryPath() {
     binDir = binDir.parent_path();
 
     if (binDir.filename() == "bin") {
-        binDir = binDir.parent_path() / "share" / "Concentrate";
+        binDir = binDir.parent_path() / "share" / "concentrate";
     }
 
     // Fallbacks if assets are not in the computed path
-    const std::vector<std::filesystem::path> candidates = {binDir, "/usr/local/share/Concentrate",
-                                                           "/usr/share/Concentrate"};
+    const std::vector<std::filesystem::path> candidates = {binDir, "/usr/local/share/concentrate",
+                                                           "/usr/share/concentrate"};
 
     for (const auto &p : candidates) {
         if (std::filesystem::exists(p / "index.html")) {
@@ -1600,7 +1600,7 @@ std::filesystem::path Concentrate::GetDBPath() {
         baseDir = std::filesystem::path(home) / ".local" / "share";
     }
 
-    std::filesystem::path dbPath = baseDir / "Concentrate" / "data.sqlite";
+    std::filesystem::path dbPath = baseDir / "concentrate" / "data.sqlite";
     std::error_code ec;
     std::filesystem::create_directories(dbPath.parent_path(), ec);
     if (ec) {

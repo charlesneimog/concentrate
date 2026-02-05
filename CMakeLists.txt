@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.21)
-project(Concentrate LANGUAGES CXX)
+project(concentrate LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -38,12 +38,15 @@ add_definitions(${PC_LIBSECRET_CFLAGS_OTHER})
 add_definitions("-DCPPHTTPLIB_THREAD_POOL_COUNT=2")
 
 # ╭──────────────────────────────────────╮
-# │       Concentrate executable        │
+# │       concentrate executable        │
 # ╰──────────────────────────────────────╯
 add_executable(
-    Concentrate
+    concentrate
+    # app
     src/main.cpp
-    src/Concentrate.cpp
+
+    # dynamic library
+    src/concentrate.cpp
     src/tray.cpp
     src/secrets.cpp
     src/notification.cpp
@@ -81,31 +84,31 @@ endif()
 add_custom_target(
     tailwindcss ALL
     COMMAND ${TAILWINDCSS_EXECUTABLE} -i ${TAILWIND_INPUT} -o ${CMAKE_BINARY_DIR}/style.css > /dev/null 2>&1
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different ${CMAKE_BINARY_DIR}/style.css $<TARGET_FILE_DIR:Concentrate>/style.css
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different ${WEBUI_INDEX} $<TARGET_FILE_DIR:Concentrate>/index.html
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different ${CMAKE_BINARY_DIR}/style.css $<TARGET_FILE_DIR:concentrate>/style.css
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different ${WEBUI_INDEX} $<TARGET_FILE_DIR:concentrate>/index.html
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     COMMENT "Building Tailwind CSS")
 
 add_custom_target(
     webfiles
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different ${WEBUI_INDEX} $<TARGET_FILE_DIR:Concentrate>/index.html
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different ${WEBUI_ASSETS_DIR}/main.js $<TARGET_FILE_DIR:Concentrate>/main.js
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different ${CMAKE_SOURCE_DIR}/resources/favicon.svg $<TARGET_FILE_DIR:Concentrate>/favicon.svg
-    COMMAND ${CMAKE_COMMAND} -E copy_directory ${WEBUI_ASSETS_DIR}/core $<TARGET_FILE_DIR:Concentrate>/core
-    COMMAND ${CMAKE_COMMAND} -E copy_directory ${WEBUI_ASSETS_DIR}/modules $<TARGET_FILE_DIR:Concentrate>/modules
-    COMMAND ${CMAKE_COMMAND} -E copy_directory ${WEBUI_ASSETS_DIR}/views $<TARGET_FILE_DIR:Concentrate>/views
-    COMMAND ${CMAKE_COMMAND} -E copy_directory ${WEBUI_ASSETS_DIR}/utils $<TARGET_FILE_DIR:Concentrate>/utils
-    COMMAND ${CMAKE_COMMAND} -E copy_directory ${WEBUI_ASSETS_DIR}/api $<TARGET_FILE_DIR:Concentrate>/api
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different ${WEBUI_INDEX} $<TARGET_FILE_DIR:concentrate>/index.html
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different ${WEBUI_ASSETS_DIR}/main.js $<TARGET_FILE_DIR:concentrate>/main.js
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different ${CMAKE_SOURCE_DIR}/resources/favicon.svg $<TARGET_FILE_DIR:concentrate>/favicon.svg
+    COMMAND ${CMAKE_COMMAND} -E copy_directory ${WEBUI_ASSETS_DIR}/core $<TARGET_FILE_DIR:concentrate>/core
+    COMMAND ${CMAKE_COMMAND} -E copy_directory ${WEBUI_ASSETS_DIR}/modules $<TARGET_FILE_DIR:concentrate>/modules
+    COMMAND ${CMAKE_COMMAND} -E copy_directory ${WEBUI_ASSETS_DIR}/views $<TARGET_FILE_DIR:concentrate>/views
+    COMMAND ${CMAKE_COMMAND} -E copy_directory ${WEBUI_ASSETS_DIR}/utils $<TARGET_FILE_DIR:concentrate>/utils
+    COMMAND ${CMAKE_COMMAND} -E copy_directory ${WEBUI_ASSETS_DIR}/api $<TARGET_FILE_DIR:concentrate>/api
     COMMENT "Copying webfiles")
 
-add_dependencies(Concentrate webfiles tailwindcss)
+add_dependencies(concentrate webfiles tailwindcss)
 
-target_include_directories(Concentrate PRIVATE ${PC_DBUS_INCLUDE_DIRS})
-target_link_directories(Concentrate PRIVATE ${PC_DBUS_LIBRARY_DIRS})
-target_compile_definitions(Concentrate PRIVATE ${PC_DBUS_CFLAGS_OTHER})
+target_include_directories(concentrate PRIVATE ${PC_DBUS_INCLUDE_DIRS})
+target_link_directories(concentrate PRIVATE ${PC_DBUS_LIBRARY_DIRS})
+target_compile_definitions(concentrate PRIVATE ${PC_DBUS_CFLAGS_OTHER})
 
 target_link_libraries(
-    Concentrate
+    concentrate
     PRIVATE httplib::httplib
             nlohmann_json::nlohmann_json #
             SQLite::SQLite3
@@ -114,15 +117,15 @@ target_link_libraries(
             ${PC_LIBSECRET_LIBRARIES}
             ${PC_DBUS_LIBRARIES})
 
-target_compile_options(Concentrate PRIVATE $<$<CONFIG:Release>:-O3 -march=native -DNDEBUG>)
-install(TARGETS Concentrate RUNTIME DESTINATION bin)
+target_compile_options(concentrate PRIVATE $<$<CONFIG:Release>:-O3 -march=native -DNDEBUG>)
+install(TARGETS concentrate RUNTIME DESTINATION bin)
 
 install(
     FILES ${WEBUI_INDEX}
         ${WEBUI_ASSETS_DIR}/main.js
           ${CMAKE_SOURCE_DIR}/resources/favicon.svg
           ${CMAKE_BINARY_DIR}/style.css
-    DESTINATION share/Concentrate)
+    DESTINATION share/concentrate)
 
 install(
     DIRECTORY ${WEBUI_ASSETS_DIR}/core
@@ -130,11 +133,11 @@ install(
               ${WEBUI_ASSETS_DIR}/views
               ${WEBUI_ASSETS_DIR}/utils
               ${WEBUI_ASSETS_DIR}/api
-    DESTINATION share/Concentrate)
+    DESTINATION share/concentrate)
 
 
 # Linux desktop integration
-install(FILES ${CMAKE_SOURCE_DIR}/resources/Concentrate.desktop DESTINATION share/applications)
+install(FILES ${CMAKE_SOURCE_DIR}/resources/concentrate.desktop DESTINATION share/applications)
 install(
     FILES ${CMAKE_SOURCE_DIR}/resources/favicon.svg
     DESTINATION share/icons/hicolor/scalable/apps
