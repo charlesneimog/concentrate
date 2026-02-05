@@ -20,13 +20,14 @@ include(${CPM_FILE})
 # ╭──────────────────────────────────────╮
 # │             Dependencies             │
 # ╰──────────────────────────────────────╯
+find_package(SQLite3 REQUIRED)
+find_package(PkgConfig REQUIRED)
+set(HTTPLIB_USE_ZSTD_IF_AVAILABLE OFF)
+
+pkg_check_modules(PC_DBUS REQUIRED dbus-1)
 cpmaddpackage("gh:yhirose/cpp-httplib@0.30.1")
 cpmaddpackage("gh:nlohmann/json@3.11.3")
 cpmaddpackage("gh:gabime/spdlog@1.17.0")
-
-find_package(SQLite3 REQUIRED)
-find_package(PkgConfig REQUIRED)
-pkg_check_modules(PC_DBUS REQUIRED dbus-1)
 
 # ╭──────────────────────────────────────╮
 # │            get libsecret             │
