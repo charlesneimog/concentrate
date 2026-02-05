@@ -877,6 +877,15 @@ bool Concentrate::InitServer() {
             });
     }
 
+    // Version
+    {
+        m_Server.Get("/api/v1/version", [](const httplib::Request &, httplib::Response &res) {
+            nlohmann::json j = {{"version", CONCENTRATE_VERSION}};
+            res.status = 200;
+            res.set_content(j.dump(), "application/json");
+        });
+    }
+
     // Current State
     {
         m_Server.Get("/api/v1/current", [this](const httplib::Request &, httplib::Response &res) {

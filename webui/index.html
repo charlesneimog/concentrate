@@ -27,15 +27,16 @@
             class="w-64 shadow-sm dark:shadow-md border-gray-200 dark:border-gray-700 flex-shrink-0 flex flex-col bg-white dark:bg-gray-800 z-20 hidden md:flex"
         >
             <div class="p-6 flex items-center gap-3 bg-white text-gray-900 dark:bg-gray-800 dark:text-white">
-                <div
-                    class="h-8 w-8 rounded-lg flex items-center justify-center shadow-sm dark:shadow-md"
-                >
-                    <!-- Put here the ./favicon.svg 20x20-->
-                    <img src="./favicon.svg" alt="Concentrate Logo" class="h-8 w-8 "/>
-
+                <div class="h-8 w-8 rounded-lg flex items-center justify-center shadow-sm dark:shadow-md">
+                    <img src="./favicon.svg" alt="Concentrate Logo" class="h-8 w-8" />
                 </div>
-                <h1 class="text-lg font-bold tracking-tight text-gray-900 dark:text-white">Concentrate</h1>
+
+                <div class="flex flex-col leading-tight">
+                    <h1 class="text-lg font-bold tracking-tight text-gray-900 dark:text-white">Concentrate</h1>
+                    <p id="concentrate-version" class="text-xs text-gray-500 dark:text-gray-400"></p>
+                </div>
             </div>
+
             <nav class="flex-1 px-4 space-y-1 overflow-y-auto bg-white text-gray-900 dark:bg-gray-800 dark:text-white">
                 <a
                     class="nav-link flex items-center gap-3 px-3 py-2.5 rounded-lg group transition-all hover:bg-gray-50 dark:hover:bg-gray-700"
@@ -49,7 +50,6 @@
                     >
                     <span class="text-sm dark:text-white">Tasks View</span>
                 </a>
-
 
                 <a
                     class="nav-link flex items-center gap-3 px-3 py-2.5 rounded-lg group transition-all hover:bg-gray-50 dark:hover:bg-gray-700"
@@ -233,7 +233,12 @@
                                     Icon (Material Symbols)
                                 </label>
                                 <!-- put small mention to https://fonts.google.com/icons-->
-                                <small class="text-xs text-gray-400 dark:text-gray-600">See available icons at <a href="https://fonts.google.com/icons" target="_blank" class="underline">Google Fonts Icons</a></small>
+                                <small class="text-xs text-gray-400 dark:text-gray-600"
+                                    >See available icons at
+                                    <a href="https://fonts.google.com/icons" target="_blank" class="underline"
+                                        >Google Fonts Icons</a
+                                    ></small
+                                >
                                 <input
                                     type="text"
                                     id="daily-icon"

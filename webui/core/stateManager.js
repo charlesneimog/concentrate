@@ -23,6 +23,7 @@ export class StateManager {
             "initHistoryFilters",
             "setupEventListeners",
             "startPolling",
+            "updateAppVersion",
             "init",
 
             // settings/monitoring
@@ -886,8 +887,24 @@ export class StateManager {
         }, 60000);
     }
 
+    async updateAppVersion() {
+        const el = document.getElementById("concentrate-version");
+        if (!el) return;
+
+        try {
+            const result = await API.loadVersion();
+            if (result?.ok && result.version) {
+                el.textContent = result.version;
+            }
+        } catch {
+            // Ignore version fetch failures (UI stays blank)
+        }
+    }
+
     init() {
         this.setActivityIndicator(true);
+
+        this.updateAppVersion();
 
         this.setupEventListeners();
 

@@ -26,6 +26,20 @@ export async function loadCurrent() {
 }
 
 // ─────────────────────────────────────
+export async function loadVersion() {
+    const res = await fetch("/api/v1/version", { cache: "no-store" });
+    if (!res.ok) return { ok: false, version: "" };
+
+    try {
+        const body = await res.json();
+        const version = typeof body?.version === "string" ? body.version : "";
+        return { ok: !!version, version };
+    } catch {
+        return { ok: false, version: "" };
+    }
+}
+
+// ─────────────────────────────────────
 export async function setMonitoringEnabled(enabled) {
     const res = await fetch("/api/v1/monitoring", {
         method: "POST",

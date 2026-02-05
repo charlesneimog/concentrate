@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.21)
-project(concentrate LANGUAGES CXX)
+project(concentrate VERSION 0.1.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -117,6 +117,8 @@ target_link_libraries(
             # Others
             ${PC_LIBSECRET_LIBRARIES}
             ${PC_DBUS_LIBRARIES})
+
+target_compile_definitions(concentrate PRIVATE CONCENTRATE_VERSION=\"v${PROJECT_VERSION}\")
 
 target_compile_options(concentrate PRIVATE $<$<CONFIG:Release>:-O3 -march=native -DNDEBUG>)
 install(TARGETS concentrate RUNTIME DESTINATION bin)
