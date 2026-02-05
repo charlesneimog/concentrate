@@ -80,7 +80,8 @@ Concentrate::Concentrate(const unsigned port, const unsigned ping, LogLevel log_
 
     // monitoring
     if (!m_MonitoringEnabled) {
-        m_Notification->SendNotification("concentrate-off", "Concentrate", "Apps monitoring is off");
+        m_Notification->SendNotification("concentrate-off", "Concentrate",
+                                         "Apps monitoring is off");
     }
     auto lastMonitoringNotification = std::chrono::steady_clock::now() - std::chrono::minutes(10);
 
@@ -738,7 +739,8 @@ bool Concentrate::InitServer() {
         m_Server.Get(R"(/(core|modules|views|utils|api)/.*\.js)",
                      [this](const httplib::Request &req, httplib::Response &res) {
                          const std::string path = req.path;
-                         if (path.find("..") != std::string::npos || path.find('\\\\') != std::string::npos) {
+                         if (path.find("..") != std::string::npos ||
+                             path.find('\\') != std::string::npos) {
                              res.status = 400;
                              res.set_content("invalid path", "text/plain");
                              return;
@@ -1587,12 +1589,12 @@ std::filesystem::path Concentrate::GetBinaryPath() {
 
 // ─────────────────────────────────────
 std::filesystem::path Concentrate::GetDBPath() {
-    const char* xdgDataHome = std::getenv("XDG_DATA_HOME");
+    const char *xdgDataHome = std::getenv("XDG_DATA_HOME");
     std::filesystem::path baseDir;
     if (xdgDataHome && *xdgDataHome) {
         baseDir = xdgDataHome;
     } else {
-        const char* home = std::getenv("HOME");
+        const char *home = std::getenv("HOME");
         if (!home || !*home) {
             std::cerr << "Error: HOME environment variable not set\n";
             exit(1);
@@ -1610,4 +1612,3 @@ std::filesystem::path Concentrate::GetDBPath() {
 
     return dbPath;
 }
-
