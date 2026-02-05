@@ -1,9 +1,9 @@
 <?xml version="1.0" encoding="UTF-8" standalone="no"?>
 <svg
    version="1.0"
-   width="540.09119pt"
-   height="544.22089pt"
-   viewBox="0 0 540.09119 544.22089"
+   width="540pt"
+   height="540pt"
+   viewBox="0 0 540 540"
    preserveAspectRatio="xMidYMid"
    id="svg6"
    sodipodi:docname="focused.svg"
@@ -36,23 +36,23 @@
     <inkscape:page
        x="0"
        y="0"
-       width="540.09119"
-       height="544.22089"
+       width="540"
+       height="540"
        id="page2"
        margin="0"
        bleed="0" />
   </sodipodi:namedview>
   <rect
-     style="fill:#00ff00;stroke:#00ff00;stroke-width:48;stroke-dasharray:none;fill-opacity:0.60000002;stroke-opacity:0.60000002;stroke-dashoffset:0"
+     style="fill:#00ff00;fill-opacity:1;stroke:none;stroke-width:52.6202;stroke-dasharray:none;stroke-dashoffset:0;stroke-opacity:0.6"
      id="rect6"
-     width="490.66611"
-     height="494.51709"
-     x="24.115049"
-     y="24.115049"
-     rx="98.698776"
-     ry="89.926552" />
+     width="540"
+     height="540"
+     x="-5.5511151e-17"
+     y="-5.5511151e-17"
+     rx="108.62241"
+     ry="98.197495" />
   <g
-     transform="matrix(0.10440441,0,0,-0.10440441,-34.648423,580.99124)"
+     transform="matrix(0.10440441,0,0,-0.10440441,-34.694015,578.88079)"
      fill="#000000"
      stroke="none"
      id="g6">

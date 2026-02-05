@@ -1,0 +1,788 @@
+import * as API from "../api/client.js";
+
+export class HistoryManager {
+    constructor(app) {
+        this.app = app;
+        const methods = [
+            "historyManagerInitHistoryFilters",
+            "renderHistoryCategoryStats",
+            "renderHistory",
+            "updateDailyFocus",
+            "updateDailyActivities",
+            "excludeDailyActivity",
+        ];
+        methods.forEach((name) => {
+            app[name] = this[name].bind(app);
+        });
+    }
+
+    historyManagerInitHistoryFilters() {
+        const setActive = (activeId) => {
+            ["day", "week", "month", "year"].forEach((k) => {
+                const el = document.getElementById(`history-filter-${k}`);
+                if (!el) return;
+
+                const isActive = `history-filter-${k}` === activeId;
+
+                el.classList.toggle("text-gray-500", !isActive);
+                el.classList.toggle("dark:text-gray-400", !isActive);
+
+                el.classList.toggle("text-primary", isActive);
+                el.classList.toggle("dark:text-primary-dark", isActive);
+            });
+        };
+
+        const bind = (id, days) => {
+            const el = document.getElementById(id);
+            if (!el) return;
+
+            const t = document.getElementById("dynamic-data-focus");
+
+            el.addEventListener("click", async () => {
+                this.historyDays = days;
+                setActive(id);
+                if (t) {
+                    if (days == 1) {
+                        t.textContent = "Day Focus";
+                    } else if (days == 7) {
+                        t.textContent = "Week Focus";
+                    } else if (days == 30) {
+                        t.textContent = "Month Focus";
+                    } else if (days == 365) {
+                        t.textContent = "Year Focus";
+                    }
+                }
+                await this.renderHistory(days);
+            });
+        };
+
+        bind("history-filter-day", 1);
+        bind("history-filter-week", 7);
+        bind("history-filter-month", 30);
+        bind("history-filter-year", 365);
+
+        this.historyDays = 30;
+        setActive("history-filter-month");
+    }
+
+    async renderHistoryCategoryStats(days) {
+        const timeEl = document.getElementById("history-category-time");
+        const focusEl = document.getElementById("history-category-focus");
+        if (!timeEl || !focusEl) return;
+
+        timeEl.innerHTML = `<div class="text-xs text-gray-400 dark:text-gray-300">Loading...</div>`;
+        focusEl.innerHTML = `<div class="text-xs text-gray-400 dark:text-gray-300">Loading...</div>`;
+
+        try {
+            if (typeof this.ensureCategoryColors === "function") {
+                await this.ensureCategoryColors();
+            }
+
+            const [timeRes, focusRes] = await Promise.all([
+                fetch(`/api/v1/history/category-time?days=${days}`, { cache: "no-store" }),
+                fetch(`/api/v1/history/category-focus?days=${days}`, { cache: "no-store" }),
+            ]);
+
+            if (timeRes.ok) {
+                const timeRows = await timeRes.json();
+                const rows = Array.isArray(timeRows) ? timeRows : [];
+                if (!rows.length) {
+                    timeEl.innerHTML = `<div class="text-xs text-gray-400 dark:text-gray-300">No data for this range.</div>`;
+                } else {
+                    timeEl.innerHTML = "";
+                    rows.forEach((row) => {
+                        const category = String(row?.category || "uncategorized");
+                        const seconds = Number(row?.total_seconds || 0);
+                        const color = this.getCategoryColor(category);
+                        const line = document.createElement("div");
+                        line.className = "flex items-center justify-between";
+                        line.innerHTML = `
+                            <div class="flex items-center gap-2">
+                                <span class="w-2.5 h-2.5 rounded-full" style="background:${color}"></span>
+                                <span class="font-medium" style="color:${color}">${this.escapeHtml(category)}</span>
+                            </div>
+                            <span class="font-medium text-gray-900 dark:text-white">${this.fmtDuration(seconds)}</span>
+                        `;
+                        timeEl.appendChild(line);
+                    });
+                }
+            } else {
+                timeEl.innerHTML = `<div class="text-xs text-gray-400 dark:text-gray-300">Failed to load.</div>`;
+            }
+
+            if (focusRes.ok) {
+                const focusRows = await focusRes.json();
+                const rows = Array.isArray(focusRows) ? focusRows : [];
+                if (!rows.length) {
+                    focusEl.innerHTML = `<div class="text-xs text-gray-400 dark:text-gray-300">No data for this range.</div>`;
+                } else {
+                    focusEl.innerHTML = "";
+                    rows.forEach((row) => {
+                        const category = String(row?.category || "uncategorized");
+                        const focusedPct = Number(row?.focused_pct ?? 0);
+                        const unfocusedPct = Number(row?.unfocused_pct ?? 0);
+                        const color = this.getCategoryColor(category);
+                        const line = document.createElement("div");
+                        line.className = "flex items-center justify-between";
+                        line.innerHTML = `
+                            <div class="flex items-center gap-2">
+                                <span class="w-2.5 h-2.5 rounded-full" style="background:${color}"></span>
+                                <span class="font-medium" style="color:${color}">${this.escapeHtml(category)}</span>
+                            </div>
+                            <div class="flex items-center gap-2 text-xs">
+                                <span class="text-emerald-600 dark:text-emerald-400">
+                                      ${String(focusedPct.toFixed(0)).padStart(3, "0")}%
+                                </span>
+                                <span class="text-rose-600 dark:text-rose-400">
+                                      ${String(unfocusedPct.toFixed(0)).padStart(3, "0")}%
+                                </span>
+                            </div>
+                        `;
+                        focusEl.appendChild(line);
+                    });
+                }
+            } else {
+                focusEl.innerHTML = `<div class="text-xs text-gray-400 dark:text-gray-300">Failed to load.</div>`;
+            }
+        } catch (err) {
+            timeEl.innerHTML = `<div class="text-xs text-gray-400 dark:text-gray-300">Failed to load.</div>`;
+            focusEl.innerHTML = `<div class="text-xs text-gray-400 dark:text-gray-300">Failed to load.</div>`;
+            console.warn("Failed to render history category stats", err);
+        }
+    }
+
+    async renderHistory() {
+        const days = this.historyDays;
+        const list = document.getElementById("history-list");
+        if (!list) return;
+
+        const res = await fetch(`/api/v1/focus/app-usage?days=${days}`, {
+            cache: "no-store",
+        });
+
+        if (!res.ok) {
+            list.innerHTML = `<div class="text-sm text-gray-400">Failed to load history.</div>`;
+            return;
+        }
+
+        const data = await res.json();
+        await this.renderHistoryCategoryStats(days);
+        const dayKeys = Object.keys(data).sort((a, b) => (a < b ? 1 : -1));
+        list.innerHTML = "";
+
+        try {
+            let focusedTotalSeconds = null;
+            try {
+                const focusRes = await fetch(`/api/v1/focus/today?days=${days}`, { cache: "no-store" });
+                if (focusRes.ok) {
+                    const focusData = await focusRes.json();
+                    focusedTotalSeconds = Number(focusData?.focused_seconds ?? 0);
+                }
+            } catch (err) {
+                console.warn("Failed to load focused summary", err);
+            }
+
+            const aggregated = {};
+            Object.keys(data || {}).forEach((d) => {
+                const apps = data[d] || {};
+                Object.entries(apps).forEach(([appId, titles]) => {
+                    let appTotal = 0;
+                    Object.values(titles || {}).forEach((sec) => (appTotal += Number(sec || 0)));
+                    aggregated[appId] = (aggregated[appId] || 0) + appTotal;
+                });
+            });
+
+            const pieEl = document.getElementById("history-pie");
+            const legendEl = document.getElementById("history-legend");
+            const monthLabel = document.getElementById("history-month-label");
+            const goalText = document.getElementById("history-goal-text");
+            const goalBar = document.getElementById("history-goal-progress");
+
+            const appEntries = Object.entries(aggregated).sort((a, b) => b[1] - a[1]);
+            const total = appEntries.reduce((s, [, v]) => s + v, 0) || 0;
+
+            const colors = ["#2563eb", "#a855f7", "#f97316", "#ef4444", "#10b981", "#06b6d4"];
+            const slices = [];
+            let others = 0;
+            appEntries.forEach((entry, idx) => {
+                if (idx < 6) slices.push({ app: entry[0], secs: entry[1], color: colors[idx % colors.length] });
+                else others += entry[1];
+            });
+            if (others > 0) slices.push({ app: "Others", secs: others, color: "#94a3b8" });
+
+            if (pieEl) {
+                let offset = 0;
+                const parts = slices.map((s) => {
+                    const pct = total > 0 ? (s.secs / total) * 100 : 0;
+                    const start = offset;
+                    offset += pct;
+                    const end = offset;
+                    return `${s.color} ${start}% ${end}%`;
+                });
+                pieEl.style.background = `conic-gradient(${parts.join(", ")})`;
+            }
+
+            if (legendEl) {
+                legendEl.innerHTML = "";
+                slices.forEach((s) => {
+                    const row = document.createElement("div");
+                    row.className = "flex items-center justify-between text-sm";
+                    const pct = total > 0 ? (s.secs / total) * 100 : 0;
+                    row.innerHTML = `
+                        <div class=\"flex items-center gap-2\"> 
+                            <span class=\"w-3 h-3 rounded-full\" style=\"background:${s.color}\"></span>
+                            <span class=\"text-gray-600 dark:text-gray-400\">${this.escapeHtml(s.app)}</span>
+                        </div>
+                        <div class=\"text-right\"> 
+                            <div class=\"font-medium text-gray-900 dark:text-white\">${this.fmtDuration(s.secs)}</div>
+                            <div class=\"text-xs text-gray-500\">${pct.toFixed(1)}%</div>
+                        </div>
+                    `;
+                    legendEl.appendChild(row);
+                });
+            }
+
+            if (monthLabel) {
+                const days = Number(this.historyDays) || 30;
+                const now = new Date();
+                if (days <= 7)
+                    monthLabel.textContent = now.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+                else monthLabel.textContent = now.toLocaleDateString(undefined, { month: "short", year: "numeric" });
+            }
+
+            const goalTotal = Number.isFinite(focusedTotalSeconds) ? focusedTotalSeconds : total;
+            if (goalText) goalText.textContent = `${this.fmtDuration(goalTotal)} over ${Object.keys(data).length} days`;
+            if (goalBar) {
+                const days = Number(this.historyDays) || 30;
+                const goalSeconds = days * 3600;
+                const pct = goalSeconds > 0 ? Math.min(100, (goalTotal / goalSeconds) * 100) : 0;
+                goalBar.style.width = `${pct}%`;
+            }
+        } catch (err) {
+            console.warn("Failed to render history pie/legend", err);
+        }
+
+        if (!dayKeys.length) {
+            list.innerHTML = `
+            <div class="text-sm text-gray-400 dark:text-gray-500">
+                No history available yet.
+            </div>
+        `;
+            return;
+        }
+
+        dayKeys.forEach((dayKey, index) => {
+            const apps = data[dayKey];
+            const dayDate = new Date(dayKey + "T00:00:00");
+
+            let dayTotal = 0;
+            Object.values(apps).forEach((titles) => {
+                Object.values(titles).forEach((sec) => (dayTotal += sec));
+            });
+
+            const opacity = Math.max(0.7, 1 - index * 0.05);
+
+            const card = document.createElement("div");
+            card.className = "bg-white dark:bg-gray-800 shadow-sm rounded-xl overflow-hidden shadow-subtle";
+            card.style.opacity = String(opacity);
+
+            const header = document.createElement("div");
+            header.className = "bg-gray-50 dark:bg-gray-700 px-5 py-3 shadow-sm flex justify-between items-center";
+
+            header.innerHTML = `
+            <div class="flex items-center gap-4">
+                <div class="flex flex-col">
+                    <span class="text-sm font-bold text-gray-900 dark:text-white">
+                        ${this.formatDayLabel(dayDate)}
+                    </span>
+                </div>
+                <div class="h-8 w-px bg-gray-200 dark:bg-gray-600"></div>
+                <div class="flex items-center gap-1.5">
+                    <span class="material-symbols-outlined text-primary text-lg">timer</span>
+                    <span class="text-sm font-bold text-primary">
+                        ${this.fmtDuration(dayTotal)}
+                    </span>
+                </div>
+            </div>
+        `;
+
+            const body = document.createElement("div");
+            body.className = "p-5";
+
+            const grid = document.createElement("div");
+            grid.className = "grid grid-cols-1 sm:grid-cols-2 gap-3";
+
+            Object.entries(apps).forEach(([appId, titles]) => {
+                const badgeStyle = this.appIdBadgeStyle(appId);
+
+                let appTotal = 0;
+                Object.values(titles).forEach((sec) => (appTotal += sec));
+
+                const appBlock = document.createElement("div");
+                appBlock.className =
+                    "rounded-lg border border-gray-200 dark:border-gray-600 p-3 bg-gray-50 dark:bg-gray-800";
+
+                appBlock.innerHTML = `
+                <div class="flex items-center justify-between mb-2">
+                    <span class="px-2 py-0.5 rounded text-[11px] font-bold border"
+                        style="background:${badgeStyle.background};
+                               color:${badgeStyle.color};
+                               border-color:${badgeStyle.borderColor}">
+                        ${this.escapeHtml(appId)}
+                    </span>
+                    <span class="text-xs font-bold text-primary">
+                        ${this.fmtDuration(appTotal)}
+                    </span>
+                </div>
+            `;
+
+                const titleList = document.createElement("div");
+                titleList.className = "flex flex-col gap-1 pl-2";
+
+                const entries = Object.entries(titles).sort((a, b) => b[1] - a[1]);
+
+                let othersSeconds = 0;
+
+                entries.forEach(([_, seconds]) => {
+                    if (seconds < 60) {
+                        othersSeconds += seconds;
+                    }
+                });
+
+                entries.forEach(([title, seconds]) => {
+                    if (seconds < 60) return;
+
+                    const row = document.createElement("div");
+                    row.className = "flex justify-between text-sm text-gray-700 dark:text-gray-200";
+
+                    row.innerHTML = `
+                        <span class="truncate" title="${this.escapeHtml(title)}">
+                            ${this.escapeHtml(this.truncateText(title, 36))}
+                        </span>
+                        <span class="text-xs font-mono text-gray-500 dark:text-gray-400">
+                            ${this.fmtDuration(seconds)}
+                        </span>
+                    `;
+
+                    titleList.appendChild(row);
+                });
+
+                if (othersSeconds > 0) {
+                    const row = document.createElement("div");
+                    row.className = "flex justify-between text-sm text-gray-600 dark:text-gray-400 italic";
+
+                    const label = othersSeconds < 60 ? `${Math.round(othersSeconds)}s` : this.fmtDuration(othersSeconds);
+
+                    row.innerHTML = `
+        <span>Others</span>
+        <span class="text-xs font-mono">${label}</span>
+    `;
+
+                    titleList.appendChild(row);
+                }
+
+                appBlock.appendChild(titleList);
+                grid.appendChild(appBlock);
+            });
+
+            body.appendChild(grid);
+            card.appendChild(header);
+            card.appendChild(body);
+            list.appendChild(card);
+        });
+    }
+
+    async updateDailyFocus() {
+        const days = 1;
+        const res = await API.loadFocusToday(days);
+        const container = document.getElementById("i-was-focused");
+        const bar = document.getElementById("focus-progress-bar");
+        const text = container?.querySelector("p");
+        const pie = document.getElementById("stats-pie");
+        const legend = document.getElementById("stats-legend");
+        const totalEl = document.getElementById("stats-total");
+        const totalText = document.getElementById("stats-text");
+        const loadingEl = document.getElementById("stats-pie-loading");
+
+        if (!container || !bar || !text || !pie || !totalEl || !totalText) return;
+
+        totalText.textContent = "Total Time";
+        if (loadingEl) loadingEl.style.display = "block";
+
+        if (!res.ok) {
+            console.error("API '/focus/today' not returned ok", res.status, res.errorText || "");
+
+            bar.style.width = "0%";
+            bar.className = bar.className.replace(/bg-\S+/g, "").trim() + " bg-gray-300";
+            container.className =
+                container.className.replace(/from-\S+ to-\S+/, "").trim() +
+                " bg-gradient-to-br from-gray-200 to-gray-300";
+            pie.style.background = "#e5e7eb";
+            totalEl.textContent = this.fmtDuration(0);
+
+            const rawMsg = res.errorText || "Failed to load focus data from server.";
+            const msg = typeof this.truncateText === "function" ? this.truncateText(String(rawMsg), 140) : String(rawMsg);
+            text.textContent = `Failed to load focus data: ${msg}`;
+
+            if (legend) {
+                legend.innerHTML = `
+                    <div class="text-xs text-gray-500 dark:text-gray-400">No focus summary available.</div>
+                `;
+            }
+
+            if (loadingEl) loadingEl.style.display = "none";
+            return;
+        }
+
+        const data = res.data;
+
+        const focusedSeconds = Number(data.focused_seconds ?? 0);
+        const unfocusedSeconds = Number(data.unfocused_seconds ?? 0);
+        const totalSeconds = focusedSeconds + unfocusedSeconds;
+
+        const aggregated = {};
+        Object.keys(data || {}).forEach((d) => {
+            const apps = data[d] || {};
+            Object.entries(apps).forEach(([appId, titles]) => {
+                let appTotal = 0;
+                Object.values(titles || {}).forEach((sec) => (appTotal += Number(sec || 0)));
+                aggregated[appId] = (aggregated[appId] || 0) + appTotal;
+            });
+        });
+
+        try {
+            const pieEl = document.getElementById("history-pie");
+            const legendEl = document.getElementById("history-legend");
+            const monthLabel = document.getElementById("history-month-label");
+            const goalText = document.getElementById("history-goal-text");
+            const goalBar = document.getElementById("history-goal-progress");
+
+            const appEntries = Object.entries(aggregated).sort((a, b) => b[1] - a[1]);
+            const total = appEntries.reduce((s, [, v]) => s + v, 0) || 0;
+
+            const colors = ["#2563eb", "#a855f7", "#f97316", "#ef4444", "#10b981", "#06b6d4"];
+            const slices = [];
+            let others = 0;
+            appEntries.forEach((entry, idx) => {
+                if (idx < 6) slices.push({ app: entry[0], secs: entry[1], color: colors[idx % colors.length] });
+                else others += entry[1];
+            });
+            if (others > 0) slices.push({ app: "Others", secs: others, color: "#94a3b8" });
+
+            if (pieEl) {
+                let offset = 0;
+                const parts = slices.map((s) => {
+                    const pct = total > 0 ? (s.secs / total) * 100 : 0;
+                    const start = offset;
+                    offset += pct;
+                    const end = offset;
+                    return `${s.color} ${start}% ${end}%`;
+                });
+                pieEl.style.background = `conic-gradient(${parts.join(", ")})`;
+            }
+
+            if (legendEl) {
+                legendEl.innerHTML = "";
+                slices.forEach((s) => {
+                    const row = document.createElement("div");
+                    row.className = "flex items-center justify-between text-sm";
+                    const pct = total > 0 ? (s.secs / total) * 100 : 0;
+                    row.innerHTML = `
+                        <div class=\"flex items-center gap-2\"> 
+                            <span class=\"w-3 h-3 rounded-full\" style=\"background:${s.color}\"></span>
+                            <span class=\"text-gray-600 dark:text-gray-400\">${this.escapeHtml(s.app)}</span>
+                        </div>
+                        <div class=\"text-right\"> 
+                            <div class=\"font-medium text-gray-900 dark:text-white\">${this.fmtDuration(s.secs)}</div>
+                            <div class=\"text-xs text-gray-500\">${pct.toFixed(1)}%</div>
+                        </div>
+                    `;
+                    legendEl.appendChild(row);
+                });
+            }
+
+            if (monthLabel) {
+                const days = Number(this.historyDays) || 30;
+                const now = new Date();
+                if (days <= 7)
+                    monthLabel.textContent = now.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+                else if (days <= 31)
+                    monthLabel.textContent = now.toLocaleDateString(undefined, { month: "short", year: "numeric" });
+                else monthLabel.textContent = now.toLocaleDateString(undefined, { month: "short", year: "numeric" });
+            }
+
+            if (goalText) goalText.textContent = `${this.fmtDuration(focusedSeconds)} over ${Object.keys(data).length} days`;
+            if (goalBar) {
+                const days = Number(this.historyDays) || 30;
+                const goalSeconds = days * 3600;
+                const pct = goalSeconds > 0 ? Math.min(100, (focusedSeconds / goalSeconds) * 100) : 0;
+                goalBar.style.width = `${pct}%`;
+            }
+        } catch (err) {
+            console.warn("Failed to render history pie/legend", err);
+        }
+
+        // (elements already resolved above)
+
+        if (totalSeconds === 0) {
+            bar.style.width = "0%";
+            bar.className = bar.className.replace(/bg-\S+/, "").trim() + " bg-gray-300";
+
+            container.className =
+                container.className.replace(/from-\S+ to-\S+/, "").trim() + " bg-gradient-to-br from-gray-200 to-gray-300";
+
+            text.textContent = "No focus data for today";
+
+            pie.style.background = "#e5e7eb";
+
+            totalEl.textContent = this.fmtDuration(0);
+
+            if (legend) {
+                legend.innerHTML = `
+                <div class="flex items-center justify-between text-sm">
+                    <div class="flex items-center gap-2">
+                        <span class="w-3 h-3 rounded-full bg-gray-400"></span>
+                        <span class="text-gray-600 dark:text-gray-400">Focused</span>
+                    </div>
+                    <span class="font-medium text-gray-900 dark:text-white">0%</span>
+                </div>
+                <div class="flex items-center justify-between text-sm">
+                    <div class="flex items-center gap-2">
+                        <span class="w-3 h-3 rounded-full bg-gray-400"></span>
+                        <span class="text-gray-600 dark:text-gray-400">Not Focused</span>
+                    </div>
+                    <span class="font-medium text-gray-900 dark:text-white">0%</span>
+                </div>
+            `;
+            }
+
+            if (loadingEl) loadingEl.style.display = "none";
+            return;
+        }
+
+        const focusPercent = Math.min(100, (focusedSeconds / totalSeconds) * 100);
+        const unfocusPercent = Math.min(100, (unfocusedSeconds / totalSeconds) * 100);
+
+        let gradient = "";
+        let barColor = "";
+        let message = "";
+
+        if (focusPercent < 20) {
+            gradient = "from-red-600 to-red-800";
+            barColor = "bg-red-300";
+            message = "You were not focused today";
+        } else if (focusPercent < 40) {
+            gradient = "from-orange-500 to-orange-700";
+            barColor = "bg-orange-200";
+            message = "You were less focused today";
+        } else if (focusPercent < 60) {
+            gradient = "from-yellow-400 to-yellow-600";
+            barColor = "bg-yellow-100";
+            message = "Your focus was inconsistent today";
+        } else if (focusPercent < 80) {
+            gradient = "from-green-400 to-green-600";
+            barColor = "bg-green-100";
+            message = "You were mostly focused today";
+        } else {
+            gradient = "from-emerald-500 to-emerald-700";
+            barColor = "bg-emerald-100";
+            message = "You were very focused today";
+        }
+
+        container.className = container.className.replace(/from-\S+ to-\S+/, "").trim() + ` bg-gradient-to-br ${gradient}`;
+
+        bar.className = bar.className.replace(/bg-\S+/, "").trim() + ` ${barColor}`;
+        bar.style.width = `${focusPercent.toFixed(1)}%`;
+
+        text.textContent =
+            `${message} (${focusPercent.toFixed(0)}% focused, ` + `${((unfocusedSeconds / totalSeconds) * 100).toFixed(0)}% not focused)`;
+
+        const defaultMode = this.statsLegendMode || "total";
+        const mode = ["total", "focused", "unfocused"].includes(defaultMode) ? defaultMode : "total";
+        this.statsLegendMode = mode;
+
+        const focusColor = mode === "unfocused" ? "#e5e7eb" : "#10b981";
+        const unfocusColor = mode === "focused" ? "#e5e7eb" : "#ef4444";
+
+        const slicesData = [
+            { label: "Focused", value: focusedSeconds, color: focusColor },
+            { label: "Not Focused", value: unfocusedSeconds, color: unfocusColor },
+        ];
+
+        const setCenterLabel = (nextMode) => {
+            this.statsLegendMode = nextMode;
+            if (nextMode === "focused") {
+                totalEl.textContent = this.fmtDuration(focusedSeconds);
+                totalText.textContent = `Focused (${focusPercent.toFixed(0)}%)`;
+            } else if (nextMode === "unfocused") {
+                totalEl.textContent = this.fmtDuration(unfocusedSeconds);
+                totalText.textContent = `Not Focused (${unfocusPercent.toFixed(0)}%)`;
+            } else {
+                totalEl.textContent = this.fmtDuration(totalSeconds);
+                totalText.textContent = "Total Time";
+            }
+        };
+
+        setCenterLabel(mode);
+
+        let offset = 0;
+        pie.style.background = `conic-gradient(${slicesData
+            .map(({ value, color }) => {
+                const percent = (value / totalSeconds) * 100;
+                const start = offset;
+                offset += percent;
+                return `${color} ${start}% ${offset}%`;
+            })
+            .join(", ")})`;
+
+        if (legend) {
+            legend.innerHTML = "";
+            const createLegendButton = (label, percent, color, nextMode) => {
+                const btn = document.createElement("button");
+                btn.type = "button";
+                const isActive = this.statsLegendMode === nextMode;
+                btn.className = `w-full flex items-center justify-between text-sm rounded-lg px-2 py-1 transition-colors ${
+                    isActive
+                        ? "bg-primary/10 dark:bg-primary-dark/10 text-primary dark:text-primary-dark"
+                        : "hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-600 dark:text-gray-300"
+                }`;
+                btn.setAttribute("aria-pressed", isActive ? "true" : "false");
+                btn.innerHTML = `
+                    <div class="flex items-center gap-2">
+                        <span class="w-3 h-3 rounded-full" style="background:${color}"></span>
+                        <span>${label}</span>
+                    </div>
+                    <span class="font-medium text-gray-900 dark:text-white">${percent.toFixed(1)}%</span>
+                `;
+                btn.addEventListener("click", () => {
+                    const next = this.statsLegendMode === nextMode ? "total" : nextMode;
+                    this.statsLegendMode = next;
+                    setCenterLabel(next);
+                    this.updateDailyFocus();
+                });
+                return btn;
+            };
+
+            legend.appendChild(createLegendButton("Focused", focusPercent, "#10b981", "focused"));
+            legend.appendChild(createLegendButton("Not Focused", unfocusPercent, "#ef4444", "unfocused"));
+        }
+
+        if (loadingEl) loadingEl.style.display = "none";
+
+    }
+
+    async updateDailyActivities() {
+        const tasksRes = await API.loadRecurringTasks();
+        if (!tasksRes.ok) {
+            console.error(`Failed to fetch recurring tasks (status: ${tasksRes.status}): ${tasksRes.errorText || ""}`);
+            return;
+        }
+
+        const tasks = tasksRes.tasks;
+
+        let durationsByName = new Map();
+        try {
+            const summaryRes = await API.loadDailyActivitiesTodaySummary();
+            if (summaryRes.ok) {
+                const summary = summaryRes.summary;
+                if (Array.isArray(summary)) {
+                    summary.forEach((row) => {
+                        const name = String(row?.name || "");
+                        const seconds = Number(row?.total_seconds || 0);
+                        if (name) durationsByName.set(name, seconds);
+                    });
+                }
+            } else {
+                console.error(
+                    `Failed to fetch daily activities summary (status: ${summaryRes.status}): ${summaryRes.errorText || ""}`,
+                );
+            }
+        } catch (err) {
+            console.error("Failed to fetch daily activities summary:", err);
+        }
+
+        const container = document.getElementById("daily-classes");
+        if (!container) return;
+        container.innerHTML = "";
+
+        if (!tasks.length) {
+            const placeholder = document.createElement("div");
+            placeholder.className = "p-4 text-sm text-gray-500 dark:text-gray-400 italic";
+            placeholder.textContent = "No recurring tasks added yet.";
+            container.appendChild(placeholder);
+            return;
+        }
+
+        tasks.forEach((task) => {
+            const taskDiv = document.createElement("div");
+            taskDiv.className =
+                "flex items-center justify-between p-4 rounded-lg shadow-sm border-b border-gray-200 dark:border-gray-700";
+
+            const colorClass = this.getDailyColorClass(task.color);
+
+            taskDiv.innerHTML = `
+            <div class="flex items-center gap-3 min-w-0">
+                <div class="h-8 w-8 rounded ${colorClass} flex items-center justify-center">
+                    <span class="material-symbols-outlined text-[20px]">${task.icon}</span>
+                </div>
+                <div class="min-w-0">
+                    <p class="text-sm font-medium truncate text-gray-800 dark:text-gray-100">
+                        ${task.name}
+                    </p>
+                </div>
+            </div>
+            <div class="flex items-center gap-2">
+                <span class="text-xs font-mono text-primary bg-primary/5 dark:bg-primary/10 px-2 py-1 rounded border border-primary/10 dark:border-primary/20">
+                    ${this.fmtDuration(durationsByName.get(task.name) || 0)}
+                </span>
+                <button class="edit-btn hover:text-primary rounded hover:cursor-pointer" title="Edit activity">
+                    <span class="material-symbols-outlined text-[18px]">edit</span>
+                </button>
+                <button class="exclude-btn hover:text-red-600 rounded hover:cursor-pointer">
+                    <span class="material-symbols-outlined text-[18px]">delete</span>
+                </button>
+            </div>
+        `;
+
+            const editBtn = taskDiv.querySelector(".edit-btn");
+            editBtn.addEventListener("click", () => {
+                const modal = document.getElementById("daily-config-modal");
+                const nameEl = document.getElementById("daily-name");
+                const appIdsEl = document.getElementById("daily-appids");
+                const appTitlesEl = document.getElementById("daily-apptitles");
+                const iconEl = document.getElementById("daily-icon");
+                const colorEl = document.getElementById("daily-color");
+
+                if (nameEl) nameEl.value = String(task.name || "");
+                if (appIdsEl) appIdsEl.value = Array.isArray(task.app_ids) ? task.app_ids.join(";") : "";
+                if (appTitlesEl) {
+                    appTitlesEl.value = Array.isArray(task.app_titles) ? task.app_titles.join(";") : "";
+                }
+                if (iconEl) iconEl.value = String(task.icon || "");
+                if (colorEl) colorEl.value = String(task.color || "");
+
+                if (modal) modal.classList.remove("hidden");
+            });
+
+            const btn = taskDiv.querySelector(".exclude-btn");
+            btn.addEventListener("click", async () => {
+                try {
+                    await this.excludeDailyActivity(task.name);
+                    taskDiv.remove();
+                } catch (err) {
+                    console.error("Failed to exclude task:", err);
+                }
+            });
+
+            container.appendChild(taskDiv);
+        });
+    }
+
+    async excludeDailyActivity(taskName) {
+        try {
+            await API.deleteRecurringTask(taskName);
+        } catch (err) {
+            console.error("Error excluding task:", err);
+        }
+    }
+}

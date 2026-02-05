@@ -80,7 +80,7 @@ Concentrate::Concentrate(const unsigned port, const unsigned ping, LogLevel log_
 
     // monitoring
     if (!m_MonitoringEnabled) {
-        m_Notification->SendNotification("dialog-warning", "Concentrate", "Apps monitoring is off");
+        m_Notification->SendNotification("concentrate-off", "Concentrate", "Apps monitoring is off");
     }
     auto lastMonitoringNotification = std::chrono::steady_clock::now() - std::chrono::minutes(10);
 
@@ -119,7 +119,7 @@ Concentrate::Concentrate(const unsigned port, const unsigned ping, LogLevel log_
 
         // Notify if monitoring is disabled every 5 minutes
         if (!m_MonitoringEnabled && now - lastMonitoringNotification >= std::chrono::minutes(1)) {
-            m_Notification->SendNotification("dialog-warning", "Concentrate",
+            m_Notification->SendNotification("concentrate-off", "Concentrate",
                                              "Application monitoring is currently disabled.");
             lastMonitoringNotification = now;
         }
@@ -720,6 +720,59 @@ bool Concentrate::InitServer() {
                              std::istreambuf_iterator<char>());
             res.set_content(body, "application/javascript");
         });
+
+        // main.js
+        m_Server.Get("/main.js", [this](const httplib::Request &, httplib::Response &res) {
+            std::ifstream file(m_Root / "main.js", std::ios::binary);
+            if (!file) {
+                res.status = 404;
+                res.set_content("main.js not found", "text/plain");
+                return;
+            }
+            std::string body((std::istreambuf_iterator<char>(file)),
+                             std::istreambuf_iterator<char>());
+            res.set_content(body, "application/javascript");
+        });
+
+        // ES module directories
+        m_Server.Get(R"(/(core|modules|views|utils|api)/.*\.js)",
+                     [this](const httplib::Request &req, httplib::Response &res) {
+                         const std::string path = req.path;
+                         if (path.find("..") != std::string::npos || path.find('\\\\') != std::string::npos) {
+                             res.status = 400;
+                             res.set_content("invalid path", "text/plain");
+                             return;
+                         }
+
+                         std::string rel = path;
+                         if (!rel.empty() && rel.front() == '/') {
+                             rel.erase(rel.begin());
+                         }
+
+                         const std::filesystem::path fsPath = m_Root / rel;
+                         std::ifstream file(fsPath, std::ios::binary);
+                         if (!file) {
+                             res.status = 404;
+                             res.set_content("file not found", "text/plain");
+                             return;
+                         }
+
+                         std::string body((std::istreambuf_iterator<char>(file)),
+                                          std::istreambuf_iterator<char>());
+
+                         const auto ext = fsPath.extension().string();
+                         if (ext == ".js") {
+                             res.set_content(body, "application/javascript");
+                         } else if (ext == ".css") {
+                             res.set_content(body, "text/css");
+                         } else if (ext == ".svg") {
+                             res.set_content(body, "image/svg+xml");
+                         } else if (ext == ".html") {
+                             res.set_content(body, "text/html");
+                         } else {
+                             res.set_content(body, "application/octet-stream");
+                         }
+                     });
     }
 
     // Anytype API

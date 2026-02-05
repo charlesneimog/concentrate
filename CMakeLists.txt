@@ -59,18 +59,43 @@ if(NOT TAILWINDCSS_EXECUTABLE)
     message(FATAL_ERROR "tailwindcss is not installed or not in PATH")
 endif()
 
+# Web UI source locations
+set(WEBUI_DIR ${CMAKE_SOURCE_DIR}/webui)
+
+# JS/module assets live in webui/ (preferred). Fall back to repo root for older layouts.
+set(WEBUI_ASSETS_DIR ${WEBUI_DIR})
+if(NOT EXISTS "${WEBUI_ASSETS_DIR}/main.js")
+    set(WEBUI_ASSETS_DIR ${CMAKE_SOURCE_DIR})
+endif()
+
+set(WEBUI_INDEX ${CMAKE_SOURCE_DIR}/index.html)
+if(EXISTS "${WEBUI_DIR}/index.html")
+    set(WEBUI_INDEX ${WEBUI_DIR}/index.html)
+endif()
+
+set(TAILWIND_INPUT ${CMAKE_SOURCE_DIR}/input.css)
+if(EXISTS "${WEBUI_DIR}/input.css")
+    set(TAILWIND_INPUT ${WEBUI_DIR}/input.css)
+endif()
+
 add_custom_target(
     tailwindcss ALL
-    COMMAND ${TAILWINDCSS_EXECUTABLE} -i ${CMAKE_SOURCE_DIR}/input.css -o $<TARGET_FILE_DIR:Concentrate>/style.css > /dev/null 2>&1
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different ${CMAKE_SOURCE_DIR}/index.html $<TARGET_FILE_DIR:Concentrate>/index.html
+    COMMAND ${TAILWINDCSS_EXECUTABLE} -i ${TAILWIND_INPUT} -o ${CMAKE_BINARY_DIR}/style.css > /dev/null 2>&1
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different ${CMAKE_BINARY_DIR}/style.css $<TARGET_FILE_DIR:Concentrate>/style.css
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different ${WEBUI_INDEX} $<TARGET_FILE_DIR:Concentrate>/index.html
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     COMMENT "Building Tailwind CSS")
 
 add_custom_target(
     webfiles
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different ${CMAKE_SOURCE_DIR}/index.html $<TARGET_FILE_DIR:Concentrate>/index.html
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different ${CMAKE_SOURCE_DIR}/app.js $<TARGET_FILE_DIR:Concentrate>/app.js
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different ${WEBUI_INDEX} $<TARGET_FILE_DIR:Concentrate>/index.html
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different ${WEBUI_ASSETS_DIR}/main.js $<TARGET_FILE_DIR:Concentrate>/main.js
     COMMAND ${CMAKE_COMMAND} -E copy_if_different ${CMAKE_SOURCE_DIR}/resources/favicon.svg $<TARGET_FILE_DIR:Concentrate>/favicon.svg
+    COMMAND ${CMAKE_COMMAND} -E copy_directory ${WEBUI_ASSETS_DIR}/core $<TARGET_FILE_DIR:Concentrate>/core
+    COMMAND ${CMAKE_COMMAND} -E copy_directory ${WEBUI_ASSETS_DIR}/modules $<TARGET_FILE_DIR:Concentrate>/modules
+    COMMAND ${CMAKE_COMMAND} -E copy_directory ${WEBUI_ASSETS_DIR}/views $<TARGET_FILE_DIR:Concentrate>/views
+    COMMAND ${CMAKE_COMMAND} -E copy_directory ${WEBUI_ASSETS_DIR}/utils $<TARGET_FILE_DIR:Concentrate>/utils
+    COMMAND ${CMAKE_COMMAND} -E copy_directory ${WEBUI_ASSETS_DIR}/api $<TARGET_FILE_DIR:Concentrate>/api
     COMMENT "Copying webfiles")
 
 add_dependencies(Concentrate webfiles tailwindcss)
@@ -92,7 +117,21 @@ target_link_libraries(
 target_compile_options(Concentrate PRIVATE $<$<CONFIG:Release>:-O3 -march=native -DNDEBUG>)
 install(TARGETS Concentrate RUNTIME DESTINATION bin)
 
-install(FILES ${CMAKE_SOURCE_DIR}/index.html ${CMAKE_SOURCE_DIR}/app.js ${CMAKE_SOURCE_DIR}/resources/favicon.svg ${CMAKE_BINARY_DIR}/style.css DESTINATION share/Concentrate)
+install(
+    FILES ${WEBUI_INDEX}
+        ${WEBUI_ASSETS_DIR}/main.js
+          ${CMAKE_SOURCE_DIR}/resources/favicon.svg
+          ${CMAKE_BINARY_DIR}/style.css
+    DESTINATION share/Concentrate)
+
+install(
+    DIRECTORY ${WEBUI_ASSETS_DIR}/core
+              ${WEBUI_ASSETS_DIR}/modules
+              ${WEBUI_ASSETS_DIR}/views
+              ${WEBUI_ASSETS_DIR}/utils
+              ${WEBUI_ASSETS_DIR}/api
+    DESTINATION share/Concentrate)
+
 
 # Linux desktop integration
 install(FILES ${CMAKE_SOURCE_DIR}/resources/Concentrate.desktop DESTINATION share/applications)
