@@ -193,7 +193,7 @@ Concentrate::Concentrate(const unsigned port, const unsigned ping, LogLevel log_
         m_SchedulerCv.wait_until(lk, deadline, [&] {
             return m_ShutdownRequested.load() ||
                    m_WakeupSeq.load(std::memory_order_relaxed) != seq ||
-                   m_FocusDirty.load();
+                   (eventDriven && m_FocusDirty.load());
         });
     };
 
@@ -212,6 +212,9 @@ Concentrate::Concentrate(const unsigned port, const unsigned ping, LogLevel log_
                 shouldRefreshFocus = true;
             }
         } else {
+            // In polling mode, m_FocusDirty must not force the scheduler to wake continuously.
+            // Clear it here so the wait predicate remains false between deadlines.
+            m_FocusDirty.store(false);
             if ((now - lastFocusQueryAt) >= std::chrono::seconds(m_Ping)) {
                 shouldRefreshFocus = true;
             }
