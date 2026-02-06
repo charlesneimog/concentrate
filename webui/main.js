@@ -35,7 +35,7 @@ class FocusApp {
             cycleStep: 0,
             focusDuration: 25 * 60,
             shortBreakDuration: 5 * 60,
-            longBreakDuration: 15 * 60,
+            longBreakDuration: 20 * 60,
             timeLeft: 25 * 60,
             interval: null,
             autoStartBreaks: true,
