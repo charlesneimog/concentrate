@@ -52,6 +52,7 @@ add_executable(
     src/secrets.cpp
     src/notification.cpp
     src/window.cpp
+    src/niri.cpp
     src/anytype.cpp
     src/hydration.cpp
     src/json.cpp
