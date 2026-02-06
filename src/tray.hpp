@@ -3,6 +3,7 @@
 #include <dbus/dbus.h>
 #include <atomic>
 #include <string>
+#include <thread>
 
 #include "common.hpp"
 
@@ -54,6 +55,9 @@ class TrayIcon {
     std::string m_IconName = "concentrate-unfocused";
     FocusState m_FocusState = IDLE;
     bool m_Started = false;
+
+    std::atomic<bool> m_StopDispatch{false};
+    std::thread m_DispatchThread;
 
     std::atomic<bool> m_OpenUiRequested{false};
     std::atomic<bool> m_ExitRequested{false};

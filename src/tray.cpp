@@ -4,6 +4,7 @@
 
 #include <cstring>
 #include <string>
+#include <chrono>
 #include <unistd.h>
 
 static constexpr const char *kObjPath = "/StatusNotifierItem";
@@ -127,6 +128,11 @@ static void menu_append_layout_node(DBusMessageIter *out, dbus_int32_t id,
 
 // ─────────────────────────────────────
 TrayIcon::~TrayIcon() {
+    m_StopDispatch.store(true);
+    if (m_DispatchThread.joinable()) {
+        m_DispatchThread.join();
+    }
+
     if (m_Conn) {
         dbus_connection_unregister_object_path(m_Conn, kMenuPath);
         dbus_connection_unregister_object_path(m_Conn, kObjPath);
@@ -143,6 +149,12 @@ bool TrayIcon::Start(std::string title) {
 
     m_Title = std::move(title);
 
+    // We may send DBus messages from the main thread while a dispatcher thread is running.
+    // Enable libdbus internal locking.
+    if (!dbus_threads_init_default()) {
+        spdlog::warn("Tray: dbus_threads_init_default failed; tray may be unstable");
+    }
+
     DBusError err;
     dbus_error_init(&err);
 
@@ -156,6 +168,9 @@ bool TrayIcon::Start(std::string title) {
         }
         return false;
     }
+
+    // Don't let libdbus terminate the whole process if the bus disconnects.
+    dbus_connection_set_exit_on_disconnect(m_Conn, FALSE);
 
     // Build a well-known name that won't collide (bus name elements can't start with a digit).
     const pid_t pid = getpid();
@@ -195,6 +210,28 @@ bool TrayIcon::Start(std::string title) {
 
     RegisterWithWatcher();
     m_Started = true;
+
+    // Dispatch DBus continuously so tray method calls don't time out while the app sleeps.
+    m_StopDispatch.store(false);
+    m_DispatchThread = std::thread([this]() {
+        while (!m_StopDispatch.load()) {
+            DBusConnection *conn = m_Conn;
+            if (!conn) {
+                break;
+            }
+
+            if (!dbus_connection_get_is_connected(conn)) {
+                break;
+            }
+
+            // Wait a little for IO, then dispatch any pending messages.
+            dbus_connection_read_write_dispatch(conn, 250);
+
+            // If nothing is happening, avoid a hot loop.
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        }
+    });
+
     spdlog::info("Tray: StatusNotifierItem exported as {}{}", m_BusName, kObjPath);
     return true;
 }
@@ -205,6 +242,8 @@ void TrayIcon::Poll() {
         return;
     }
 
+    // Kept for API compatibility: do a quick non-blocking pump.
+    // The dedicated dispatcher thread is the primary mechanism.
     dbus_connection_read_write_dispatch(m_Conn, 0);
 }
 
