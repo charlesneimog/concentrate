@@ -76,10 +76,10 @@ Concentrate::Concentrate(const unsigned port, const unsigned ping, LogLevel log_
 
     // Time
     std::string monitoring_str = m_Secrets->LoadSecret("monitoring_enabled");
-    m_MonitoringEnabled = monitoring_str.empty() ? true : (monitoring_str == "true");
+    m_MonitoringEnabled.store(monitoring_str.empty() ? true : (monitoring_str == "true"));
 
     // monitoring
-    if (!m_MonitoringEnabled) {
+    if (!m_MonitoringEnabled.load()) {
         m_Notification->SendNotification("concentrate-off", "Concentrate",
                                          "Apps monitoring is off");
     }
@@ -96,6 +96,11 @@ Concentrate::Concentrate(const unsigned port, const unsigned ping, LogLevel log_
     std::string openAppId;
     std::string openTitle;
     std::string openCategory;
+
+    bool hasOpenMonitoringInterval = false;
+    MonitoringState openMonitoringState = MONITORING_ENABLE;
+    auto monitoringIntervalStart = std::chrono::steady_clock::now();
+    auto lastMonitoringDbFlush = monitoringIntervalStart;
 
     {
         std::lock_guard<std::mutex> lock(m_GlobalMutex);
@@ -118,14 +123,149 @@ Concentrate::Concentrate(const unsigned port, const unsigned ping, LogLevel log_
     while (true) {
         auto now = std::chrono::steady_clock::now();
 
+        const bool monitoringToggled = m_MonitoringTogglePending.exchange(false);
+        const bool monitoringEnabledNow = m_MonitoringEnabled.load();
+
+        // Get focused window and current state (always needed to detect IDLE, even if monitoring is disabled)
+        m_Fw = m_Window->GetFocusedWindow();
+        if (m_SpecialProjectFocused) {
+            m_Fw.app_id = m_SpecialAppId;
+            m_Fw.title = m_SpecialProjectTitle;
+            spdlog::debug("Special project focus override: app_id='{}', title='{}'", m_Fw.app_id,
+                          m_Fw.title);
+        }
+
+        FocusState currentState = AmIFocused(m_Fw);
+
+        // If monitoring was toggled, force a monitoring-session split at 'now' (idle time is excluded).
+        if (monitoringToggled && hasOpenMonitoringInterval) {
+            const double endUnix = ToUnixTime(now);
+            const double startUnix = ToUnixTime(monitoringIntervalStart);
+            const double duration = endUnix - startUnix;
+            if (duration > 0.0) {
+                if (!m_SQLite->UpdateMonitoringSession(endUnix, duration, openMonitoringState)) {
+                    m_SQLite->InsertMonitoringSession(startUnix, endUnix, duration, openMonitoringState);
+                }
+            }
+            hasOpenMonitoringInterval = false;
+        }
+
         // Notify if monitoring is disabled every 5 minutes
-        if (!m_MonitoringEnabled && now - lastMonitoringNotification >= std::chrono::minutes(1)) {
+        if (!monitoringEnabledNow && now - lastMonitoringNotification >= std::chrono::minutes(1)) {
             m_Notification->SendNotification("concentrate-off", "Concentrate",
                                              "Application monitoring is currently disabled.");
             lastMonitoringNotification = now;
         }
 
-        if (!m_MonitoringEnabled) {
+        // IDLE: close any open focus interval AND any open monitoring interval. Idle is never recorded.
+        if (currentState == IDLE) {
+            if (hasOpenInterval && openState != IDLE) {
+                const double endUnix = ToUnixTime(now);
+                const double startUnix = ToUnixTime(intervalStart);
+                const double duration = endUnix - startUnix;
+
+                if (duration > 0.0) {
+                    if (!m_SQLite->UpdateEventNew(openAppId, openTitle, openCategory, endUnix,
+                                                  duration, openState)) {
+                        m_SQLite->InsertEventNew(openAppId, openTitle, openCategory, startUnix,
+                                                 endUnix, duration, openState);
+                    }
+                    spdlog::info(
+                        "Focus event closed (idle): state={}, app_id='{}', title='{}', duration={}",
+                        static_cast<int>(openState), openAppId, openTitle, duration);
+                }
+            }
+
+            if (hasOpenMonitoringInterval) {
+                const double endUnix = ToUnixTime(now);
+                const double startUnix = ToUnixTime(monitoringIntervalStart);
+                const double duration = endUnix - startUnix;
+                if (duration > 0.0) {
+                    if (!m_SQLite->UpdateMonitoringSession(endUnix, duration, openMonitoringState)) {
+                        m_SQLite->InsertMonitoringSession(startUnix, endUnix, duration,
+                                                         openMonitoringState);
+                    }
+                }
+            }
+
+            hasOpenInterval = false;
+            openState = IDLE;
+            openAppId.clear();
+            openTitle.clear();
+            openCategory.clear();
+
+            hasOpenMonitoringInterval = false;
+
+            {
+                std::lock_guard<std::mutex> lock(m_GlobalMutex);
+                m_LastState = IDLE;
+                m_LastAppId.clear();
+                m_LastTitle.clear();
+                m_LastCategory.clear();
+                m_HasLastRecord = false;
+            }
+
+            if (m_Tray) {
+                m_Tray->SetTrayIcon(IDLE);
+                m_Tray->Poll();
+                if (m_Tray->TakeOpenUiRequested()) {
+                    int result = std::system(
+                        ("xdg-open http://127.0.0.1:" + std::to_string(m_Port) + "/ &").c_str());
+                    if (result != 0) {
+                        spdlog::error("Failed to open browser");
+                    }
+                }
+                if (m_Tray->TakeExitRequested()) {
+                    spdlog::info("Exit requested from tray");
+                    break;
+                }
+            }
+
+            std::this_thread::sleep_for(std::chrono::seconds(m_Ping));
+            continue;
+        }
+
+        // Monitoring sessions are recorded only when NOT idle.
+        {
+            const MonitoringState desired = monitoringEnabledNow ? MONITORING_ENABLE : MONITORING_DISABLE;
+
+            if (!hasOpenMonitoringInterval) {
+                hasOpenMonitoringInterval = true;
+                openMonitoringState = desired;
+                monitoringIntervalStart = now;
+                lastMonitoringDbFlush = now;
+
+                const double startUnix = ToUnixTime(monitoringIntervalStart);
+                m_SQLite->InsertMonitoringSession(startUnix, startUnix, 0.0, openMonitoringState);
+            } else if (desired != openMonitoringState) {
+                const double endUnix = ToUnixTime(now);
+                const double startUnix = ToUnixTime(monitoringIntervalStart);
+                const double duration = endUnix - startUnix;
+                if (duration > 0.0) {
+                    if (!m_SQLite->UpdateMonitoringSession(endUnix, duration, openMonitoringState)) {
+                        m_SQLite->InsertMonitoringSession(startUnix, endUnix, duration,
+                                                         openMonitoringState);
+                    }
+                }
+
+                openMonitoringState = desired;
+                monitoringIntervalStart = now;
+                lastMonitoringDbFlush = now;
+
+                const double startUnix2 = ToUnixTime(monitoringIntervalStart);
+                m_SQLite->InsertMonitoringSession(startUnix2, startUnix2, 0.0, openMonitoringState);
+            } else if (now - lastMonitoringDbFlush >= std::chrono::seconds(15)) {
+                const double endUnix = ToUnixTime(now);
+                const double startUnix = ToUnixTime(monitoringIntervalStart);
+                const double duration = endUnix - startUnix;
+                if (duration > 0.0) {
+                    m_SQLite->UpdateMonitoringSession(endUnix, duration, openMonitoringState);
+                }
+                lastMonitoringDbFlush = now;
+            }
+        }
+
+        if (!monitoringEnabledNow) {
             // Reset unfocused streak tracking while monitoring is disabled.
             inUnfocusedStreak = false;
             unfocusedSince = now;
@@ -182,17 +322,6 @@ Concentrate::Concentrate(const unsigned port, const unsigned ping, LogLevel log_
             continue;
         }
 
-        // Get focused window and current state
-        m_Fw = m_Window->GetFocusedWindow();
-        if (m_SpecialProjectFocused) {
-            m_Fw.app_id = m_SpecialAppId;
-            m_Fw.title = m_SpecialProjectTitle;
-            spdlog::debug("Special project focus override: app_id='{}', title='{}'", m_Fw.app_id,
-                          m_Fw.title);
-        }
-
-        FocusState currentState = AmIFocused(m_Fw);
-
         // Repeating unfocused warning.
         if (currentState == UNFOCUSED) {
             if (!inUnfocusedStreak) {
@@ -220,43 +349,7 @@ Concentrate::Concentrate(const unsigned port, const unsigned ping, LogLevel log_
             spdlog::debug("Current task category defaulted to '{}'", m_CurrentTaskCategory);
         }
 
-        // IDLE: close any open interval and reset tracking.
-        if (currentState == IDLE) {
-            if (hasOpenInterval && openState != IDLE) {
-                const double endUnix = ToUnixTime(now);
-                const double startUnix = ToUnixTime(intervalStart);
-                const double duration = endUnix - startUnix;
 
-                if (duration > 0.0) {
-                    if (!m_SQLite->UpdateEventNew(openAppId, openTitle, openCategory, endUnix,
-                                                  duration, openState)) {
-                        m_SQLite->InsertEventNew(openAppId, openTitle, openCategory, startUnix,
-                                                 endUnix, duration, openState);
-                    }
-                    spdlog::info(
-                        "Focus event closed (idle): state={}, app_id='{}', title='{}', duration={}",
-                        static_cast<int>(openState), openAppId, openTitle, duration);
-                }
-            }
-
-            hasOpenInterval = false;
-            openState = IDLE;
-            openAppId.clear();
-            openTitle.clear();
-            openCategory.clear();
-
-            {
-                std::lock_guard<std::mutex> lock(m_GlobalMutex);
-                m_LastState = IDLE;
-                m_LastAppId.clear();
-                m_LastTitle.clear();
-                m_LastCategory.clear();
-                m_HasLastRecord = false;
-            }
-
-            std::this_thread::sleep_for(std::chrono::seconds(m_Ping));
-            continue;
-        }
 
         // Update climate/hydration (every 3 hours)
         if (now - lastClimateUpdate >= std::chrono::hours(3)) {
@@ -1179,7 +1272,7 @@ bool Concentrate::InitServer() {
     {
         m_Server.Get("/api/v1/monitoring",
                      [this](const httplib::Request &, httplib::Response &res) {
-                         nlohmann::json j = {{"enabled", m_MonitoringEnabled}};
+                         nlohmann::json j = {{"enabled", m_MonitoringEnabled.load()}};
                          res.status = 200;
                          res.set_content(j.dump(), "application/json");
                      });
@@ -1189,8 +1282,9 @@ bool Concentrate::InitServer() {
                 try {
                     auto j = nlohmann::json::parse(req.body);
                     bool enabled = j.at("enabled").get<bool>();
-                    m_MonitoringEnabled = enabled;
-                    if (m_MonitoringEnabled) {
+                    m_MonitoringEnabled.store(enabled);
+                    m_MonitoringTogglePending.store(true);
+                    if (m_MonitoringEnabled.load()) {
                         m_Notification->SendNotification("dialog-ok", "Monitoring Enable",
                                                          "Monitoring your apps use");
                     } else {
@@ -1206,6 +1300,25 @@ bool Concentrate::InitServer() {
                                     "application/json");
                 }
             });
+
+        m_Server.Get("/api/v1/monitoring/summary",
+                     [this](const httplib::Request &, httplib::Response &res) {
+                         try {
+                             if (!m_SQLite) {
+                                 res.status = 503;
+                                 res.set_content(R"({"error":"database not ready"})",
+                                                 "application/json");
+                                 return;
+                             }
+                             nlohmann::json j = m_SQLite->GetTodayMonitoringTimeSummary();
+                             res.status = 200;
+                             res.set_content(j.dump(), "application/json");
+                         } catch (const std::exception &e) {
+                             res.status = 500;
+                             res.set_content(std::string(R"({"error":")") + e.what() + R"("})",
+                                             "application/json");
+                         }
+                     });
     }
 
     // Settings
@@ -1213,7 +1326,7 @@ bool Concentrate::InitServer() {
         m_Server.Get("/api/v1/settings", [this](const httplib::Request &, httplib::Response &res) {
             spdlog::info("[SERVER] Get Settings");
             std::string current_task_id = m_Secrets->LoadSecret("current_task_id");
-            nlohmann::json j = {{"monitoring_enabled", m_MonitoringEnabled},
+            nlohmann::json j = {{"monitoring_enabled", m_MonitoringEnabled.load()},
                                 {"current_task_id", current_task_id}};
             res.status = 200;
             res.set_content(j.dump(), "application/json");

@@ -21,6 +21,10 @@ class SQLite {
                         const std::string &taskCategory, double end_time, double duration,
                         int state);
 
+    void InsertMonitoringSession(double start_time, double end_time, double duration, int state);
+    bool UpdateMonitoringSession(double end_time, double duration, int state);
+    nlohmann::json GetTodayMonitoringTimeSummary();
+
     bool CreateTask(const nlohmann::json &data, std::string &error);
     bool UpdateTask(const nlohmann::json &data, std::string &error);
 
@@ -79,6 +83,9 @@ class SQLite {
 
     sqlite3_stmt *m_InsertEventStmt = nullptr;
     sqlite3_stmt *m_UpdateEventStmt = nullptr;
+
+    sqlite3_stmt *m_InsertMonitoringStmt = nullptr;
+    sqlite3_stmt *m_UpdateMonitoringStmt = nullptr;
 
     // Small deterministic lookaside buffer to reduce heap churn.
     static constexpr int kLookasideSlotSize = 128;

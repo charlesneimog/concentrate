@@ -3,6 +3,7 @@
 #include <mutex>
 #include <fstream>
 #include <unordered_map>
+#include <atomic>
 
 // Libs
 #include <httplib.h>
@@ -93,7 +94,9 @@ class Concentrate {
 
     // Monitoring Notification
     std::chrono::system_clock m_LastMonitoringDisabledNotification;
-    bool m_MonitoringEnabled = true;
+    std::atomic<bool> m_MonitoringEnabled{true};
+
+    std::atomic<bool> m_MonitoringTogglePending{false};
 
     // Last tracked interval (for graceful shutdown)
     std::chrono::steady_clock::time_point m_LastRecord;

@@ -494,27 +494,21 @@ nlohmann::json Anytype::NormalizeTask(const nlohmann::json &obj, int fallback_id
     bool done = done_prop.contains("checkbox") && done_prop["checkbox"].is_boolean()
                     ? done_prop["checkbox"].get<bool>()
                     : false;
-    std::string category = "Uncategorized";
+    // std::string category = "Uncategorized";
+    nlohmann::json category_json;
     if (category_prop.contains("select") && category_prop["select"].is_object()) {
-        category = GetString(category_prop["select"], "name", "Uncategorized");
-        if (category.empty()) {
-            category = "Uncategorized";
-        }
-    }
-    if (category == "Uncategorized") {
-        spdlog::debug("Anytype: Task {} has no category, using default", id);
+        category_json = category_prop;
     }
 
     nlohmann::json out = nlohmann::json::object();
     out["id"] = id;
     out["title"] = title;
-    out["category"] = category;
+    out["category"] = category_json;
     out["done"] = done;
     out["priority"] = priority_key["select"]; //["name"];
     out["allowed_app_ids"] = ExtractArray(apps_allowed_prop);
     out["allowed_titles"] = ExtractArray(app_title_prop);
 
-    spdlog::debug("Anytype: Normalized task {}: title='{}', category='{}', done={}", id, title,
-                  category, done);
+    spdlog::debug("Anytype: Normalized task {}: title='{}', done={}", id, title, done);
     return out;
 }

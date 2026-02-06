@@ -44,6 +44,14 @@ SQLite::~SQLite() {
         sqlite3_finalize(m_UpdateEventStmt);
         m_UpdateEventStmt = nullptr;
     }
+    if (m_InsertMonitoringStmt) {
+        sqlite3_finalize(m_InsertMonitoringStmt);
+        m_InsertMonitoringStmt = nullptr;
+    }
+    if (m_UpdateMonitoringStmt) {
+        sqlite3_finalize(m_UpdateMonitoringStmt);
+        m_UpdateMonitoringStmt = nullptr;
+    }
     if (m_Db) {
         sqlite3_close(m_Db);
         m_Db = nullptr;
@@ -102,6 +110,34 @@ void SQLite::PrepareStatements() {
             m_UpdateEventStmt = nullptr;
         }
     }
+
+    {
+        const char *sql = R"(
+            INSERT INTO monitoring_log
+            (state, start_time, end_time, duration)
+            VALUES (?, ?, ?, ?)
+        )";
+        if (sqlite3_prepare_v2(m_Db, sql, -1, &m_InsertMonitoringStmt, nullptr) != SQLITE_OK) {
+            spdlog::error("db prepare failed for InsertMonitoring stmt: {}", sqlite3_errmsg(m_Db));
+            m_InsertMonitoringStmt = nullptr;
+        }
+    }
+
+    {
+        const char *sql = R"(
+            UPDATE monitoring_log SET
+                end_time = ?,
+                duration = ?
+            WHERE rowid = (
+                SELECT MAX(rowid) FROM monitoring_log
+                WHERE state = ?
+            )
+        )";
+        if (sqlite3_prepare_v2(m_Db, sql, -1, &m_UpdateMonitoringStmt, nullptr) != SQLITE_OK) {
+            spdlog::error("db prepare failed for UpdateMonitoring stmt: {}", sqlite3_errmsg(m_Db));
+            m_UpdateMonitoringStmt = nullptr;
+        }
+    }
 }
 
 // ─────────────────────────────────────
@@ -114,6 +150,13 @@ void SQLite::Init() {
                        "title TEXT,"
                        "task_category TEXT DEFAULT '',"
                        "state INTEGER,"
+                       "start_time REAL NOT NULL,"
+                       "end_time REAL NOT NULL,"
+                       "duration REAL NOT NULL"
+                       ")");
+
+    ExecIgnoringErrors("CREATE TABLE IF NOT EXISTS monitoring_log ("
+                       "state INTEGER NOT NULL,"
                        "start_time REAL NOT NULL,"
                        "end_time REAL NOT NULL,"
                        "duration REAL NOT NULL"
@@ -154,6 +197,92 @@ void SQLite::Init() {
         ")");
 
     spdlog::debug("SQLite database tables initialized");
+}
+
+// ─────────────────────────────────────
+void SQLite::InsertMonitoringSession(double start_time, double end_time, double duration,
+                                     int state) {
+    if (!m_InsertMonitoringStmt) {
+        spdlog::error("InsertMonitoring stmt not prepared");
+        return;
+    }
+
+    sqlite3_reset(m_InsertMonitoringStmt);
+    sqlite3_clear_bindings(m_InsertMonitoringStmt);
+
+    sqlite3_bind_int(m_InsertMonitoringStmt, 1, state);
+    sqlite3_bind_double(m_InsertMonitoringStmt, 2, start_time);
+    sqlite3_bind_double(m_InsertMonitoringStmt, 3, end_time);
+    sqlite3_bind_double(m_InsertMonitoringStmt, 4, duration);
+
+    const int rc = sqlite3_step(m_InsertMonitoringStmt);
+    if (rc != SQLITE_DONE) {
+        spdlog::error("InsertMonitoring failed: {}", sqlite3_errmsg(m_Db));
+    }
+}
+
+// ─────────────────────────────────────
+bool SQLite::UpdateMonitoringSession(double end_time, double duration, int state) {
+    if (!m_UpdateMonitoringStmt) {
+        spdlog::error("UpdateMonitoring stmt not prepared");
+        return false;
+    }
+
+    sqlite3_reset(m_UpdateMonitoringStmt);
+    sqlite3_clear_bindings(m_UpdateMonitoringStmt);
+
+    sqlite3_bind_double(m_UpdateMonitoringStmt, 1, end_time);
+    sqlite3_bind_double(m_UpdateMonitoringStmt, 2, duration);
+    sqlite3_bind_int(m_UpdateMonitoringStmt, 3, state);
+
+    const int rc = sqlite3_step(m_UpdateMonitoringStmt);
+    if (rc != SQLITE_DONE) {
+        spdlog::error("UpdateMonitoring failed: {}", sqlite3_errmsg(m_Db));
+        return false;
+    }
+
+    // If no row matched, SQLite still returns DONE, but changes() will be 0.
+    return sqlite3_changes(m_Db) > 0;
+}
+
+// ─────────────────────────────────────
+nlohmann::json SQLite::GetTodayMonitoringTimeSummary() {
+    const double from_epoch = GetLocalDayStartEpoch(0);
+
+    const char *sql = R"(
+        SELECT state, COALESCE(SUM(duration), 0)
+        FROM monitoring_log
+        WHERE start_time >= ?
+        GROUP BY state
+    )";
+
+    sqlite3_stmt *stmt = nullptr;
+    if (sqlite3_prepare_v2(m_Db, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+        spdlog::error("db prepare failed for GetTodayMonitoringTimeSummary: {}",
+                      sqlite3_errmsg(m_Db));
+        return { {"monitoring_enabled_seconds", 0}, {"monitoring_disabled_seconds", 0} };
+    }
+
+    sqlite3_bind_double(stmt, 1, from_epoch);
+
+    double enabled = 0.0;
+    double disabled = 0.0;
+
+    while (sqlite3_step(stmt) == SQLITE_ROW) {
+        const int state = sqlite3_column_int(stmt, 0);
+        const double total = sqlite3_column_double(stmt, 1);
+        if (state == MONITORING_ENABLE) {
+            enabled = total;
+        } else if (state == MONITORING_DISABLE) {
+            disabled = total;
+        }
+    }
+
+    sqlite3_finalize(stmt);
+
+    return { {"monitoring_enabled_seconds", enabled},
+             {"monitoring_disabled_seconds", disabled},
+             {"total_seconds", enabled + disabled} };
 }
 
 // ─────────────────────────────────────
