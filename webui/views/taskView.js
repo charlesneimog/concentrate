@@ -21,8 +21,10 @@ export class TaskView {
         const grouped = new Map();
 
         (Array.isArray(tasks) ? tasks : []).forEach((task) => {
-            const raw = typeof task.priority.name === "string" ? task.priority.name.trim() : "";
-            const key = /^P\d+$/.test(raw) ? raw : "No priority";
+            // priority may be null
+            const raw = typeof task?.priority?.name === "string" ? task.priority.name.trim() : "";
+
+            const key = raw === "" ? "No urgency" : /^P\d+$/.test(raw) ? raw : "No urgency";
 
             if (!grouped.has(key)) grouped.set(key, []);
             grouped.get(key).push(task);
@@ -30,8 +32,8 @@ export class TaskView {
 
         return new Map(
             [...grouped.entries()].sort(([a], [b]) => {
-                if (a === "No priority") return 1;
-                if (b === "No priority") return -1;
+                if (a === "No urgency") return 1;
+                if (b === "No urgency") return -1;
                 return parseInt(a.slice(1), 10) - parseInt(b.slice(1), 10);
             }),
         );
@@ -117,8 +119,16 @@ export class TaskView {
             list.className = "space-y-2";
 
             items.forEach((task) => {
+                console.log(task);
                 const done = !!task.done;
                 const isCurrent = this.currentTaskId && String(task.id) === String(this.currentTaskId);
+                if (task.category === null) {
+                    task.category = { select: { name: "Uncategorized", color: "red" } };
+                }
+
+                const categoryName =
+                    typeof task.category.select.name === "string" ? task.category.select.name.trim() : "";
+                const categoryColor = task.category.select.color;
 
                 const li = document.createElement("li");
                 li.className = "flex flex-col gap-1 bg-white dark:bg-gray-800 shadow-sm rounded-lg px-3 py-2";
@@ -139,6 +149,40 @@ export class TaskView {
                 }`;
                 text.textContent = task.title || "(task)";
 
+                const categoryChip = document.createElement("span");
+                categoryChip.className = "px-2 py-0.5 rounded-full text-[10px] font-medium border whitespace-nowrap";
+                if (categoryName) {
+                    categoryChip.textContent = categoryName;
+                    if (categoryColor) {
+                        categoryChip.style.setProperty("--c", `var(--anytype-color-tag-${categoryColor})`);
+                        categoryChip.classList.add(
+                            "bg-[color:var(--c)]/15",
+                            "dark:bg-[color:var(--c)]/20",
+                            "border-[color:var(--c)]",
+                        );
+                        categoryChip.style.color = `var(--anytype-color-tag-${categoryColor})`;
+                    } else {
+                        categoryChip.classList.add(
+                            "bg-gray-50",
+                            "dark:bg-gray-700",
+                            "border-gray-200",
+                            "dark:border-gray-600",
+                            "text-gray-600",
+                            "dark:text-gray-300",
+                        );
+                    }
+                } else {
+                    categoryChip.textContent = "Uncategorized";
+                    categoryChip.classList.add(
+                        "bg-gray-50",
+                        "dark:bg-gray-700",
+                        "border-gray-200",
+                        "dark:border-gray-600",
+                        "text-gray-500",
+                        "dark:text-gray-400",
+                    );
+                }
+
                 const spacer = document.createElement("span");
                 spacer.className = "flex-1";
 
@@ -158,6 +202,7 @@ export class TaskView {
 
                 row.appendChild(mark);
                 row.appendChild(text);
+                row.appendChild(categoryChip);
                 row.appendChild(spacer);
                 row.appendChild(currentBtn);
 
@@ -397,9 +442,14 @@ export class TaskView {
                 if (currentParagraph.length > 0) {
                     const paragraphText = currentParagraph.join("\n");
                     if (!paragraphText.startsWith("<")) {
-                        const unescapedText = paragraphText.replace(/\\_/g, "_").replace(/\\\*/g, "*").replace(/\\`/g, "`");
+                        const unescapedText = paragraphText
+                            .replace(/\\_/g, "_")
+                            .replace(/\\\*/g, "*")
+                            .replace(/\\`/g, "`");
                         const escapedText = this.escapeHtml(unescapedText);
-                        processedLines.push(`<p class="text-sm text-gray-700 dark:text-gray-300 my-2">${escapedText}</p>`);
+                        processedLines.push(
+                            `<p class="text-sm text-gray-700 dark:text-gray-300 my-2">${escapedText}</p>`,
+                        );
                     } else {
                         processedLines.push(paragraphText);
                     }
@@ -412,9 +462,14 @@ export class TaskView {
                 if (currentParagraph.length > 0) {
                     const paragraphText = currentParagraph.join("\n");
                     if (!paragraphText.startsWith("<")) {
-                        const unescapedText = paragraphText.replace(/\\_/g, "_").replace(/\\\*/g, "*").replace(/\\`/g, "`");
+                        const unescapedText = paragraphText
+                            .replace(/\\_/g, "_")
+                            .replace(/\\\*/g, "*")
+                            .replace(/\\`/g, "`");
                         const escapedText = this.escapeHtml(unescapedText);
-                        processedLines.push(`<p class="text-sm text-gray-700 dark:text-gray-300 my-2">${escapedText}</p>`);
+                        processedLines.push(
+                            `<p class="text-sm text-gray-700 dark:text-gray-300 my-2">${escapedText}</p>`,
+                        );
                     } else {
                         processedLines.push(paragraphText);
                     }

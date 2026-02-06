@@ -180,6 +180,7 @@ export class StateManager {
         if (!this.isPageActive()) return;
         if (this.currentView === "tasks" || this.currentView === "history") {
             await this.updateDailyFocus();
+            await this.updateMonitoringSummary();
             await this.updateTasksCategories();
         }
     }
@@ -208,6 +209,7 @@ export class StateManager {
         this.updateFocusWarning(current, tasks);
 
         await this.updateDailyFocus();
+        await this.updateMonitoringSummary();
         await this.updateDailyActivities();
         await this.updateTasksCategories();
     }
@@ -227,6 +229,7 @@ export class StateManager {
         this.updateFocusWarning(current, tasks);
 
         await this.updateDailyFocus();
+        await this.updateMonitoringSummary();
         this.renderHistory();
         this.updateDailyActivities();
     }
@@ -632,7 +635,10 @@ export class StateManager {
         if (typeof this.historyManagerInitHistoryFilters === "function") {
             return this.historyManagerInitHistoryFilters();
         }
-        if (typeof this.initHistoryFilters === "function" && this.initHistoryFilters !== StateManager.prototype.initHistoryFilters) {
+        if (
+            typeof this.initHistoryFilters === "function" &&
+            this.initHistoryFilters !== StateManager.prototype.initHistoryFilters
+        ) {
             // already attached by history module
             return this.initHistoryFilters();
         }
@@ -799,6 +805,7 @@ export class StateManager {
                 await API.setMonitoringEnabled(enabled);
                 this.monitoringEnabled = enabled;
                 this.renderCurrentStatus(this.lastCurrentFocus);
+                await this.updateMonitoringSummary();
             } catch (err) {
                 console.error("Failed to toggle monitoring", err);
                 e.target.checked = this.monitoringEnabled;

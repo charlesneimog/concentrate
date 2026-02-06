@@ -260,12 +260,35 @@ export class PomodoroManager {
         this.pomodoro.isRunning = isRunning && this.pomodoro.timeLeft > 0;
         this.pomodoro.isPaused = isPaused;
 
-        if (this.pomodoro.isRunning) {
-            document.getElementById("pomodoro-start")?.classList.add("hidden");
-            document.getElementById("pomodoro-pause")?.classList.remove("hidden");
+        const startBtn = document.getElementById("pomodoro-start");
+        const pauseBtn = document.getElementById("pomodoro-pause");
+        const activelyRunning = this.pomodoro.isRunning && !this.pomodoro.isPaused;
+
+        if (activelyRunning) {
+            startBtn?.classList.add("hidden");
+            pauseBtn?.classList.remove("hidden");
         } else {
-            document.getElementById("pomodoro-start")?.classList.remove("hidden");
-            document.getElementById("pomodoro-pause")?.classList.add("hidden");
+            startBtn?.classList.remove("hidden");
+            pauseBtn?.classList.add("hidden");
+        }
+
+        if (startBtn) {
+            if (this.pomodoro.isRunning && this.pomodoro.isPaused) {
+                startBtn.innerHTML = `
+            <span class="material-symbols-outlined text-2xl" style="font-variation-settings: 'FILL' 1">
+                play_arrow
+            </span>
+            <span class="text-lg font-bold tracking-tight">Resume</span>
+        `;
+                // activate the monitoring if we are resuming a focus session
+            } else {
+                startBtn.innerHTML = `
+            <span class="material-symbols-outlined text-2xl" style="font-variation-settings: 'FILL' 1">
+                play_arrow
+            </span>
+            <span class="text-lg font-bold tracking-tight">Start Timer</span>
+        `;
+            }
         }
 
         this.updatePomodoroDisplay();
@@ -308,7 +331,12 @@ export class PomodoroManager {
                     "shadow-primary/20",
                     "dark:shadow-primary-dark/20",
                 );
-                btn.classList.add("text-gray-600", "dark:text-gray-400", "hover:text-gray-900", "dark:hover:text-white");
+                btn.classList.add(
+                    "text-gray-600",
+                    "dark:text-gray-400",
+                    "hover:text-gray-900",
+                    "dark:hover:text-white",
+                );
             }
         });
 
@@ -338,11 +366,17 @@ export class PomodoroManager {
     }
 
     togglePomodoro() {
+        if (this.pomodoro.isRunning && this.pomodoro.isPaused) {
+            this.startPomodoro();
+            return;
+        }
+
         if (!this.pomodoro.isRunning) {
             this.startPomodoro();
-        } else {
-            this.pausePomodoro();
+            return;
         }
+
+        this.pausePomodoro();
     }
 
     startPomodoro() {
@@ -361,6 +395,11 @@ export class PomodoroManager {
 
         document.getElementById("pomodoro-start")?.classList.add("hidden");
         document.getElementById("pomodoro-pause")?.classList.remove("hidden");
+
+        if (this.pomodoro.mode === "focus") {
+            this.setMonitoringEnabled(true);
+            this.pomodoro.disabledMonitoring = false;
+        }
 
         this.pomodoro.interval = setInterval(() => {
             this.pomodoro.timeLeft--;
@@ -429,6 +468,7 @@ export class PomodoroManager {
     pomodoroComplete() {
         clearInterval(this.pomodoro.interval);
         this.pomodoro.isRunning = false;
+        this.pomodoro.isPaused = false;
 
         this.playTimerEndSound();
         this.showPomodoroNotification();
@@ -444,6 +484,10 @@ export class PomodoroManager {
         this.pomodoro.cycleStep = nextStep;
         this.pomodoro.mode = this.pomodoroModeFromStep(nextStep);
         this.pomodoro.timeLeft = this.getCurrentPomodoroStepDuration();
+
+        document.getElementById("pomodoro-start")?.classList.remove("hidden");
+        document.getElementById("pomodoro-pause")?.classList.add("hidden");
+
         this.updatePomodoroDisplay();
         this.savePomodoroStateToServer();
 
@@ -473,14 +517,16 @@ export class PomodoroManager {
         const step = Number(this.pomodoro.cycleStep) || 0;
         if (step === 0 || step === 2) {
             phaseElement.textContent = step === 0 ? "Focus 1/2" : "Focus 2/2";
-            phaseElement.className = "text-gray-600 dark:text-gray-400 uppercase tracking-[0.4em] text-xs mt-4 font-semibold";
+            phaseElement.className =
+                "text-gray-600 dark:text-gray-400 uppercase tracking-[0.4em] text-xs mt-4 font-semibold";
         } else if (step === 1 || step === 3) {
             phaseElement.textContent = step === 1 ? "Short Break 1/2" : "Short Break 2/2";
             phaseElement.className =
                 "text-emerald-600 dark:text-emerald-400 uppercase tracking-[0.4em] text-xs mt-4 font-semibold";
         } else {
             phaseElement.textContent = "Long Break";
-            phaseElement.className = "text-blue-600 dark:text-blue-400 uppercase tracking-[0.4em] text-xs mt-4 font-semibold";
+            phaseElement.className =
+                "text-blue-600 dark:text-blue-400 uppercase tracking-[0.4em] text-xs mt-4 font-semibold";
         }
 
         if (progressElement) {
@@ -507,7 +553,9 @@ export class PomodoroManager {
 
     showPomodoroNotification() {
         const message =
-            this.pomodoro.mode === "focus" ? "Focus session complete! Time for a break." : "Break time is over! Ready to focus?";
+            this.pomodoro.mode === "focus"
+                ? "Focus session complete! Time for a break."
+                : "Break time is over! Ready to focus?";
 
         let notification = document.getElementById("pomodoro-notification");
         if (!notification) {

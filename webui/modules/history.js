@@ -8,6 +8,7 @@ export class HistoryManager {
             "renderHistoryCategoryStats",
             "renderHistory",
             "updateDailyFocus",
+            "updateMonitoringSummary",
             "updateDailyActivities",
             "excludeDailyActivity",
         ];
@@ -72,7 +73,7 @@ export class HistoryManager {
 
         // Prevent blink: keep existing DOM until the new content is ready,
         // then swap while faded out.
-        const token = ((this._historyCategoryStatsToken ?? 0) + 1);
+        const token = (this._historyCategoryStatsToken ?? 0) + 1;
         this._historyCategoryStatsToken = token;
 
         const nextFrame = () => new Promise((r) => requestAnimationFrame(() => r()));
@@ -211,7 +212,7 @@ export class HistoryManager {
 
         // Prevent blink: keep existing DOM until the new content is ready,
         // then swap while faded out.
-        const token = ((this._historyListToken ?? 0) + 1);
+        const token = (this._historyListToken ?? 0) + 1;
         this._historyListToken = token;
 
         const nextFrame = () => new Promise((r) => requestAnimationFrame(() => r()));
@@ -471,7 +472,8 @@ export class HistoryManager {
                     const row = document.createElement("div");
                     row.className = "flex justify-between text-sm text-gray-600 dark:text-gray-400 italic";
 
-                    const label = othersSeconds < 60 ? `${Math.round(othersSeconds)}s` : this.fmtDuration(othersSeconds);
+                    const label =
+                        othersSeconds < 60 ? `${Math.round(othersSeconds)}s` : this.fmtDuration(othersSeconds);
 
                     row.innerHTML = `
         <span>Others</span>
@@ -524,7 +526,8 @@ export class HistoryManager {
             totalEl.textContent = this.fmtDuration(0);
 
             const rawMsg = res.errorText || "Failed to load focus data from server.";
-            const msg = typeof this.truncateText === "function" ? this.truncateText(String(rawMsg), 140) : String(rawMsg);
+            const msg =
+                typeof this.truncateText === "function" ? this.truncateText(String(rawMsg), 140) : String(rawMsg);
             text.textContent = `Failed to load focus data: ${msg}`;
 
             if (legend) {
@@ -614,7 +617,8 @@ export class HistoryManager {
                 else monthLabel.textContent = now.toLocaleDateString(undefined, { month: "short", year: "numeric" });
             }
 
-            if (goalText) goalText.textContent = `${this.fmtDuration(focusedSeconds)} over ${Object.keys(data).length} days`;
+            if (goalText)
+                goalText.textContent = `${this.fmtDuration(focusedSeconds)} over ${Object.keys(data).length} days`;
             if (goalBar) {
                 const days = Number(this.historyDays) || 30;
                 const goalSeconds = days * 3600;
@@ -632,7 +636,8 @@ export class HistoryManager {
             bar.className = bar.className.replace(/bg-\S+/, "").trim() + " bg-gray-300";
 
             container.className =
-                container.className.replace(/from-\S+ to-\S+/, "").trim() + " bg-gradient-to-br from-gray-200 to-gray-300";
+                container.className.replace(/from-\S+ to-\S+/, "").trim() +
+                " bg-gradient-to-br from-gray-200 to-gray-300";
 
             text.textContent = "No focus data for today";
 
@@ -692,13 +697,15 @@ export class HistoryManager {
             message = "You were very focused today";
         }
 
-        container.className = container.className.replace(/from-\S+ to-\S+/, "").trim() + ` bg-gradient-to-br ${gradient}`;
+        container.className =
+            container.className.replace(/from-\S+ to-\S+/, "").trim() + ` bg-gradient-to-br ${gradient}`;
 
         bar.className = bar.className.replace(/bg-\S+/, "").trim() + ` ${barColor}`;
         bar.style.width = `${focusPercent.toFixed(1)}%`;
 
         text.textContent =
-            `${message} (${focusPercent.toFixed(0)}% focused, ` + `${((unfocusedSeconds / totalSeconds) * 100).toFixed(0)}% not focused)`;
+            `${message} (${focusPercent.toFixed(0)}% focused, ` +
+            `${((unfocusedSeconds / totalSeconds) * 100).toFixed(0)}% not focused)`;
 
         const defaultMode = this.statsLegendMode || "total";
         const mode = ["total", "focused", "unfocused"].includes(defaultMode) ? defaultMode : "total";
@@ -771,7 +778,82 @@ export class HistoryManager {
         }
 
         if (loadingEl) loadingEl.style.display = "none";
+    }
 
+    async updateMonitoringSummary() {
+        const res = await API.loadMonitoringSummary();
+        const container = document.getElementById("i-was-monitoring");
+        const bar = document.getElementById("monitoring-progress-bar");
+        const content = container?.querySelector(".relative.z-10");
+
+        if (!container || !bar || !content) return;
+
+        // Remove existing summary paragraphs (but keep the title)
+        content.querySelectorAll("p").forEach((p) => p.remove());
+
+        if (!res.ok) {
+            bar.style.width = "0%";
+            bar.className = bar.className.replace(/bg-\S+/g, "").trim() + " bg-gray-300";
+
+            const rawMsg = res.errorText || "Failed to load monitoring summary.";
+            const msg =
+                typeof this.truncateText === "function" ? this.truncateText(String(rawMsg), 120) : String(rawMsg);
+
+            const p = document.createElement("p");
+            p.className = "text-xs font-medium text-white/90 dark:text-white/90 leading-tight";
+            p.textContent = `Failed: ${msg}`;
+            content.insertBefore(p, content.querySelector(".w-full"));
+
+            return;
+        }
+
+        const data = res.data || {};
+        const enabledSeconds = Number(data.monitoring_enabled_seconds ?? 0);
+        const disabledSeconds = Number(data.monitoring_disabled_seconds ?? 0);
+        const totalSeconds = enabledSeconds + disabledSeconds;
+
+        const monitoringDominant = enabledSeconds >= disabledSeconds;
+
+        const desiredGradient = monitoringDominant
+            ? "bg-gradient-to-br from-emerald-500 to-teal-600"
+            : "bg-gradient-to-br from-red-500 to-rose-600";
+
+        container.className = container.className
+            .replace(/bg-gradient-to-br\s+from-\S+\s+to-\S+/g, desiredGradient)
+            .replace(/shadow-(emerald|red)-200\/40/g, "")
+            .replace(/dark:shadow-(emerald|red)-900\/40/g, "")
+            .replace(/\s+/g, " ")
+            .trim();
+
+        if (monitoringDominant) {
+            container.className += " shadow-emerald-200/40 dark:shadow-emerald-900/40";
+        } else {
+            container.className += " shadow-red-200/40 dark:shadow-red-900/40";
+        }
+
+        const pct = totalSeconds > 0 ? (enabledSeconds / totalSeconds) * 100 : 0;
+        bar.style.width = `${pct.toFixed(1)}%`;
+
+        const enabledLabel = this.fmtDuration(enabledSeconds);
+        const disabledLabel = this.fmtDuration(disabledSeconds);
+
+        const summaryLineClass = "text-xs font-medium text-white/90 dark:text-white/90 leading-tight";
+
+        const pEnabled = document.createElement("p");
+        pEnabled.className = `${summaryLineClass} mb-1`;
+        pEnabled.textContent = `Monitoring: ${enabledLabel}`;
+
+        const pDisabled = document.createElement("p");
+        pDisabled.className = `${summaryLineClass} mb-4`;
+        pDisabled.textContent = `Not monitoring: ${disabledLabel}`;
+
+        const progressWrapper = content.querySelector(".w-full");
+        content.insertBefore(pEnabled, progressWrapper);
+        content.insertBefore(pDisabled, progressWrapper);
+
+        if (!/\bbg-/.test(bar.className)) {
+            bar.className = bar.className.trim() + " bg-white";
+        }
     }
 
     async updateDailyActivities() {

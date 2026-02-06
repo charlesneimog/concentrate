@@ -68,6 +68,30 @@
                     <span class="text-sm dark:text-white">Pomodoro</span>
                 </a>
             </nav>
+            <div
+                id="i-was-monitoring"
+                class="relative overflow-hidden rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 text-white shadow-lg shadow-emerald-200/40 dark:shadow-emerald-900/40 m-2"
+            >
+                <div class="relative z-10 p-5">
+                    <h4 class="text-sm font-semibold mb-1">Monitoring</h4>
+                    <p class="text-xs mb-4 font-medium">Loading monitoring data…</p>
+                    <div class="w-full h-2 rounded-full bg-black/20 dark:bg-white/20">
+                        <div
+                            id="monitoring-progress-bar"
+                            class="h-2 rounded-full bg-white shadow-sm transition-all duration-500"
+                            style="width: 0%"
+                        ></div>
+                    </div>
+                </div>
+
+                <!-- Decorative icon -->
+                <span
+                    class="material-symbols-outlined absolute -right-4 -bottom-6 text-[10rem] text-white/10 rotate-12 pointer-events-none"
+                >
+                    visibility
+                </span>
+            </div>
+
             <div class="px-4 py-2">
                 <div class="flex items-center justify-between">
                     <span class="text-sm font-medium text-gray-900 dark:text-white p-4">Enable Monitoring</span>
@@ -580,9 +604,16 @@
                                     <span class="text-lg font-bold tracking-tight">Start Timer</span>
                                 </button>
 
+                                <!-- <button -->
+                                <!--     id="pomodoro-pause" -->
+                                <!--     class="group hidden items-center gap-3 bg-amber-500 hover:bg-amber-600 text-white px-8 py-4 rounded-full transition-all active:scale-95 shadow-lg shadow-amber-500/20" -->
+                                <!-- > -->
+                                <!--     <span class="material-symbols-outlined text-2xl">pause</span> -->
+                                <!--     <span class="text-lg font-bold tracking-tight">Pause</span> -->
+                                <!-- </button> -->
                                 <button
                                     id="pomodoro-pause"
-                                    class="group hidden items-center gap-3 bg-amber-500 hover:bg-amber-600 text-white px-8 py-4 rounded-full transition-all active:scale-95 shadow-lg shadow-amber-500/20"
+                                    class="group hidden flex items-center gap-3 bg-amber-500 hover:bg-amber-600 text-white px-8 py-4 rounded-full transition-all active:scale-95 shadow-lg shadow-amber-500/20"
                                 >
                                     <span class="material-symbols-outlined text-2xl">pause</span>
                                     <span class="text-lg font-bold tracking-tight">Pause</span>

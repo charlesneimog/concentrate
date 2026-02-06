@@ -32,8 +32,7 @@ export function formatDayLabel(date) {
     const startDate = new Date(date.getFullYear(), date.getMonth(), date.getDate());
     const diffDays = Math.round((startToday - startDate) / (24 * 3600 * 1000));
     if (diffDays === 0) return `Today, ${date.toLocaleDateString(undefined, { month: "short", day: "numeric" })}`;
-    if (diffDays === 1)
-        return `Yesterday, ${date.toLocaleDateString(undefined, { month: "short", day: "numeric" })}`;
+    if (diffDays === 1) return `Yesterday, ${date.toLocaleDateString(undefined, { month: "short", day: "numeric" })}`;
     return date.toLocaleDateString(undefined, { weekday: "long", month: "short", day: "numeric" });
 }
 
