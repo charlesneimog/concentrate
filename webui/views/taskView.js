@@ -116,10 +116,10 @@ export class TaskView {
             section.appendChild(title);
 
             const list = document.createElement("ul");
-            list.className = "space-y-2";
+            list.className = "space-y-4 p-2";
 
             items.forEach((task) => {
-                console.log(task);
+                // console.log(task);
                 const done = !!task.done;
                 const isCurrent = this.currentTaskId && String(task.id) === String(this.currentTaskId);
                 if (task.category === null) {
