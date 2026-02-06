@@ -4,6 +4,8 @@
 #include <fstream>
 #include <unordered_map>
 #include <atomic>
+#include <condition_variable>
+#include <cstdint>
 
 // Libs
 #include <httplib.h>
@@ -38,6 +40,7 @@ class Concentrate {
     FocusState AmIFocused(FocusedWindow &Fw);
     bool AmIDoingDailyActivities(FocusedWindow &Fw);
     double ToUnixTime(std::chrono::steady_clock::time_point steady_tp);
+    void WakeScheduler();
 
   private:
     const unsigned m_Port;
@@ -51,6 +54,16 @@ class Concentrate {
     nlohmann::json m_RecurringTasksCache = nlohmann::json::array();
     std::unordered_map<int, std::pair<std::chrono::steady_clock::time_point, nlohmann::json>>
       m_FocusSummaryCache;
+
+    // Event-driven focus tracking (Niri IPC stream)
+    std::atomic<bool> m_FocusDirty{true};
+    std::atomic<bool> m_EventDriven{false};
+
+    // Scheduler: wait-until-next-deadline with reliable wakeups
+    std::mutex m_SchedulerMutex;
+    std::condition_variable m_SchedulerCv;
+    std::atomic<std::uint64_t> m_WakeupSeq{0};
+    std::atomic<bool> m_ShutdownRequested{false};
 
     // Parts
     std::unique_ptr<Anytype> m_Anytype;
@@ -100,7 +113,7 @@ class Concentrate {
 
     // Last tracked interval (for graceful shutdown)
     std::chrono::steady_clock::time_point m_LastRecord;
-    FocusState m_LastState = IDLE;
+    std::atomic<FocusState> m_LastState{IDLE};
     std::string m_LastAppId;
     std::string m_LastTitle;
     std::string m_LastCategory;

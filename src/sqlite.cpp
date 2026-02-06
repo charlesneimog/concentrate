@@ -788,7 +788,7 @@ nlohmann::json SQLite::FetchDailyAppUsageByAppId(int days) {
 static nlohmann::json DefaultPomodoroState() {
     const int focus = 25 * 60;
     const int shortBreak = 5 * 60;
-    const int longBreak = 15 * 60;
+    const int longBreak = 20 * 60;
     return {
         {"phase", "focus-1"},
         {"cycle_step", 0},
@@ -879,7 +879,7 @@ bool SQLite::SavePomodoroState(const nlohmann::json &state, std::string &error) 
     const int timeLeft = state.value("time_left", 25 * 60);
     const int focusDuration = state.value("focus_duration", 25 * 60);
     const int shortBreakDuration = state.value("short_break_duration", 5 * 60);
-    const int longBreakDuration = state.value("long_break_duration", 15 * 60);
+    const int longBreakDuration = state.value("long_break_duration", 20 * 60);
     const int autoStartBreaks = state.value("auto_start_breaks", true) ? 1 : 0;
     const double updatedAt = state.value("updated_at", static_cast<double>(std::time(nullptr)));
 

@@ -5,6 +5,7 @@
 #include <unistd.h>
 #include <thread>
 #include <chrono>
+#include <algorithm>
 #include <sys/wait.h>
 
 // ─────────────────────────────────────
@@ -50,6 +51,18 @@ Concentrate::Concentrate(const unsigned port, const unsigned ping, LogLevel log_
     // Windows API (get AppID, Title)
     m_Window = std::make_unique<Window>();
     spdlog::info("Window API initialized");
+
+    // Prefer event-driven focus updates via Niri IPC EventStream; fall back to polling when not available.
+    if (m_Window && m_Window->StartEventStream([this]() {
+            m_FocusDirty.store(true);
+            WakeScheduler();
+        })) {
+        m_EventDriven.store(true);
+        spdlog::info("Niri IPC event stream enabled (push mode)");
+    } else {
+        m_EventDriven.store(false);
+        spdlog::warn("Niri IPC event stream unavailable; falling back to polling mode");
+    }
 
     // Notifications
     m_Notification = std::make_unique<Notification>();
@@ -104,7 +117,7 @@ Concentrate::Concentrate(const unsigned port, const unsigned ping, LogLevel log_
 
     {
         std::lock_guard<std::mutex> lock(m_GlobalMutex);
-        m_LastState = IDLE;
+        m_LastState.store(IDLE);
         m_LastAppId.clear();
         m_LastTitle.clear();
         m_LastCategory.clear();
@@ -120,22 +133,124 @@ Concentrate::Concentrate(const unsigned port, const unsigned ping, LogLevel log_
     auto lastUnfocusedWarningAt = unfocusedSince;
     const auto unfocusedWarnEvery = std::chrono::seconds(15);
 
+    // Focus refresh timing (poll fallback / safety refresh)
+    auto lastFocusQueryAt = std::chrono::steady_clock::now() - std::chrono::seconds(m_Ping);
+    const auto safetyPollEvery = std::chrono::seconds(30);
+
+    // Tray polling schedule (DBus is pumped via Poll())
+    auto nextTrayPollAt = std::chrono::steady_clock::now();
+
+    auto wait_until_next_deadline = [&](const FocusState currentState,
+                                       const bool monitoringEnabledNow,
+                                       const bool eventDriven) {
+        const auto now2 = std::chrono::steady_clock::now();
+        auto deadline = now2 + std::chrono::hours(24);
+
+        // Tray polling
+        if (m_Tray) {
+            deadline = std::min(deadline, nextTrayPollAt);
+        }
+
+        // Focus refresh cadence
+        if (!eventDriven) {
+            deadline = std::min(deadline, lastFocusQueryAt + std::chrono::seconds(m_Ping));
+        } else {
+            deadline = std::min(deadline, lastFocusQueryAt + safetyPollEvery);
+        }
+
+        // Hydration/climate
+        deadline =
+            std::min(deadline,
+                     lastHydrationNotification +
+                         std::chrono::minutes(static_cast<int>(hydrationIntervalMinutes)));
+        deadline = std::min(deadline, lastClimateUpdate + std::chrono::hours(3));
+
+        // Monitoring disabled reminder
+        if (!monitoringEnabledNow) {
+            deadline = std::min(deadline, lastMonitoringNotification + std::chrono::minutes(1));
+        }
+
+        // Periodic DB flushes
+        if (hasOpenInterval && openState != IDLE) {
+            deadline = std::min(deadline, lastDbFlush + std::chrono::seconds(15));
+        }
+        if (hasOpenMonitoringInterval) {
+            deadline = std::min(deadline, lastMonitoringDbFlush + std::chrono::seconds(15));
+        }
+
+        // Unfocused warning timing
+        if (currentState == UNFOCUSED) {
+            const auto nextWarn =
+                !inUnfocusedStreak
+                    ? (now2 + unfocusedWarnEvery)
+                    : std::max(unfocusedSince + unfocusedWarnEvery,
+                               lastUnfocusedWarningAt + unfocusedWarnEvery);
+            deadline = std::min(deadline, nextWarn);
+        }
+
+        const auto seq = m_WakeupSeq.load(std::memory_order_relaxed);
+        std::unique_lock<std::mutex> lk(m_SchedulerMutex);
+        m_SchedulerCv.wait_until(lk, deadline, [&] {
+            return m_ShutdownRequested.load() ||
+                   m_WakeupSeq.load(std::memory_order_relaxed) != seq ||
+                   m_FocusDirty.load();
+        });
+    };
+
     while (true) {
         auto now = std::chrono::steady_clock::now();
+
+        const bool eventDriven = m_EventDriven.load();
+
+        // Refresh focused window:
+        // - In push mode, refresh when we receive relevant events, plus a periodic safety refresh.
+        // - In pull mode, refresh every m_Ping seconds (original behavior).
+        bool shouldRefreshFocus = false;
+        if (eventDriven) {
+            shouldRefreshFocus = m_FocusDirty.exchange(false);
+            if (!shouldRefreshFocus && (now - lastFocusQueryAt) >= safetyPollEvery) {
+                shouldRefreshFocus = true;
+            }
+        } else {
+            if ((now - lastFocusQueryAt) >= std::chrono::seconds(m_Ping)) {
+                shouldRefreshFocus = true;
+            }
+        }
+
+        if (shouldRefreshFocus) {
+            lastFocusQueryAt = now;
+
+            FocusedWindow fresh = m_Window ? m_Window->GetFocusedWindow() : FocusedWindow{};
+            {
+                std::lock_guard<std::mutex> lock(m_GlobalMutex);
+                m_Fw = fresh;
+            }
+        }
 
         const bool monitoringToggled = m_MonitoringTogglePending.exchange(false);
         const bool monitoringEnabledNow = m_MonitoringEnabled.load();
 
-        // Get focused window and current state (always needed to detect IDLE, even if monitoring is disabled)
-        m_Fw = m_Window->GetFocusedWindow();
-        if (m_SpecialProjectFocused) {
-            m_Fw.app_id = m_SpecialAppId;
-            m_Fw.title = m_SpecialProjectTitle;
-            spdlog::debug("Special project focus override: app_id='{}', title='{}'", m_Fw.app_id,
-                          m_Fw.title);
+        // Determine current state (always needed to detect IDLE, even if monitoring is disabled)
+        FocusedWindow fw_local;
+        {
+            std::lock_guard<std::mutex> lock(m_GlobalMutex);
+            fw_local = m_Fw;
         }
 
-        FocusState currentState = AmIFocused(m_Fw);
+        if (m_SpecialProjectFocused) {
+            fw_local.app_id = m_SpecialAppId;
+            fw_local.title = m_SpecialProjectTitle;
+            spdlog::debug("Special project focus override: app_id='{}', title='{}'", fw_local.app_id,
+                          fw_local.title);
+        }
+
+        FocusState currentState = AmIFocused(fw_local);
+
+        // Persist category/state adjustments back to the shared snapshot used by the web API.
+        {
+            std::lock_guard<std::mutex> lock(m_GlobalMutex);
+            m_Fw = fw_local;
+        }
 
         // If monitoring was toggled, force a monitoring-session split at 'now' (idle time is excluded).
         if (monitoringToggled && hasOpenMonitoringInterval) {
@@ -198,7 +313,7 @@ Concentrate::Concentrate(const unsigned port, const unsigned ping, LogLevel log_
 
             {
                 std::lock_guard<std::mutex> lock(m_GlobalMutex);
-                m_LastState = IDLE;
+                m_LastState.store(IDLE);
                 m_LastAppId.clear();
                 m_LastTitle.clear();
                 m_LastCategory.clear();
@@ -207,21 +322,31 @@ Concentrate::Concentrate(const unsigned port, const unsigned ping, LogLevel log_
 
             if (m_Tray) {
                 m_Tray->SetTrayIcon(IDLE);
-                m_Tray->Poll();
-                if (m_Tray->TakeOpenUiRequested()) {
-                    int result = std::system(
-                        ("xdg-open http://127.0.0.1:" + std::to_string(m_Port) + "/ &").c_str());
-                    if (result != 0) {
-                        spdlog::error("Failed to open browser");
+
+                const auto trayPollEvery = eventDriven ? std::chrono::seconds(1)
+                                                      : std::chrono::seconds(m_Ping);
+                if (now >= nextTrayPollAt) {
+                    m_Tray->Poll();
+                    nextTrayPollAt = now + trayPollEvery;
+
+                    if (m_Tray->TakeOpenUiRequested()) {
+                        int result = std::system(
+                            ("xdg-open http://127.0.0.1:" + std::to_string(m_Port) + "/ &").c_str());
+                        if (result != 0) {
+                            spdlog::error("Failed to open browser");
+                        }
                     }
-                }
-                if (m_Tray->TakeExitRequested()) {
-                    spdlog::info("Exit requested from tray");
-                    break;
+                    if (m_Tray->TakeExitRequested()) {
+                        spdlog::info("Exit requested from tray");
+                        if (m_Window) {
+                            m_Window->StopEventStream();
+                        }
+                        break;
+                    }
                 }
             }
 
-            std::this_thread::sleep_for(std::chrono::seconds(m_Ping));
+            wait_until_next_deadline(currentState, monitoringEnabledNow, eventDriven);
             continue;
         }
 
@@ -295,7 +420,7 @@ Concentrate::Concentrate(const unsigned port, const unsigned ping, LogLevel log_
 
             {
                 std::lock_guard<std::mutex> lock(m_GlobalMutex);
-                m_LastState = DISABLE;
+                m_LastState.store(DISABLE);
                 m_LastAppId.clear();
                 m_LastTitle.clear();
                 m_LastCategory.clear();
@@ -304,21 +429,31 @@ Concentrate::Concentrate(const unsigned port, const unsigned ping, LogLevel log_
 
             // Pump tray DBus messages (non-blocking)
             if (m_Tray) {
-                m_Tray->Poll();
 
-                if (m_Tray->TakeOpenUiRequested()) {
-                    int result = std::system(
-                        ("xdg-open http://127.0.0.1:" + std::to_string(m_Port) + "/ &").c_str());
-                    if (result != 0) {
-                        spdlog::error("Failed to open browser");
+                const auto trayPollEvery = eventDriven ? std::chrono::seconds(1)
+                                                      : std::chrono::seconds(m_Ping);
+                if (now >= nextTrayPollAt) {
+                    m_Tray->Poll();
+                    nextTrayPollAt = now + trayPollEvery;
+
+                    if (m_Tray->TakeOpenUiRequested()) {
+                        int result = std::system(
+                            ("xdg-open http://127.0.0.1:" + std::to_string(m_Port) + "/ &").c_str());
+                        if (result != 0) {
+                            spdlog::error("Failed to open browser");
+                        }
+                    }
+                    if (m_Tray->TakeExitRequested()) {
+                        spdlog::info("Exit requested from tray");
+                        if (m_Window) {
+                            m_Window->StopEventStream();
+                        }
+                        break;
                     }
                 }
-                if (m_Tray->TakeExitRequested()) {
-                    spdlog::info("Exit requested from tray");
-                    break;
-                }
             }
-            std::this_thread::sleep_for(std::chrono::seconds(m_Ping));
+
+            wait_until_next_deadline(currentState, monitoringEnabledNow, eventDriven);
             continue;
         }
 
@@ -373,9 +508,9 @@ Concentrate::Concentrate(const unsigned port, const unsigned ping, LogLevel log_
             lastHydrationNotification = now;
         }
 
-        const std::string currAppId = m_Fw.app_id;
-        const std::string currTitle = m_Fw.title;
-        const std::string currCategory = m_Fw.category;
+        const std::string currAppId = fw_local.app_id;
+        const std::string currTitle = fw_local.title;
+        const std::string currCategory = fw_local.category;
 
         if (!hasOpenInterval) {
             // Start a new active interval and INSERT immediately so subsequent UPDATEs have
@@ -437,13 +572,13 @@ Concentrate::Concentrate(const unsigned port, const unsigned ping, LogLevel log_
             std::lock_guard<std::mutex> lock(m_GlobalMutex);
             if (hasOpenInterval && openState != IDLE) {
                 m_LastRecord = intervalStart; // interval start, not last flush
-                m_LastState = openState;
+                m_LastState.store(openState);
                 m_LastAppId = openAppId;
                 m_LastTitle = openTitle;
                 m_LastCategory = openCategory;
                 m_HasLastRecord = true;
             } else {
-                m_LastState = IDLE;
+                m_LastState.store(IDLE);
                 m_LastAppId.clear();
                 m_LastTitle.clear();
                 m_LastCategory.clear();
@@ -454,22 +589,38 @@ Concentrate::Concentrate(const unsigned port, const unsigned ping, LogLevel log_
         // Update tray icon state (focused/unfocused)
         if (m_Tray) {
             m_Tray->SetTrayIcon(currentState);
-            m_Tray->Poll();
-            if (m_Tray->TakeOpenUiRequested()) {
-                int result = std::system(
-                    ("xdg-open http://127.0.0.1:" + std::to_string(m_Port) + "/ &").c_str());
-                if (result != 0) {
-                    spdlog::error("Failed to open the browser");
+
+            const auto trayPollEvery = eventDriven ? std::chrono::seconds(1)
+                                                  : std::chrono::seconds(m_Ping);
+            if (now >= nextTrayPollAt) {
+                m_Tray->Poll();
+                nextTrayPollAt = now + trayPollEvery;
+
+                if (m_Tray->TakeOpenUiRequested()) {
+                    int result = std::system(
+                        ("xdg-open http://127.0.0.1:" + std::to_string(m_Port) + "/ &").c_str());
+                    if (result != 0) {
+                        spdlog::error("Failed to open the browser");
+                    }
                 }
-            }
-            if (m_Tray->TakeExitRequested()) {
-                spdlog::info("Exit requested from tray");
-                break;
+                if (m_Tray->TakeExitRequested()) {
+                    spdlog::info("Exit requested from tray");
+                    if (m_Window) {
+                        m_Window->StopEventStream();
+                    }
+                    break;
+                }
             }
         }
 
-        std::this_thread::sleep_for(std::chrono::seconds(m_Ping));
+        wait_until_next_deadline(currentState, monitoringEnabledNow, eventDriven);
     }
+}
+
+// ─────────────────────────────────────
+void Concentrate::WakeScheduler() {
+    m_WakeupSeq.fetch_add(1, std::memory_order_relaxed);
+    m_SchedulerCv.notify_one();
 }
 
 // ─────────────────────────────────────
@@ -483,12 +634,16 @@ Concentrate::~Concentrate() {
 
     {
         std::lock_guard<std::mutex> lock(m_GlobalMutex);
-        lastStateSnapshot = m_LastState;
+        lastStateSnapshot = m_LastState.load();
         lastRecordSnapshot = m_LastRecord;
         lastAppIdSnapshot = m_LastAppId;
         lastTitleSnapshot = m_LastTitle;
         lastCategorySnapshot = m_LastCategory;
         hasLastRecordSnapshot = m_HasLastRecord;
+    }
+
+    if (m_Window) {
+        m_Window->StopEventStream();
     }
 
     if (hasLastRecordSnapshot && lastStateSnapshot != IDLE) {
@@ -1048,6 +1203,8 @@ bool Concentrate::InitServer() {
 
                     m_Secrets->SaveSecret("current_task_id", id);
                     UpdateAllowedApps();
+                    m_FocusDirty.store(true);
+                    WakeScheduler();
                     res.status = 200;
                     res.set_content("Task updated successfully", "text/plain");
 
@@ -1094,6 +1251,9 @@ bool Concentrate::InitServer() {
                 m_AllowedWindowTitles = allowed_titles;
                 m_TaskTitle = task_title;
             }
+
+            m_FocusDirty.store(true);
+            WakeScheduler();
             res.status = 200;
             res.set_content(R"({"status":"ok"})", "application/json");
         });
@@ -1284,6 +1444,7 @@ bool Concentrate::InitServer() {
                     bool enabled = j.at("enabled").get<bool>();
                     m_MonitoringEnabled.store(enabled);
                     m_MonitoringTogglePending.store(true);
+                    WakeScheduler();
                     if (m_MonitoringEnabled.load()) {
                         m_Notification->SendNotification("dialog-ok", "Monitoring Enable",
                                                          "Monitoring your apps use");
@@ -1484,6 +1645,9 @@ bool Concentrate::InitServer() {
                 m_AllowedWindowTitles = allowed_titles;
                 m_TaskTitle = task_title;
             }
+
+            m_FocusDirty.store(true);
+            WakeScheduler();
             res.status = 200;
             res.set_content(R"({"status":"ok"})", "application/json");
         });
@@ -1668,6 +1832,8 @@ bool Concentrate::InitServer() {
                 }
                 m_SpecialProjectTitle = projectName;
                 m_SpecialAppId = appId;
+                m_FocusDirty.store(true);
+                WakeScheduler();
                 nlohmann::json response = {{"status", "ok"}, {"project_name", projectName}};
                 res.status = 200;
                 res.set_content(response.dump(), "application/json");
