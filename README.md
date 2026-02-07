@@ -29,12 +29,13 @@ Concentrate is a Linux background service that tracks focused/unfocused time bas
 ```sh
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j
+cmake --install build
 ```
 
 ## Run
 
 ```sh
-./build/Concentrate
+concentrate
 ```
 
 Optional logging flags:
@@ -43,7 +44,7 @@ Optional logging flags:
 - `--loginfo`
 - `--logoff` (default)
 
-The server listens on http://localhost:7079.
+The server listens by default on http://localhost:7079. Use `--port` to change it.
 
 ## Install
 
@@ -51,11 +52,10 @@ The server listens on http://localhost:7079.
 cmake --install build
 ```
 
-This installs the binary to `/usr/local/bin` and web assets to `/usr/local/share/Concentrate`.
 
 ## Data and secrets
 
-- SQLite database: `~/.local/Concentrate/data.sqlite`
+- SQLite database: `~/.local/share/concentrate/data.sqlite`
 - Secrets are stored in the default libsecret keyring under the schema `io.Concentrate.Secret`
 
 ## External services
@@ -69,53 +69,18 @@ Hydration recommendations use:
 
 All endpoints are served from the same local server.
 
-### Anytype
-
-- POST /api/v1/anytype/auth/challenges
-- POST /api/v1/anytype/auth/api_keys
-- GET  /api/v1/anytype/spaces
-- POST /api/v1/anytype/space
-- GET  /api/v1/anytype/tasks
-- GET  /api/v1/anytype/tasks_categories
-
-### Focus and monitoring
-
-- GET  /api/v1/current
-- GET  /api/v1/focus/today?days=1 # FIX THIS
-- GET  /api/v1/focus/today/categories
-- GET  /api/v1/focus/category-percentages?days=1
-- GET  /api/v1/focus/app-usage?days=1
-- POST /api/v1/focus/rules
-- GET  /api/v1/monitoring
-- POST /api/v1/monitoring
-
-### History
-
-- GET  /api/v1/history
-- GET  /api/v1/history/category-time?days=30
-- GET  /api/v1/history/category-focus?days=30
-
-### Recurring tasks
-
-- GET    /api/v1/task/recurring_tasks
-- POST   /api/v1/task/recurring_tasks
-- DELETE /api/v1/task/recurring_tasks?name=TaskName
-
-### Task selection
-
-- POST /api/v1/task/set_current
-
-### Special project override
-
-- POST /api/v1/special_project (used for neovim plugin)
-
 ## Notes
 
 - Only Niri is currently supported for focused window detection.
 - The service must run in a user session with DBus access to send notifications.
 
+## Academic Articles
+
+* Wirzberger, Maria, Anastasia Lado, Mike Prentice, et al. “Optimal Feedback Improves Behavioral Focus during Self-Regulated Computer-Based Work.” Scientific Reports 14, no. 1 (2024): 3124. https://doi.org/10.1038/s41598-024-53388-3.
+* Almoallim, Sultan, and Corina Sas. “Toward Research-Informed Design Implications for Interventions Limiting Smartphone Use: Functionalities Review of Digital Well-Being Apps.” JMIR Formative Research 6, no. 4 (2022): e31730. https://doi.org/10.2196/31730.
+
+
 ## TODO
 
-- [ ] Decrease memory use
 - [ ] Search about WS implementation
 - [ ] Implement Hyprland, Sway
