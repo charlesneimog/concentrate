@@ -52,16 +52,16 @@ Concentrate::Concentrate(const unsigned port, const unsigned ping, LogLevel log_
     m_Window = std::make_unique<Window>();
     spdlog::info("Window API initialized");
 
-    // Prefer event-driven focus updates via Niri IPC EventStream; fall back to polling when not available.
+    // Prefer event-driven focus updates via WM IPC event stream; fall back to polling when not available.
     if (m_Window && m_Window->StartEventStream([this]() {
             m_FocusDirty.store(true);
             WakeScheduler();
         })) {
         m_EventDriven.store(true);
-        spdlog::info("Niri IPC event stream enabled (push mode)");
+        spdlog::info("Window IPC event stream enabled (push mode)");
     } else {
         m_EventDriven.store(false);
-        spdlog::warn("Niri IPC event stream unavailable; falling back to polling mode");
+        spdlog::warn("Window IPC event stream unavailable; falling back to polling mode");
     }
 
     // Notifications
@@ -193,9 +193,15 @@ Concentrate::Concentrate(const unsigned port, const unsigned ping, LogLevel log_
         m_SchedulerCv.wait_until(lk, deadline, [&] {
             return m_ShutdownRequested.load() ||
                    m_WakeupSeq.load(std::memory_order_relaxed) != seq ||
-                   (eventDriven && m_FocusDirty.load());
+                   m_FocusDirty.load();
         });
     };
+
+    // Cache the last inputs that affect AmIFocused() so we don't recompute on every loop tick.
+    FocusState currentState = IDLE;
+    std::string lastFocusAppId;
+    std::string lastFocusTitle;
+    std::string lastTaskCategoryApplied;
 
     while (true) {
         auto now = std::chrono::steady_clock::now();
@@ -212,9 +218,6 @@ Concentrate::Concentrate(const unsigned port, const unsigned ping, LogLevel log_
                 shouldRefreshFocus = true;
             }
         } else {
-            // In polling mode, m_FocusDirty must not force the scheduler to wake continuously.
-            // Clear it here so the wait predicate remains false between deadlines.
-            m_FocusDirty.store(false);
             if ((now - lastFocusQueryAt) >= std::chrono::seconds(m_Ping)) {
                 shouldRefreshFocus = true;
             }
@@ -247,7 +250,16 @@ Concentrate::Concentrate(const unsigned port, const unsigned ping, LogLevel log_
                           fw_local.title);
         }
 
-        FocusState currentState = AmIFocused(fw_local);
+        const bool inputsChanged = (fw_local.app_id != lastFocusAppId) ||
+                                   (fw_local.title != lastFocusTitle) ||
+                                   (m_CurrentTaskCategory != lastTaskCategoryApplied);
+
+        if (inputsChanged) {
+            currentState = AmIFocused(fw_local);
+            lastFocusAppId = fw_local.app_id;
+            lastFocusTitle = fw_local.title;
+            lastTaskCategoryApplied = m_CurrentTaskCategory;
+        }
 
         // Persist category/state adjustments back to the shared snapshot used by the web API.
         {
@@ -275,7 +287,7 @@ Concentrate::Concentrate(const unsigned port, const unsigned ping, LogLevel log_
             lastMonitoringNotification = now;
         }
 
-        // IDLE: close any open focus interval AND any open monitoring interval. Idle is never recorded.
+        // on IDLE: close any open focus interval AND any open monitoring interval. Idle is never recorded.
         if (currentState == IDLE) {
             if (hasOpenInterval && openState != IDLE) {
                 const double endUnix = ToUnixTime(now);
@@ -693,10 +705,15 @@ double Concentrate::ToUnixTime(std::chrono::steady_clock::time_point steady_tp) 
 FocusState Concentrate::AmIFocused(FocusedWindow &Fw) {
     // If the focused window is invalid (no app_id and no title), treat as IDLE
     if (Fw.app_id.empty() && Fw.title.empty()) {
-        spdlog::debug("FOCUSED: IDLE (no app_id or title)");
+        if (m_CurrentState != IDLE) {
+            spdlog::debug("FOCUSED: IDLE (no app_id or title)");
+        }
         Fw.category.clear();
         m_CurrentLiveTaskCategory.clear();
-        spdlog::debug("Live category cleared (idle)");
+        if (m_CurrentState != IDLE) {
+            spdlog::debug("Live category cleared (idle)");
+        }
+        m_CurrentState = IDLE;
         return IDLE;
     }
 
@@ -726,25 +743,40 @@ FocusState Concentrate::AmIFocused(FocusedWindow &Fw) {
         }
     }
 
-    if (!isFocusedWindow) {
-        if (AmIDoingDailyActivities(Fw)) {
+    FocusState nextState = isFocusedWindow ? FOCUSED : UNFOCUSED;
+
+    // Daily activities can override UNFOCUSED -> FOCUSED.
+    if (!isFocusedWindow && AmIDoingDailyActivities(Fw)) {
+        nextState = FOCUSED;
+        if (m_CurrentState != FOCUSED) {
             spdlog::debug("FOCUSED: DAILY ACTIVITY");
-            Fw.category = m_CurrentDailyTaskCategory;
-            m_CurrentLiveTaskCategory = Fw.category;
-            spdlog::debug("Daily activity category set: '{}'", Fw.category);
-            return FOCUSED;
         }
     }
 
-    const std::string taskCategory =
-        m_CurrentTaskCategory.empty() ? "Uncategorized" : m_CurrentTaskCategory;
-    m_CurrentDailyTaskCategory.clear();
-    Fw.category = taskCategory;
-    m_CurrentLiveTaskCategory = Fw.category;
-    spdlog::debug("Task category set: '{}'", Fw.category);
+    const std::string nextCategory =
+        (nextState == FOCUSED && !isFocusedWindow) ? m_CurrentDailyTaskCategory
+        : (m_CurrentTaskCategory.empty() ? "Uncategorized" : m_CurrentTaskCategory);
 
-    spdlog::debug("FOCUSED: {}", isFocusedWindow ? "YES" : "NO");
-    return isFocusedWindow ? FOCUSED : UNFOCUSED;
+    // Keep the daily category only when it is actively used.
+    if (!(nextState == FOCUSED && !isFocusedWindow)) {
+        m_CurrentDailyTaskCategory.clear();
+    }
+
+    if (Fw.category != nextCategory) {
+        Fw.category = nextCategory;
+        spdlog::debug("Task category set: '{}'", Fw.category);
+    }
+
+    if (m_CurrentLiveTaskCategory != nextCategory) {
+        m_CurrentLiveTaskCategory = nextCategory;
+    }
+
+    if (m_CurrentState != nextState) {
+        spdlog::debug("FOCUSED: {}", isFocusedWindow ? "YES" : "NO");
+        m_CurrentState = nextState;
+    }
+
+    return nextState;
 }
 
 // ─────────────────────────────────────

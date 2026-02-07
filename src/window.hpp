@@ -7,6 +7,7 @@
 
 #include "common.hpp"
 #include "niri.hpp"
+#include "hyprland.hpp"
 
 #include <functional>
 
@@ -24,6 +25,8 @@ class Window {
 
   private:
     FocusedWindow GetNiriFocusedWindow();
+    FocusedWindow GetHyprlandFocusedWindow();
     WM m_WM;
     NiriIPC m_Niri;
+    HyprlandIPC m_Hypr;
 };

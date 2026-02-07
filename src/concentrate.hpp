@@ -83,7 +83,7 @@ class Concentrate {
 
     // Window
     std::string m_TaskTitle;
-    FocusState m_CurrentState;
+    FocusState m_CurrentState{IDLE};
 
     // Current Task
     std::vector<std::string> m_AllowedApps;
