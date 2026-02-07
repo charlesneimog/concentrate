@@ -53,6 +53,7 @@ add_executable(
     src/notification.cpp
     src/window.cpp
     src/niri.cpp
+    src/hyprland.cpp
     src/anytype.cpp
     src/hydration.cpp
     src/json.cpp
