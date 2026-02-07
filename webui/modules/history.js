@@ -511,18 +511,35 @@ export class HistoryManager {
 
         if (!container || !bar || !text || !pie || !totalEl || !totalText) return;
 
+        const isDark = document.documentElement.classList.contains("dark");
+        const applyEmptyStateTheme = () => {
+            // Tailwind classes used here are static; use inline styles for theme-aware empty/error states.
+            container.style.background = isDark
+                ? "linear-gradient(135deg, #374151, #1f2937)"
+                : "linear-gradient(135deg, #e5e7eb, #d1d5db)";
+            container.style.color = isDark ? "#f9fafb" : "#111827";
+            bar.style.backgroundColor = isDark ? "#6b7280" : "#d1d5db";
+            pie.style.background = isDark ? "#1f2937" : "#e5e7eb";
+        };
+        const clearEmptyStateTheme = () => {
+            container.style.background = "";
+            container.style.color = "";
+            bar.style.backgroundColor = "";
+        };
+
         totalText.textContent = "Total Time";
         if (loadingEl) loadingEl.style.display = "block";
 
         if (!res.ok) {
             console.error("API '/focus/today' not returned ok", res.status, res.errorText || "");
 
+            applyEmptyStateTheme();
+
             bar.style.width = "0%";
             bar.className = bar.className.replace(/bg-\S+/g, "").trim() + " bg-gray-300";
             container.className =
                 container.className.replace(/from-\S+ to-\S+/, "").trim() +
                 " bg-gradient-to-br from-gray-200 to-gray-300";
-            pie.style.background = "#e5e7eb";
             totalEl.textContent = this.fmtDuration(0);
 
             const rawMsg = res.errorText || "Failed to load focus data from server.";
@@ -539,6 +556,8 @@ export class HistoryManager {
             if (loadingEl) loadingEl.style.display = "none";
             return;
         }
+
+        clearEmptyStateTheme();
 
         const data = res.data;
 
@@ -632,6 +651,8 @@ export class HistoryManager {
         // (elements already resolved above)
 
         if (totalSeconds === 0) {
+            applyEmptyStateTheme();
+
             bar.style.width = "0%";
             bar.className = bar.className.replace(/bg-\S+/, "").trim() + " bg-gray-300";
 
@@ -640,8 +661,6 @@ export class HistoryManager {
                 " bg-gradient-to-br from-gray-200 to-gray-300";
 
             text.textContent = "No focus data for today";
-
-            pie.style.background = "#e5e7eb";
 
             totalEl.textContent = this.fmtDuration(0);
 

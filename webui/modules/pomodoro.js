@@ -1,8 +1,5 @@
 import * as API from "../api/client.js";
 
-const POMODORO_MAX_STEP = 8; // 0..8 => 4 focus + 4 short breaks + long break
-const POMODORO_STALE_RESET_SECONDS = 25 * 60;
-
 export class PomodoroManager {
     constructor(app) {
         this.app = app;
@@ -34,61 +31,61 @@ export class PomodoroManager {
     }
 
     pomodoroPhaseFromStep(step) {
-        const s = Number(step) || 0;
-        if (s === POMODORO_MAX_STEP) return "long-break";
-        if (s % 2 === 0) return `focus-${Math.floor(s / 2) + 1}`;
-        return `short-break-${Math.floor((s + 1) / 2)}`;
+        switch (Number(step) || 0) {
+            case 0:
+                return "focus-1";
+            case 1:
+                return "short-break-1";
+            case 2:
+                return "focus-2";
+            case 3:
+                return "short-break-2";
+            case 4:
+                return "long-break";
+            default:
+                return "focus-1";
+        }
     }
 
     pomodoroStepFromPhase(phase) {
         const p = String(phase || "").toLowerCase();
+        if (p === "focus-1") return 0;
+        if (p === "short-break-1") return 1;
+        if (p === "focus-2") return 2;
+        if (p === "short-break-2") return 3;
+        if (p === "long-break") return 4;
         if (p === "focus") return 0;
         if (p === "short-break") return 1;
-        if (p === "long-break") return POMODORO_MAX_STEP;
-
-        const focusMatch = p.match(/^focus-(\d+)$/);
-        if (focusMatch) {
-            const n = Math.max(1, parseInt(focusMatch[1], 10) || 1);
-            return Math.min(6, Math.max(0, (n - 1) * 2));
-        }
-
-        const shortMatch = p.match(/^short-break-(\d+)$/);
-        if (shortMatch) {
-            const n = Math.max(1, parseInt(shortMatch[1], 10) || 1);
-            return Math.min(7, Math.max(1, n * 2 - 1));
-        }
-
+        if (p === "long-break") return 4;
         return 0;
     }
 
     pomodoroModeFromStep(step) {
         const s = Number(step) || 0;
-        if (s === POMODORO_MAX_STEP) return "long-break";
-        return s % 2 === 0 ? "focus" : "short-break";
+        if (s === 0 || s === 2) return "focus";
+        if (s === 1 || s === 3) return "short-break";
+        return "long-break";
     }
 
     pomodoroStepFromModePreference(mode, currentStep) {
         const m = String(mode || "focus");
         const s = Number(currentStep) || 0;
         if (m === "focus") {
-            if (s >= 6) return 6;
-            if (s >= 4) return 4;
-            if (s >= 2) return 2;
+            if (s === 2 || s === 3) return 2;
             return 0;
         }
         if (m === "short-break") {
-            if (s >= 6) return 7;
-            if (s >= 4) return 5;
-            if (s >= 2) return 3;
+            if (s === 2 || s === 3) return 3;
             return 1;
         }
-        return POMODORO_MAX_STEP;
+        return 4;
     }
 
     getCurrentPomodoroStepDuration() {
         const step = Number(this.pomodoro.cycleStep) || 0;
-        if (step === POMODORO_MAX_STEP) return this.pomodoro.longBreakDuration;
-        return step % 2 === 0 ? this.pomodoro.focusDuration : this.pomodoro.shortBreakDuration;
+        if (step === 0 || step === 2) return this.pomodoro.focusDuration;
+        if (step === 1 || step === 3) return this.pomodoro.shortBreakDuration;
+        return this.pomodoro.longBreakDuration;
     }
 
     async loadPomodoroStateFromServer() {
@@ -220,7 +217,7 @@ export class PomodoroManager {
         const step = Number.isFinite(Number(state.cycle_step))
             ? Number(state.cycle_step)
             : this.pomodoroStepFromPhase(state.phase);
-        this.pomodoro.cycleStep = Math.min(POMODORO_MAX_STEP, Math.max(0, step));
+        this.pomodoro.cycleStep = Math.min(4, Math.max(0, step));
         this.pomodoro.mode = this.pomodoroModeFromStep(this.pomodoro.cycleStep);
 
         if (Number.isFinite(Number(state.focus_duration))) this.pomodoro.focusDuration = Number(state.focus_duration);
@@ -252,39 +249,6 @@ export class PomodoroManager {
         const isRunning = !!state.is_running;
         const isPaused = !!state.is_paused;
         const updatedAt = Number(state.updated_at);
-
-        // If the last saved pomodoro state is too old, reset to the beginning (focus step 0).
-        // This avoids resuming mid-session after long interruptions (e.g. lunch).
-        if (Number.isFinite(updatedAt)) {
-            const nowSec = Math.floor(Date.now() / 1000);
-            const ageSec = Math.max(0, nowSec - Math.floor(updatedAt));
-            if (ageSec > POMODORO_STALE_RESET_SECONDS) {
-                clearInterval(this.pomodoro.interval);
-                this.pomodoro.interval = null;
-                this.pomodoro.cycleStep = 0;
-                this.pomodoro.mode = "focus";
-                this.pomodoro.timeLeft = this.pomodoro.focusDuration;
-                this.pomodoro.isRunning = false;
-                this.pomodoro.isPaused = false;
-
-                const startBtn = document.getElementById("pomodoro-start");
-                const pauseBtn = document.getElementById("pomodoro-pause");
-                startBtn?.classList.remove("hidden");
-                pauseBtn?.classList.add("hidden");
-                if (startBtn) {
-                    startBtn.innerHTML = `
-            <span class="material-symbols-outlined text-2xl" style="font-variation-settings: 'FILL' 1">
-                play_arrow
-            </span>
-            <span class="text-lg font-bold tracking-tight">Start Timer</span>
-        `;
-                }
-
-                this.updatePomodoroDisplay();
-                this.savePomodoroStateToServer();
-                return;
-            }
-        }
 
         if (isRunning && !isPaused && Number.isFinite(updatedAt)) {
             const nowSec = Math.floor(Date.now() / 1000);
@@ -510,13 +474,13 @@ export class PomodoroManager {
         this.showPomodoroNotification();
 
         const completedStep = Number(this.pomodoro.cycleStep) || 0;
-        const completedWasFocus = completedStep % 2 === 0 && completedStep < POMODORO_MAX_STEP;
+        const completedWasFocus = completedStep === 0 || completedStep === 2;
         if (completedWasFocus) {
             const focusSeconds = this.pomodoro.focusDuration;
             this.incrementPomodoroFocusComplete(focusSeconds);
         }
 
-        const nextStep = completedStep >= POMODORO_MAX_STEP ? 0 : completedStep + 1;
+        const nextStep = completedStep >= 4 ? 0 : completedStep + 1;
         this.pomodoro.cycleStep = nextStep;
         this.pomodoro.mode = this.pomodoroModeFromStep(nextStep);
         this.pomodoro.timeLeft = this.getCurrentPomodoroStepDuration();
@@ -551,20 +515,18 @@ export class PomodoroManager {
         timerElement.textContent = `${minutes.toString().padStart(2, "0")}:${seconds.toString().padStart(2, "0")}`;
 
         const step = Number(this.pomodoro.cycleStep) || 0;
-        if (step === POMODORO_MAX_STEP) {
+        if (step === 0 || step === 2) {
+            phaseElement.textContent = step === 0 ? "Focus 1/2" : "Focus 2/2";
+            phaseElement.className =
+                "text-gray-600 dark:text-gray-400 uppercase tracking-[0.4em] text-xs mt-4 font-semibold";
+        } else if (step === 1 || step === 3) {
+            phaseElement.textContent = step === 1 ? "Short Break 1/2" : "Short Break 2/2";
+            phaseElement.className =
+                "text-emerald-600 dark:text-emerald-400 uppercase tracking-[0.4em] text-xs mt-4 font-semibold";
+        } else {
             phaseElement.textContent = "Long Break";
             phaseElement.className =
                 "text-blue-600 dark:text-blue-400 uppercase tracking-[0.4em] text-xs mt-4 font-semibold";
-        } else if (step % 2 === 0) {
-            const n = Math.floor(step / 2) + 1;
-            phaseElement.textContent = `Focus ${n}/4`;
-            phaseElement.className =
-                "text-gray-600 dark:text-gray-400 uppercase tracking-[0.4em] text-xs mt-4 font-semibold";
-        } else {
-            const n = Math.floor((step + 1) / 2);
-            phaseElement.textContent = `Short Break ${n}/4`;
-            phaseElement.className =
-                "text-emerald-600 dark:text-emerald-400 uppercase tracking-[0.4em] text-xs mt-4 font-semibold";
         }
 
         if (progressElement) {
