@@ -248,11 +248,27 @@ bool SQLite::UpdateMonitoringSession(double end_time, double duration, int state
 // ─────────────────────────────────────
 nlohmann::json SQLite::GetTodayMonitoringTimeSummary() {
     const double from_epoch = GetLocalDayStartEpoch(0);
+    const double now_epoch = std::chrono::duration<double>(
+                               std::chrono::system_clock::now().time_since_epoch())
+                               .count();
 
+    // NOTE: A monitoring session may start before local midnight and continue into today.
+    // The old query filtered on start_time >= day_start which drops those overlapping sessions,
+    // causing "today" totals to look too small (often near-zero until the next state change).
+    // Compute the overlap between each session and [day_start, now].
     const char *sql = R"(
-        SELECT state, COALESCE(SUM(duration), 0)
+        SELECT
+            state,
+            COALESCE(SUM(
+                CASE
+                    WHEN end_time <= ? THEN 0
+                    WHEN start_time >= ? THEN 0
+                    ELSE (MIN(end_time, ?) - MAX(start_time, ?))
+                END
+            ), 0)
         FROM monitoring_log
-        WHERE start_time >= ?
+        WHERE end_time > ?
+          AND start_time < ?
         GROUP BY state
     )";
 
@@ -263,7 +279,13 @@ nlohmann::json SQLite::GetTodayMonitoringTimeSummary() {
         return { {"monitoring_enabled_seconds", 0}, {"monitoring_disabled_seconds", 0} };
     }
 
-    sqlite3_bind_double(stmt, 1, from_epoch);
+    // Bind day_start/now multiple times (see SQL above)
+    sqlite3_bind_double(stmt, 1, from_epoch); // end_time <= day_start
+    sqlite3_bind_double(stmt, 2, now_epoch);  // start_time >= now
+    sqlite3_bind_double(stmt, 3, now_epoch);  // MIN(end_time, now)
+    sqlite3_bind_double(stmt, 4, from_epoch); // MAX(start_time, day_start)
+    sqlite3_bind_double(stmt, 5, from_epoch); // WHERE end_time > day_start
+    sqlite3_bind_double(stmt, 6, now_epoch);  // WHERE start_time < now
 
     double enabled = 0.0;
     double disabled = 0.0;
