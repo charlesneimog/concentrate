@@ -1,4 +1,5 @@
 import * as API from "../api/client.js";
+const GOAL_HOURS_PER_DAY = 6;
 
 export class HistoryManager {
     constructor(app) {
@@ -353,7 +354,7 @@ export class HistoryManager {
             if (goalText) goalText.textContent = `${this.fmtDuration(goalTotal)} over ${Object.keys(data).length} days`;
             if (goalBar) {
                 const days = Number(this.historyDays) || 30;
-                const goalSeconds = days * 3600;
+                const goalSeconds = days * (3600 * GOAL_HOURS_PER_DAY);
                 const pct = goalSeconds > 0 ? Math.min(100, (goalTotal / goalSeconds) * 100) : 0;
                 goalBar.style.width = `${pct}%`;
             }
