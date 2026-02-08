@@ -10,8 +10,7 @@
 #include <sys/un.h>
 #include <unistd.h>
 
-namespace {
-std::filesystem::path ResolveHyprBaseDir() {
+static std::filesystem::path ResolveHyprBaseDir() {
     const char *xdgRuntimeDirEnv = std::getenv("XDG_RUNTIME_DIR");
     std::filesystem::path xdgRuntimeDir;
     if (xdgRuntimeDirEnv != nullptr && *xdgRuntimeDirEnv) {
@@ -27,7 +26,8 @@ std::filesystem::path ResolveHyprBaseDir() {
     return std::filesystem::path("/tmp") / "hypr";
 }
 
-bool Contains(const std::vector<std::string> &v, const std::string &needle) {
+// ─────────────────────────────────────
+static bool Contains(const std::vector<std::string> &v, const std::string &needle) {
     for (const auto &s : v) {
         if (s == needle) {
             return true;
@@ -35,19 +35,21 @@ bool Contains(const std::vector<std::string> &v, const std::string &needle) {
     }
     return false;
 }
-} // namespace
 
+// ─────────────────────────────────────
 HyprlandIPC::HyprlandIPC() : m_InstanceSig(GetEnvInstanceSignature()) {
     if (!m_InstanceSig.empty()) {
         m_SocketFolder = GetSocketFolderForInstance(m_InstanceSig);
     }
 }
 
+// ─────────────────────────────────────
 HyprlandIPC::~HyprlandIPC() {
     StopEventStream();
     CloseFd(m_StreamFd);
 }
 
+// ─────────────────────────────────────
 std::string HyprlandIPC::GetEnvInstanceSignature() {
     const char *env = std::getenv("HYPRLAND_INSTANCE_SIGNATURE");
     if (env == nullptr) {
@@ -56,10 +58,12 @@ std::string HyprlandIPC::GetEnvInstanceSignature() {
     return std::string(env);
 }
 
+// ─────────────────────────────────────
 std::filesystem::path HyprlandIPC::GetSocketFolderForInstance(const std::string &instanceSig) {
     return ResolveHyprBaseDir() / instanceSig;
 }
 
+// ─────────────────────────────────────
 bool HyprlandIPC::IsAvailable() const {
     if (m_InstanceSig.empty() || m_SocketFolder.empty()) {
         return false;
@@ -70,6 +74,7 @@ bool HyprlandIPC::IsAvailable() const {
     return std::filesystem::exists(m_SocketFolder / ".socket.sock", ec);
 }
 
+// ─────────────────────────────────────
 void HyprlandIPC::CloseFd(int &fd) {
     if (fd >= 0) {
         ::close(fd);
@@ -77,6 +82,7 @@ void HyprlandIPC::CloseFd(int &fd) {
     }
 }
 
+// ─────────────────────────────────────
 bool HyprlandIPC::ConnectStreamFd(int &fd) {
     if (m_InstanceSig.empty()) {
         return false;
@@ -116,6 +122,7 @@ bool HyprlandIPC::ConnectStreamFd(int &fd) {
     return true;
 }
 
+// ─────────────────────────────────────
 bool HyprlandIPC::SendAll(int fd, const void *data, std::size_t size) {
     const char *ptr = static_cast<const char *>(data);
     std::size_t remaining = size;
@@ -138,6 +145,7 @@ bool HyprlandIPC::SendAll(int fd, const void *data, std::size_t size) {
     return true;
 }
 
+// ─────────────────────────────────────
 bool HyprlandIPC::ReadLine(int fd, std::string &out_line, std::string &buffer,
                            std::chrono::milliseconds timeout) {
     out_line.clear();
@@ -181,6 +189,7 @@ bool HyprlandIPC::ReadLine(int fd, std::string &out_line, std::string &buffer,
     return false;
 }
 
+// ─────────────────────────────────────
 std::string HyprlandIPC::EventNameFromLine(const std::string &line) {
     // Hyprland events look like: "activewindow>>Class,Title" or "workspace>>id".
     // Waybar splits on the first '>' character.
@@ -191,15 +200,16 @@ std::string HyprlandIPC::EventNameFromLine(const std::string &line) {
     return line.substr(0, pos);
 }
 
-std::optional<nlohmann::json> HyprlandIPC::SendJsonRequest(const std::string &rq,
-                                                           std::chrono::milliseconds timeout) const {
+// ─────────────────────────────────────
+std::optional<nlohmann::json>
+HyprlandIPC::SendJsonRequest(const std::string &rq, std::chrono::milliseconds timeout) const {
     if (!IsAvailable()) {
         return std::nullopt;
     }
 
     const auto socketPath = m_SocketFolder / ".socket.sock";
 
-    const int fd = ::socket(AF_UNIX, SOCK_STREAM, 0);
+    const int fd = socket(AF_UNIX, SOCK_STREAM, 0);
     if (fd < 0) {
         spdlog::warn("Hyprland IPC: socket() failed: {}", std::strerror(errno));
         return std::nullopt;
@@ -211,7 +221,7 @@ std::optional<nlohmann::json> HyprlandIPC::SendJsonRequest(const std::string &rq
 
     const std::string socketPathStr = socketPath.string();
     if (socketPathStr.size() >= sizeof(addr.sun_path)) {
-        ::close(fd);
+        close(fd);
         spdlog::warn("Hyprland IPC: socket path too long");
         return std::nullopt;
     }
@@ -219,14 +229,14 @@ std::optional<nlohmann::json> HyprlandIPC::SendJsonRequest(const std::string &rq
 
     if (::connect(fd, reinterpret_cast<sockaddr *>(&addr), sizeof(addr)) < 0) {
         spdlog::debug("Hyprland IPC: connect() failed: {}", std::strerror(errno));
-        ::close(fd);
+        close(fd);
         return std::nullopt;
     }
 
     // Request format matches waybar: prefix with "j/" for JSON.
     const std::string request = "j/" + rq;
     if (!SendAll(fd, request.data(), request.size())) {
-        ::close(fd);
+        close(fd);
         return std::nullopt;
     }
 
@@ -241,13 +251,12 @@ std::optional<nlohmann::json> HyprlandIPC::SendJsonRequest(const std::string &rq
         if (now >= deadline) {
             break;
         }
-
         pollfd pfd;
         pfd.fd = fd;
         pfd.events = POLLIN;
         pfd.revents = 0;
-
-        const auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(deadline - now);
+        const auto remaining =
+            std::chrono::duration_cast<std::chrono::milliseconds>(deadline - now);
         const int prc = ::poll(&pfd, 1, static_cast<int>(remaining.count()));
         if (prc <= 0) {
             break;
@@ -272,7 +281,7 @@ std::optional<nlohmann::json> HyprlandIPC::SendJsonRequest(const std::string &rq
         response.append(buffer.data(), static_cast<std::size_t>(n));
     }
 
-    ::close(fd);
+    close(fd);
 
     if (response.empty()) {
         return std::nullopt;
@@ -286,8 +295,9 @@ std::optional<nlohmann::json> HyprlandIPC::SendJsonRequest(const std::string &rq
     }
 }
 
-std::optional<std::pair<std::string, std::string>> HyprlandIPC::GetActiveClassAndTitle(
-    std::chrono::milliseconds timeout) const {
+// ─────────────────────────────────────
+std::optional<std::pair<std::string, std::string>>
+HyprlandIPC::GetActiveClassAndTitle(std::chrono::milliseconds timeout) const {
     // Prefer the direct activewindow query.
     if (auto j = SendJsonRequest("activewindow", timeout); j.has_value() && j->is_object()) {
         std::string cls;
@@ -359,6 +369,7 @@ std::optional<std::pair<std::string, std::string>> HyprlandIPC::GetActiveClassAn
     return std::make_pair(std::string{}, lastTitle);
 }
 
+// ─────────────────────────────────────
 bool HyprlandIPC::StartEventStream(std::function<void(const std::string &event)> callback,
                                    std::vector<std::string> only_events,
                                    std::chrono::milliseconds reconnect_delay) {
@@ -378,55 +389,56 @@ bool HyprlandIPC::StartEventStream(std::function<void(const std::string &event)>
     m_StopStream.store(false);
     m_StreamRunning.store(true);
 
-    m_StreamThread = std::thread([this, callback, only_events = std::move(only_events),
-                                  reconnect_delay]() {
-        while (!m_StopStream.load()) {
-            CloseFd(m_StreamFd);
-
-            if (!ConnectStreamFd(m_StreamFd)) {
-                std::this_thread::sleep_for(reconnect_delay);
-                continue;
-            }
-
-            std::string buffer;
-            std::string line;
-
+    m_StreamThread =
+        std::thread([this, callback, only_events = std::move(only_events), reconnect_delay]() {
             while (!m_StopStream.load()) {
-                if (!ReadLine(m_StreamFd, line, buffer, std::chrono::milliseconds(30000))) {
-                    break; // reconnect
-                }
+                CloseFd(m_StreamFd);
 
-                if (line.empty()) {
+                if (!ConnectStreamFd(m_StreamFd)) {
+                    std::this_thread::sleep_for(reconnect_delay);
                     continue;
                 }
 
-                const std::string evName = EventNameFromLine(line);
-                if (!only_events.empty() && !Contains(only_events, evName)) {
-                    continue;
-                }
+                std::string buffer;
+                std::string line;
 
-                try {
-                    if (callback) {
-                        callback(line);
+                while (!m_StopStream.load()) {
+                    if (!ReadLine(m_StreamFd, line, buffer, std::chrono::milliseconds(30000))) {
+                        break; // reconnect
                     }
-                } catch (...) {
-                    // Never allow callbacks to kill the stream thread.
+
+                    if (line.empty()) {
+                        continue;
+                    }
+
+                    const std::string evName = EventNameFromLine(line);
+                    if (!only_events.empty() && !Contains(only_events, evName)) {
+                        continue;
+                    }
+
+                    try {
+                        if (callback) {
+                            callback(line);
+                        }
+                    } catch (...) {
+                        spdlog::error("HyprlandIPC callback failed");
+                    }
+                }
+
+                CloseFd(m_StreamFd);
+                if (!m_StopStream.load()) {
+                    std::this_thread::sleep_for(reconnect_delay);
                 }
             }
 
             CloseFd(m_StreamFd);
-            if (!m_StopStream.load()) {
-                std::this_thread::sleep_for(reconnect_delay);
-            }
-        }
-
-        CloseFd(m_StreamFd);
-        m_StreamRunning.store(false);
-    });
+            m_StreamRunning.store(false);
+        });
 
     return true;
 }
 
+// ─────────────────────────────────────
 void HyprlandIPC::StopEventStream() {
     m_StopStream.store(true);
 
@@ -438,6 +450,7 @@ void HyprlandIPC::StopEventStream() {
     m_StreamRunning.store(false);
 }
 
+// ─────────────────────────────────────
 bool HyprlandIPC::IsEventStreamRunning() const {
     return m_StreamRunning.load();
 }

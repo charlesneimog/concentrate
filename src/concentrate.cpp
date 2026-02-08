@@ -52,16 +52,17 @@ Concentrate::Concentrate(const unsigned port, const unsigned ping, LogLevel log_
     m_Window = std::make_unique<Window>();
     spdlog::info("Window API initialized");
 
-    // Prefer event-driven focus updates via WM IPC event stream; fall back to polling when not available.
+    // Prefer event-driven focus updates via Niri IPC EventStream; fall back to polling when not
+    // available.
     if (m_Window && m_Window->StartEventStream([this]() {
             m_FocusDirty.store(true);
             WakeScheduler();
         })) {
         m_EventDriven.store(true);
-        spdlog::info("Window IPC event stream enabled (push mode)");
+        spdlog::info("Niri IPC event stream enabled (push mode)");
     } else {
         m_EventDriven.store(false);
-        spdlog::warn("Window IPC event stream unavailable; falling back to polling mode");
+        spdlog::warn("Niri IPC event stream unavailable; falling back to polling mode");
     }
 
     // Notifications
@@ -79,13 +80,6 @@ Concentrate::Concentrate(const unsigned port, const unsigned ping, LogLevel log_
 
     // HydrationService
     m_Hydration = std::make_unique<HydrationService>();
-    double hydrationIntervalMinutes = 10.0;
-    double dailyLiters = m_Hydration->GetLiters();
-    double litersPerReminder = dailyLiters / (10.0 * 60.0 / hydrationIntervalMinutes);
-    auto lastHydrationNotification =
-        std::chrono::steady_clock::now() -
-        std::chrono::minutes(static_cast<int>(hydrationIntervalMinutes));
-    auto lastClimateUpdate = std::chrono::steady_clock::now();
 
     // Time
     std::string monitoring_str = m_Secrets->LoadSecret("monitoring_enabled");
@@ -96,546 +90,12 @@ Concentrate::Concentrate(const unsigned port, const unsigned ping, LogLevel log_
         m_Notification->SendNotification("concentrate-off", "Concentrate",
                                          "Apps monitoring is off");
     }
-    auto lastMonitoringNotification = std::chrono::steady_clock::now() - std::chrono::minutes(10);
-
-    // Tracking model:
-    // - When an active interval starts, INSERT a row with start=end=now, duration=0.
-    // - While it continues, UPDATE that same row with end=now and duration=(now-start).
-    // - When it ends/changes, do a final UPDATE and then INSERT the next interval.
-    bool hasOpenInterval = false;
-    FocusState openState = IDLE;
-    auto intervalStart = std::chrono::steady_clock::now();
-    auto lastDbFlush = intervalStart;
-    std::string openAppId;
-    std::string openTitle;
-    std::string openCategory;
-
-    bool hasOpenMonitoringInterval = false;
-    MonitoringState openMonitoringState = MONITORING_ENABLE;
-    auto monitoringIntervalStart = std::chrono::steady_clock::now();
-    auto lastMonitoringDbFlush = monitoringIntervalStart;
-
-    {
-        std::lock_guard<std::mutex> lock(m_GlobalMutex);
-        m_LastState.store(IDLE);
-        m_LastAppId.clear();
-        m_LastTitle.clear();
-        m_LastCategory.clear();
-        m_HasLastRecord = false;
-    }
 
     UpdateAllowedApps();
     RefreshDailyActivities();
 
-    // Unfocused warning: while UNFOCUSED, warn every 15 seconds (after an initial 15s grace).
-    bool inUnfocusedStreak = false;
-    auto unfocusedSince = std::chrono::steady_clock::now();
-    auto lastUnfocusedWarningAt = unfocusedSince;
-    const auto unfocusedWarnEvery = std::chrono::seconds(15);
-
-    // Focus refresh timing (poll fallback / safety refresh)
-    auto lastFocusQueryAt = std::chrono::steady_clock::now() - std::chrono::seconds(m_Ping);
-    const auto safetyPollEvery = std::chrono::seconds(30);
-
-    // Tray polling schedule (DBus is pumped via Poll())
-    auto nextTrayPollAt = std::chrono::steady_clock::now();
-
-    auto wait_until_next_deadline = [&](const FocusState currentState,
-                                       const bool monitoringEnabledNow,
-                                       const bool eventDriven) {
-        const auto now2 = std::chrono::steady_clock::now();
-        auto deadline = now2 + std::chrono::hours(24);
-
-        // Tray polling
-        if (m_Tray) {
-            deadline = std::min(deadline, nextTrayPollAt);
-        }
-
-        // Focus refresh cadence
-        if (!eventDriven) {
-            deadline = std::min(deadline, lastFocusQueryAt + std::chrono::seconds(m_Ping));
-        } else {
-            deadline = std::min(deadline, lastFocusQueryAt + safetyPollEvery);
-        }
-
-        // Hydration/climate
-        deadline =
-            std::min(deadline,
-                     lastHydrationNotification +
-                         std::chrono::minutes(static_cast<int>(hydrationIntervalMinutes)));
-        deadline = std::min(deadline, lastClimateUpdate + std::chrono::hours(3));
-
-        // Monitoring disabled reminder
-        if (!monitoringEnabledNow) {
-            deadline = std::min(deadline, lastMonitoringNotification + std::chrono::minutes(1));
-        }
-
-        // Periodic DB flushes
-        if (hasOpenInterval && openState != IDLE) {
-            deadline = std::min(deadline, lastDbFlush + std::chrono::seconds(15));
-        }
-        if (hasOpenMonitoringInterval) {
-            deadline = std::min(deadline, lastMonitoringDbFlush + std::chrono::seconds(15));
-        }
-
-        // Unfocused warning timing
-        if (currentState == UNFOCUSED) {
-            const auto nextWarn =
-                !inUnfocusedStreak
-                    ? (now2 + unfocusedWarnEvery)
-                    : std::max(unfocusedSince + unfocusedWarnEvery,
-                               lastUnfocusedWarningAt + unfocusedWarnEvery);
-            deadline = std::min(deadline, nextWarn);
-        }
-
-        const auto seq = m_WakeupSeq.load(std::memory_order_relaxed);
-        std::unique_lock<std::mutex> lk(m_SchedulerMutex);
-        m_SchedulerCv.wait_until(lk, deadline, [&] {
-            return m_ShutdownRequested.load() ||
-                   m_WakeupSeq.load(std::memory_order_relaxed) != seq ||
-                   m_FocusDirty.load();
-        });
-    };
-
-    // Cache the last inputs that affect AmIFocused() so we don't recompute on every loop tick.
-    FocusState currentState = IDLE;
-    std::string lastFocusAppId;
-    std::string lastFocusTitle;
-    std::string lastTaskCategoryApplied;
-
-    while (true) {
-        auto now = std::chrono::steady_clock::now();
-
-        const bool eventDriven = m_EventDriven.load();
-
-        // Refresh focused window:
-        // - In push mode, refresh when we receive relevant events, plus a periodic safety refresh.
-        // - In pull mode, refresh every m_Ping seconds (original behavior).
-        bool shouldRefreshFocus = false;
-        if (eventDriven) {
-            shouldRefreshFocus = m_FocusDirty.exchange(false);
-            if (!shouldRefreshFocus && (now - lastFocusQueryAt) >= safetyPollEvery) {
-                shouldRefreshFocus = true;
-            }
-        } else {
-            if ((now - lastFocusQueryAt) >= std::chrono::seconds(m_Ping)) {
-                shouldRefreshFocus = true;
-            }
-        }
-
-        if (shouldRefreshFocus) {
-            lastFocusQueryAt = now;
-
-            FocusedWindow fresh = m_Window ? m_Window->GetFocusedWindow() : FocusedWindow{};
-            {
-                std::lock_guard<std::mutex> lock(m_GlobalMutex);
-                m_Fw = fresh;
-            }
-        }
-
-        const bool monitoringToggled = m_MonitoringTogglePending.exchange(false);
-        const bool monitoringEnabledNow = m_MonitoringEnabled.load();
-
-        // Determine current state (always needed to detect IDLE, even if monitoring is disabled)
-        FocusedWindow fw_local;
-        {
-            std::lock_guard<std::mutex> lock(m_GlobalMutex);
-            fw_local = m_Fw;
-        }
-
-        if (m_SpecialProjectFocused) {
-            fw_local.app_id = m_SpecialAppId;
-            fw_local.title = m_SpecialProjectTitle;
-            spdlog::debug("Special project focus override: app_id='{}', title='{}'", fw_local.app_id,
-                          fw_local.title);
-        }
-
-        const bool inputsChanged = (fw_local.app_id != lastFocusAppId) ||
-                                   (fw_local.title != lastFocusTitle) ||
-                                   (m_CurrentTaskCategory != lastTaskCategoryApplied);
-
-        if (inputsChanged) {
-            currentState = AmIFocused(fw_local);
-            lastFocusAppId = fw_local.app_id;
-            lastFocusTitle = fw_local.title;
-            lastTaskCategoryApplied = m_CurrentTaskCategory;
-        }
-
-        // Persist category/state adjustments back to the shared snapshot used by the web API.
-        {
-            std::lock_guard<std::mutex> lock(m_GlobalMutex);
-            m_Fw = fw_local;
-        }
-
-        // If monitoring was toggled, force a monitoring-session split at 'now' (idle time is excluded).
-        if (monitoringToggled && hasOpenMonitoringInterval) {
-            const double endUnix = ToUnixTime(now);
-            const double startUnix = ToUnixTime(monitoringIntervalStart);
-            const double duration = endUnix - startUnix;
-            if (duration > 0.0) {
-                if (!m_SQLite->UpdateMonitoringSession(endUnix, duration, openMonitoringState)) {
-                    m_SQLite->InsertMonitoringSession(startUnix, endUnix, duration, openMonitoringState);
-                }
-            }
-            hasOpenMonitoringInterval = false;
-        }
-
-        // Notify if monitoring is disabled every 5 minutes
-        if (!monitoringEnabledNow && now - lastMonitoringNotification >= std::chrono::minutes(1)) {
-            m_Notification->SendNotification("concentrate-off", "Concentrate",
-                                             "Application monitoring is currently disabled.");
-            lastMonitoringNotification = now;
-        }
-
-        // on IDLE: close any open focus interval AND any open monitoring interval. Idle is never recorded.
-        if (currentState == IDLE) {
-            if (hasOpenInterval && openState != IDLE) {
-                const double endUnix = ToUnixTime(now);
-                const double startUnix = ToUnixTime(intervalStart);
-                const double duration = endUnix - startUnix;
-
-                if (duration > 0.0) {
-                    if (!m_SQLite->UpdateEventNew(openAppId, openTitle, openCategory, endUnix,
-                                                  duration, openState)) {
-                        m_SQLite->InsertEventNew(openAppId, openTitle, openCategory, startUnix,
-                                                 endUnix, duration, openState);
-                    }
-                    spdlog::info(
-                        "Focus event closed (idle): state={}, app_id='{}', title='{}', duration={}",
-                        static_cast<int>(openState), openAppId, openTitle, duration);
-                }
-            }
-
-            if (hasOpenMonitoringInterval) {
-                const double endUnix = ToUnixTime(now);
-                const double startUnix = ToUnixTime(monitoringIntervalStart);
-                const double duration = endUnix - startUnix;
-                if (duration > 0.0) {
-                    if (!m_SQLite->UpdateMonitoringSession(endUnix, duration, openMonitoringState)) {
-                        m_SQLite->InsertMonitoringSession(startUnix, endUnix, duration,
-                                                         openMonitoringState);
-                    }
-                }
-            }
-
-            hasOpenInterval = false;
-            openState = IDLE;
-            openAppId.clear();
-            openTitle.clear();
-            openCategory.clear();
-
-            hasOpenMonitoringInterval = false;
-
-            {
-                std::lock_guard<std::mutex> lock(m_GlobalMutex);
-                m_LastState.store(IDLE);
-                m_LastAppId.clear();
-                m_LastTitle.clear();
-                m_LastCategory.clear();
-                m_HasLastRecord = false;
-            }
-
-            if (m_Tray) {
-                m_Tray->SetTrayIcon(IDLE);
-
-                const auto trayPollEvery = eventDriven ? std::chrono::seconds(1)
-                                                      : std::chrono::seconds(m_Ping);
-                if (now >= nextTrayPollAt) {
-                    m_Tray->Poll();
-                    nextTrayPollAt = now + trayPollEvery;
-
-                    if (m_Tray->TakeOpenUiRequested()) {
-                        int result = std::system(
-                            ("xdg-open http://127.0.0.1:" + std::to_string(m_Port) + "/ &").c_str());
-                        if (result != 0) {
-                            spdlog::error("Failed to open browser");
-                        }
-                    }
-                    if (m_Tray->TakeExitRequested()) {
-                        spdlog::info("Exit requested from tray");
-                        if (m_Window) {
-                            m_Window->StopEventStream();
-                        }
-                        break;
-                    }
-                }
-            }
-
-            wait_until_next_deadline(currentState, monitoringEnabledNow, eventDriven);
-            continue;
-        }
-
-        // Monitoring sessions are recorded only when NOT idle.
-        {
-            const MonitoringState desired = monitoringEnabledNow ? MONITORING_ENABLE : MONITORING_DISABLE;
-
-            if (!hasOpenMonitoringInterval) {
-                hasOpenMonitoringInterval = true;
-                openMonitoringState = desired;
-                monitoringIntervalStart = now;
-                lastMonitoringDbFlush = now;
-
-                const double startUnix = ToUnixTime(monitoringIntervalStart);
-                m_SQLite->InsertMonitoringSession(startUnix, startUnix, 0.0, openMonitoringState);
-            } else if (desired != openMonitoringState) {
-                const double endUnix = ToUnixTime(now);
-                const double startUnix = ToUnixTime(monitoringIntervalStart);
-                const double duration = endUnix - startUnix;
-                if (duration > 0.0) {
-                    if (!m_SQLite->UpdateMonitoringSession(endUnix, duration, openMonitoringState)) {
-                        m_SQLite->InsertMonitoringSession(startUnix, endUnix, duration,
-                                                         openMonitoringState);
-                    }
-                }
-
-                openMonitoringState = desired;
-                monitoringIntervalStart = now;
-                lastMonitoringDbFlush = now;
-
-                const double startUnix2 = ToUnixTime(monitoringIntervalStart);
-                m_SQLite->InsertMonitoringSession(startUnix2, startUnix2, 0.0, openMonitoringState);
-            } else if (now - lastMonitoringDbFlush >= std::chrono::seconds(15)) {
-                const double endUnix = ToUnixTime(now);
-                const double startUnix = ToUnixTime(monitoringIntervalStart);
-                const double duration = endUnix - startUnix;
-                if (duration > 0.0) {
-                    m_SQLite->UpdateMonitoringSession(endUnix, duration, openMonitoringState);
-                }
-                lastMonitoringDbFlush = now;
-            }
-        }
-
-        if (!monitoringEnabledNow) {
-            // Reset unfocused streak tracking while monitoring is disabled.
-            inUnfocusedStreak = false;
-            unfocusedSince = now;
-            lastUnfocusedWarningAt = now;
-
-            // Close any open interval before entering the disabled/idle state.
-            if (hasOpenInterval && openState != IDLE) {
-                const double endUnix = ToUnixTime(now);
-                const double startUnix = ToUnixTime(intervalStart);
-                const double duration = endUnix - startUnix;
-                if (duration > 0.0) {
-                    if (!m_SQLite->UpdateEventNew(openAppId, openTitle, openCategory, endUnix,
-                                                  duration, openState)) {
-                        m_SQLite->InsertEventNew(openAppId, openTitle, openCategory, startUnix,
-                                                 endUnix, duration, openState);
-                    }
-                }
-            }
-
-            m_Tray->SetTrayIcon(DISABLE);
-
-            hasOpenInterval = false;
-            openState = DISABLE;
-            openAppId.clear();
-            openTitle.clear();
-            openCategory.clear();
-
-            {
-                std::lock_guard<std::mutex> lock(m_GlobalMutex);
-                m_LastState.store(DISABLE);
-                m_LastAppId.clear();
-                m_LastTitle.clear();
-                m_LastCategory.clear();
-                m_HasLastRecord = false;
-            }
-
-            // Pump tray DBus messages (non-blocking)
-            if (m_Tray) {
-
-                const auto trayPollEvery = eventDriven ? std::chrono::seconds(1)
-                                                      : std::chrono::seconds(m_Ping);
-                if (now >= nextTrayPollAt) {
-                    m_Tray->Poll();
-                    nextTrayPollAt = now + trayPollEvery;
-
-                    if (m_Tray->TakeOpenUiRequested()) {
-                        int result = std::system(
-                            ("xdg-open http://127.0.0.1:" + std::to_string(m_Port) + "/ &").c_str());
-                        if (result != 0) {
-                            spdlog::error("Failed to open browser");
-                        }
-                    }
-                    if (m_Tray->TakeExitRequested()) {
-                        spdlog::info("Exit requested from tray");
-                        if (m_Window) {
-                            m_Window->StopEventStream();
-                        }
-                        break;
-                    }
-                }
-            }
-
-            wait_until_next_deadline(currentState, monitoringEnabledNow, eventDriven);
-            continue;
-        }
-
-        // Repeating unfocused warning.
-        if (currentState == UNFOCUSED) {
-            if (!inUnfocusedStreak) {
-                inUnfocusedStreak = true;
-                unfocusedSince = now;
-                lastUnfocusedWarningAt = now;
-            } else if ((now - unfocusedSince) >= unfocusedWarnEvery &&
-                       (now - lastUnfocusedWarningAt) >= unfocusedWarnEvery) {
-                if (m_Notification) {
-                    m_Notification->SendNotification(
-                        "concentrate-unfocused", "Concentrate",
-                        "Focus: you've been unfocused for more than 15 seconds.");
-                }
-                lastUnfocusedWarningAt = now;
-            }
-        } else {
-            // Reset streak when focused or idle.
-            inUnfocusedStreak = false;
-            unfocusedSince = now;
-            lastUnfocusedWarningAt = now;
-        }
-
-        if (m_CurrentTaskCategory.empty()) {
-            m_CurrentTaskCategory = "Uncategorized";
-            spdlog::debug("Current task category defaulted to '{}'", m_CurrentTaskCategory);
-        }
-
-
-
-        // Update climate/hydration (every 3 hours)
-        if (now - lastClimateUpdate >= std::chrono::hours(3)) {
-            spdlog::info("Updating location and weather info...");
-            try {
-                m_Hydration->GetLocation();
-                m_Hydration->GetHydrationRecommendation();
-            } catch (const std::exception &e) {
-                spdlog::warn("Failed to update location/climate: {}", e.what());
-            }
-            lastClimateUpdate = now;
-        }
-
-        // Hydration reminders
-        if (now - lastHydrationNotification >=
-            std::chrono::minutes(static_cast<int>(hydrationIntervalMinutes))) {
-            m_Notification->SendNotification(
-                "dialog-info", "Concentrate",
-                fmt::format("Time to drink water! ~{:.2f} L since last reminder.",
-                            litersPerReminder));
-            lastHydrationNotification = now;
-        }
-
-        const std::string currAppId = fw_local.app_id;
-        const std::string currTitle = fw_local.title;
-        const std::string currCategory = fw_local.category;
-
-        if (!hasOpenInterval) {
-            // Start a new active interval and INSERT immediately so subsequent UPDATEs have
-            // something to target.
-            hasOpenInterval = true;
-            openState = currentState;
-            openAppId = currAppId;
-            openTitle = currTitle;
-            openCategory = currCategory;
-            intervalStart = now;
-            lastDbFlush = now;
-
-            const double startUnix = ToUnixTime(intervalStart);
-            m_SQLite->InsertEventNew(openAppId, openTitle, openCategory, startUnix, startUnix, 0.0,
-                                     openState);
-        } else {
-            const bool changed = (currentState != openState) || (currAppId != openAppId) ||
-                                 (currTitle != openTitle) || (currCategory != openCategory);
-
-            if (changed) {
-                // Close previous interval with a final UPDATE.
-                const double endUnix = ToUnixTime(now);
-                const double startUnix = ToUnixTime(intervalStart);
-                const double duration = endUnix - startUnix;
-                if (duration > 0.0) {
-                    if (!m_SQLite->UpdateEventNew(openAppId, openTitle, openCategory, endUnix,
-                                                  duration, openState)) {
-                        m_SQLite->InsertEventNew(openAppId, openTitle, openCategory, startUnix,
-                                                 endUnix, duration, openState);
-                    }
-                }
-
-                // Start next interval and INSERT.
-                openState = currentState;
-                openAppId = currAppId;
-                openTitle = currTitle;
-                openCategory = currCategory;
-                intervalStart = now;
-                lastDbFlush = now;
-
-                const double startUnix2 = ToUnixTime(intervalStart);
-                m_SQLite->InsertEventNew(openAppId, openTitle, openCategory, startUnix2, startUnix2,
-                                         0.0, openState);
-            } else if (now - lastDbFlush >= std::chrono::seconds(15)) {
-                // Periodic progress update: duration must be TOTAL (end - intervalStart), not just
-                // the last 15s slice.
-                const double endUnix = ToUnixTime(now);
-                const double startUnix = ToUnixTime(intervalStart);
-                const double duration = endUnix - startUnix;
-                if (duration > 0.0) {
-                    m_SQLite->UpdateEventNew(openAppId, openTitle, openCategory, endUnix, duration,
-                                             openState);
-                }
-                lastDbFlush = now;
-            }
-        }
-
-        {
-            std::lock_guard<std::mutex> lock(m_GlobalMutex);
-            if (hasOpenInterval && openState != IDLE) {
-                m_LastRecord = intervalStart; // interval start, not last flush
-                m_LastState.store(openState);
-                m_LastAppId = openAppId;
-                m_LastTitle = openTitle;
-                m_LastCategory = openCategory;
-                m_HasLastRecord = true;
-            } else {
-                m_LastState.store(IDLE);
-                m_LastAppId.clear();
-                m_LastTitle.clear();
-                m_LastCategory.clear();
-                m_HasLastRecord = false;
-            }
-        }
-
-        // Update tray icon state (focused/unfocused)
-        if (m_Tray) {
-            m_Tray->SetTrayIcon(currentState);
-
-            const auto trayPollEvery = eventDriven ? std::chrono::seconds(1)
-                                                  : std::chrono::seconds(m_Ping);
-            if (now >= nextTrayPollAt) {
-                m_Tray->Poll();
-                nextTrayPollAt = now + trayPollEvery;
-
-                if (m_Tray->TakeOpenUiRequested()) {
-                    int result = std::system(
-                        ("xdg-open http://127.0.0.1:" + std::to_string(m_Port) + "/ &").c_str());
-                    if (result != 0) {
-                        spdlog::error("Failed to open the browser");
-                    }
-                }
-                if (m_Tray->TakeExitRequested()) {
-                    spdlog::info("Exit requested from tray");
-                    if (m_Window) {
-                        m_Window->StopEventStream();
-                    }
-                    break;
-                }
-            }
-        }
-
-        wait_until_next_deadline(currentState, monitoringEnabledNow, eventDriven);
-    }
-}
-
-// ─────────────────────────────────────
-void Concentrate::WakeScheduler() {
-    m_WakeupSeq.fetch_add(1, std::memory_order_relaxed);
-    m_SchedulerCv.notify_one();
+    InitLoopState();
+    RunMainLoop();
 }
 
 // ─────────────────────────────────────
@@ -691,6 +151,575 @@ Concentrate::~Concentrate() {
 }
 
 // ─────────────────────────────────────
+void Concentrate::InitLoopState() {
+    const auto now = std::chrono::steady_clock::now();
+
+    // Hydration
+    m_HydrationIntervalMinutes = 10.0;
+    const double dailyLiters = m_Hydration ? m_Hydration->GetLiters() : 0.0;
+    if (dailyLiters > 0.0) {
+        m_LitersPerReminder = dailyLiters / (10.0 * 60.0 / m_HydrationIntervalMinutes);
+    } else {
+        m_LitersPerReminder = 0.0;
+    }
+    m_LastHydrationNotification =
+        now - std::chrono::minutes(static_cast<int>(m_HydrationIntervalMinutes));
+    m_LastClimateUpdate = now;
+
+    // Monitoring disabled reminder
+    m_LastMonitoringNotification = now - std::chrono::minutes(10);
+
+    // Tracking model state
+    m_HasOpenInterval = false;
+    m_OpenState = IDLE;
+    m_IntervalStart = now;
+    m_LastDbFlush = now;
+    m_OpenAppId.clear();
+    m_OpenTitle.clear();
+    m_OpenCategory.clear();
+
+    m_HasOpenMonitoringInterval = false;
+    m_OpenMonitoringState = MONITORING_ENABLE;
+    m_MonitoringIntervalStart = now;
+    m_LastMonitoringDbFlush = now;
+
+    // Unfocused warning
+    m_InUnfocusedStreak = false;
+    m_UnfocusedSince = now;
+    m_LastUnfocusedWarningAt = now;
+
+    // Focus refresh timing
+    m_LastFocusQueryAt = now - std::chrono::seconds(m_Ping);
+
+    // Tray polling
+    m_NextTrayPollAt = now;
+
+    // Last tracked interval snapshot
+    {
+        std::lock_guard<std::mutex> lock(m_GlobalMutex);
+        m_LastState.store(IDLE);
+        m_LastAppId.clear();
+        m_LastTitle.clear();
+        m_LastCategory.clear();
+        m_HasLastRecord = false;
+    }
+}
+
+// ─────────────────────────────────────
+void Concentrate::RefreshFocusSnapshotIfNeeded(std::chrono::steady_clock::time_point now,
+                                               bool eventDriven) {
+    bool shouldRefreshFocus = false;
+    if (eventDriven) {
+        shouldRefreshFocus = m_FocusDirty.exchange(false);
+        if (!shouldRefreshFocus && (now - m_LastFocusQueryAt) >= kSafetyPollEvery) {
+            shouldRefreshFocus = true;
+        }
+    } else {
+        // In polling mode, m_FocusDirty must not force the scheduler to wake continuously.
+        m_FocusDirty.store(false);
+        if ((now - m_LastFocusQueryAt) >= std::chrono::seconds(m_Ping)) {
+            shouldRefreshFocus = true;
+        }
+    }
+
+    if (!shouldRefreshFocus) {
+        return;
+    }
+
+    m_LastFocusQueryAt = now;
+    FocusedWindow fresh = m_Window ? m_Window->GetFocusedWindow() : FocusedWindow{};
+    {
+        std::lock_guard<std::mutex> lock(m_GlobalMutex);
+        m_Fw = fresh;
+    }
+}
+
+// ─────────────────────────────────────
+FocusedWindow Concentrate::LoadFocusedWindowSnapshot() {
+    std::lock_guard<std::mutex> lock(m_GlobalMutex);
+    return m_Fw;
+}
+
+// ─────────────────────────────────────
+FocusState Concentrate::ComputeFocusStateAndPersist(FocusedWindow &fw_local) {
+    if (m_SpecialProjectFocused) {
+        fw_local.app_id = m_SpecialAppId;
+        fw_local.title = m_SpecialProjectTitle;
+        spdlog::debug("Special project focus override: app_id='{}', title='{}'", fw_local.app_id,
+                      fw_local.title);
+    }
+
+    FocusState currentState = AmIFocused(fw_local);
+
+    // Persist category/state adjustments back to the shared snapshot used by the web API.
+    {
+        std::lock_guard<std::mutex> lock(m_GlobalMutex);
+        m_Fw = fw_local;
+    }
+
+    return currentState;
+}
+
+// ─────────────────────────────────────
+void Concentrate::HandleMonitoringToggleSplit(std::chrono::steady_clock::time_point now) {
+    const bool monitoringToggled = m_MonitoringTogglePending.exchange(false);
+    if (!monitoringToggled || !m_HasOpenMonitoringInterval) {
+        return;
+    }
+
+    const double endUnix = ToUnixTime(now);
+    const double startUnix = ToUnixTime(m_MonitoringIntervalStart);
+    const double duration = endUnix - startUnix;
+    if (duration > 0.0) {
+        if (!m_SQLite->UpdateMonitoringSession(endUnix, duration, m_OpenMonitoringState)) {
+            m_SQLite->InsertMonitoringSession(startUnix, endUnix, duration, m_OpenMonitoringState);
+        }
+    }
+    m_HasOpenMonitoringInterval = false;
+}
+
+// ─────────────────────────────────────
+void Concentrate::MaybeNotifyMonitoringDisabled(std::chrono::steady_clock::time_point now,
+                                                bool monitoringEnabledNow) {
+    if (monitoringEnabledNow) {
+        return;
+    }
+    if (now - m_LastMonitoringNotification >= std::chrono::minutes(1)) {
+        if (m_Notification) {
+            m_Notification->SendNotification("concentrate-off", "Concentrate",
+                                             "Application monitoring is currently disabled.");
+        }
+        m_LastMonitoringNotification = now;
+    }
+}
+
+// ─────────────────────────────────────
+void Concentrate::CloseOpenMonitoringInterval(std::chrono::steady_clock::time_point now) {
+    if (!m_HasOpenMonitoringInterval) {
+        return;
+    }
+
+    const double endUnix = ToUnixTime(now);
+    const double startUnix = ToUnixTime(m_MonitoringIntervalStart);
+    const double duration = endUnix - startUnix;
+    if (duration > 0.0) {
+        if (!m_SQLite->UpdateMonitoringSession(endUnix, duration, m_OpenMonitoringState)) {
+            m_SQLite->InsertMonitoringSession(startUnix, endUnix, duration, m_OpenMonitoringState);
+        }
+    }
+    m_HasOpenMonitoringInterval = false;
+}
+
+// ─────────────────────────────────────
+void Concentrate::UpdateMonitoringSession(std::chrono::steady_clock::time_point now,
+                                          bool monitoringEnabledNow) {
+    const MonitoringState desired = monitoringEnabledNow ? MONITORING_ENABLE : MONITORING_DISABLE;
+
+    if (!m_HasOpenMonitoringInterval) {
+        m_HasOpenMonitoringInterval = true;
+        m_OpenMonitoringState = desired;
+        m_MonitoringIntervalStart = now;
+        m_LastMonitoringDbFlush = now;
+
+        const double startUnix = ToUnixTime(m_MonitoringIntervalStart);
+        m_SQLite->InsertMonitoringSession(startUnix, startUnix, 0.0, m_OpenMonitoringState);
+        return;
+    }
+
+    if (desired != m_OpenMonitoringState) {
+        CloseOpenMonitoringInterval(now);
+
+        m_HasOpenMonitoringInterval = true;
+        m_OpenMonitoringState = desired;
+        m_MonitoringIntervalStart = now;
+        m_LastMonitoringDbFlush = now;
+
+        const double startUnix2 = ToUnixTime(m_MonitoringIntervalStart);
+        m_SQLite->InsertMonitoringSession(startUnix2, startUnix2, 0.0, m_OpenMonitoringState);
+        return;
+    }
+
+    if (now - m_LastMonitoringDbFlush >= kDbFlushEvery) {
+        const double endUnix = ToUnixTime(now);
+        const double startUnix = ToUnixTime(m_MonitoringIntervalStart);
+        const double duration = endUnix - startUnix;
+        if (duration > 0.0) {
+            m_SQLite->UpdateMonitoringSession(endUnix, duration, m_OpenMonitoringState);
+        }
+        m_LastMonitoringDbFlush = now;
+    }
+}
+
+// ─────────────────────────────────────
+void Concentrate::CloseOpenFocusInterval(std::chrono::steady_clock::time_point now,
+                                         const char *reasonForLog) {
+    if (!m_HasOpenInterval || m_OpenState == IDLE) {
+        return;
+    }
+
+    const double endUnix = ToUnixTime(now);
+    const double startUnix = ToUnixTime(m_IntervalStart);
+    const double duration = endUnix - startUnix;
+
+    if (duration > 0.0) {
+        if (!m_SQLite->UpdateEventNew(m_OpenAppId, m_OpenTitle, m_OpenCategory, endUnix, duration,
+                                      m_OpenState)) {
+            m_SQLite->InsertEventNew(m_OpenAppId, m_OpenTitle, m_OpenCategory, startUnix, endUnix,
+                                     duration, m_OpenState);
+        }
+        spdlog::info("Focus event closed ({}): state={}, app_id='{}', title='{}', duration={}",
+                     reasonForLog ? reasonForLog : "closed", static_cast<int>(m_OpenState),
+                     m_OpenAppId, m_OpenTitle, duration);
+    }
+}
+
+// ─────────────────────────────────────
+void Concentrate::ResetOpenFocusIntervalToIdle() {
+    m_HasOpenInterval = false;
+    m_OpenState = IDLE;
+    m_OpenAppId.clear();
+    m_OpenTitle.clear();
+    m_OpenCategory.clear();
+}
+
+// ─────────────────────────────────────
+void Concentrate::ResetOpenMonitoringInterval() {
+    m_HasOpenMonitoringInterval = false;
+}
+
+// ─────────────────────────────────────
+void Concentrate::ResetLastTrackedSnapshot(FocusState state) {
+    std::lock_guard<std::mutex> lock(m_GlobalMutex);
+    m_LastState.store(state);
+    m_LastAppId.clear();
+    m_LastTitle.clear();
+    m_LastCategory.clear();
+    m_HasLastRecord = false;
+}
+
+// ─────────────────────────────────────
+void Concentrate::UpdateUnfocusedWarning(std::chrono::steady_clock::time_point now,
+                                         FocusState currentState) {
+    if (currentState == UNFOCUSED) {
+        if (!m_InUnfocusedStreak) {
+            m_InUnfocusedStreak = true;
+            m_UnfocusedSince = now;
+            m_LastUnfocusedWarningAt = now;
+            return;
+        }
+
+        if ((now - m_UnfocusedSince) >= kUnfocusedWarnEvery &&
+            (now - m_LastUnfocusedWarningAt) >= kUnfocusedWarnEvery) {
+            if (m_Notification) {
+                m_Notification->SendNotification(
+                    "concentrate-unfocused", "Concentrate",
+                    "Focus: you've been unfocused for more than 15 seconds.");
+            }
+            m_LastUnfocusedWarningAt = now;
+        }
+        return;
+    }
+
+    // Reset streak when focused or idle.
+    m_InUnfocusedStreak = false;
+    m_UnfocusedSince = now;
+    m_LastUnfocusedWarningAt = now;
+}
+
+// ─────────────────────────────────────
+void Concentrate::EnsureTaskCategory() {
+    if (!m_CurrentTaskCategory.empty()) {
+        return;
+    }
+    m_CurrentTaskCategory = "Uncategorized";
+    spdlog::debug("Current task category defaulted to '{}'", m_CurrentTaskCategory);
+}
+
+// ─────────────────────────────────────
+void Concentrate::UpdateClimateIfDue(std::chrono::steady_clock::time_point now) {
+    if (!m_Hydration) {
+        return;
+    }
+    if (now - m_LastClimateUpdate < std::chrono::hours(3)) {
+        return;
+    }
+    spdlog::info("Updating location and weather info...");
+    try {
+        m_Hydration->GetLocation();
+        m_Hydration->GetHydrationRecommendation();
+    } catch (const std::exception &e) {
+        spdlog::warn("Failed to update location/climate: {}", e.what());
+    }
+    m_LastClimateUpdate = now;
+}
+
+// ─────────────────────────────────────
+void Concentrate::UpdateHydrationIfDue(std::chrono::steady_clock::time_point now) {
+    if (!m_Notification) {
+        return;
+    }
+    if (now - m_LastHydrationNotification <
+        std::chrono::minutes(static_cast<int>(m_HydrationIntervalMinutes))) {
+        return;
+    }
+
+    m_Notification->SendNotification(
+        "dialog-info", "Concentrate",
+        fmt::format("Time to drink water! ~{:.2f} L since last reminder.", m_LitersPerReminder));
+    m_LastHydrationNotification = now;
+}
+
+// ─────────────────────────────────────
+void Concentrate::UpdateFocusInterval(std::chrono::steady_clock::time_point now,
+                                      FocusState currentState, const FocusedWindow &fw_local) {
+    const std::string currAppId = fw_local.app_id;
+    const std::string currTitle = fw_local.title;
+    const std::string currCategory = fw_local.category;
+
+    if (!m_HasOpenInterval) {
+        m_HasOpenInterval = true;
+        m_OpenState = currentState;
+        m_OpenAppId = currAppId;
+        m_OpenTitle = currTitle;
+        m_OpenCategory = currCategory;
+        m_IntervalStart = now;
+        m_LastDbFlush = now;
+
+        const double startUnix = ToUnixTime(m_IntervalStart);
+        m_SQLite->InsertEventNew(m_OpenAppId, m_OpenTitle, m_OpenCategory, startUnix, startUnix,
+                                 0.0, m_OpenState);
+        return;
+    }
+
+    const bool changed = (currentState != m_OpenState) || (currAppId != m_OpenAppId) ||
+                         (currTitle != m_OpenTitle) || (currCategory != m_OpenCategory);
+
+    if (changed) {
+        // Close previous interval with a final UPDATE.
+        CloseOpenFocusInterval(now, "changed");
+
+        // Start next interval and INSERT.
+        m_OpenState = currentState;
+        m_OpenAppId = currAppId;
+        m_OpenTitle = currTitle;
+        m_OpenCategory = currCategory;
+        m_IntervalStart = now;
+        m_LastDbFlush = now;
+
+        const double startUnix2 = ToUnixTime(m_IntervalStart);
+        m_SQLite->InsertEventNew(m_OpenAppId, m_OpenTitle, m_OpenCategory, startUnix2, startUnix2,
+                                 0.0, m_OpenState);
+        return;
+    }
+
+    if (now - m_LastDbFlush >= kDbFlushEvery) {
+        const double endUnix = ToUnixTime(now);
+        const double startUnix = ToUnixTime(m_IntervalStart);
+        const double duration = endUnix - startUnix;
+        if (duration > 0.0) {
+            m_SQLite->UpdateEventNew(m_OpenAppId, m_OpenTitle, m_OpenCategory, endUnix, duration,
+                                     m_OpenState);
+        }
+        m_LastDbFlush = now;
+    }
+}
+
+// ─────────────────────────────────────
+void Concentrate::PublishLastTrackedIntervalSnapshot() {
+    std::lock_guard<std::mutex> lock(m_GlobalMutex);
+    if (m_HasOpenInterval && m_OpenState != IDLE) {
+        m_LastRecord = m_IntervalStart;
+        m_LastState.store(m_OpenState);
+        m_LastAppId = m_OpenAppId;
+        m_LastTitle = m_OpenTitle;
+        m_LastCategory = m_OpenCategory;
+        m_HasLastRecord = true;
+        return;
+    }
+
+    m_LastState.store(IDLE);
+    m_LastAppId.clear();
+    m_LastTitle.clear();
+    m_LastCategory.clear();
+    m_HasLastRecord = false;
+}
+
+// ─────────────────────────────────────
+bool Concentrate::PumpTrayIfDue(std::chrono::steady_clock::time_point now, bool eventDriven) {
+    if (!m_Tray) {
+        return false;
+    }
+
+    const auto trayPollEvery = eventDriven ? std::chrono::seconds(1) : std::chrono::seconds(m_Ping);
+    if (now < m_NextTrayPollAt) {
+        return false;
+    }
+
+    m_Tray->Poll();
+    m_NextTrayPollAt = now + trayPollEvery;
+
+    if (m_Tray->TakeOpenUiRequested()) {
+        int result =
+            std::system(("xdg-open http://127.0.0.1:" + std::to_string(m_Port) + "/ &").c_str());
+        if (result != 0) {
+            spdlog::error("Failed to open browser");
+        }
+    }
+
+    if (m_Tray->TakeExitRequested()) {
+        spdlog::info("Exit requested from tray");
+        m_ShutdownRequested.store(true);
+        if (m_Window) {
+            m_Window->StopEventStream();
+        }
+        return true;
+    }
+
+    return false;
+}
+
+// ─────────────────────────────────────
+bool Concentrate::UpdateTray(std::chrono::steady_clock::time_point now, FocusState iconState,
+                             bool eventDriven) {
+    if (!m_Tray) {
+        return false;
+    }
+
+    m_Tray->SetTrayIcon(iconState);
+    return PumpTrayIfDue(now, eventDriven);
+}
+
+// ─────────────────────────────────────
+void Concentrate::WaitUntilNextDeadline(FocusState currentState, bool monitoringEnabledNow,
+                                        bool eventDriven) {
+    const auto now2 = std::chrono::steady_clock::now();
+    auto deadline = now2 + std::chrono::hours(24);
+
+    // Tray polling
+    if (m_Tray) {
+        deadline = std::min(deadline, m_NextTrayPollAt);
+    }
+
+    // Focus refresh cadence
+    if (!eventDriven) {
+        deadline = std::min(deadline, m_LastFocusQueryAt + std::chrono::seconds(m_Ping));
+    } else {
+        deadline = std::min(deadline, m_LastFocusQueryAt + kSafetyPollEvery);
+    }
+
+    // Hydration/climate
+    deadline =
+        std::min(deadline, m_LastHydrationNotification +
+                               std::chrono::minutes(static_cast<int>(m_HydrationIntervalMinutes)));
+    deadline = std::min(deadline, m_LastClimateUpdate + std::chrono::hours(3));
+
+    // Monitoring disabled reminder
+    if (!monitoringEnabledNow) {
+        deadline = std::min(deadline, m_LastMonitoringNotification + std::chrono::minutes(1));
+    }
+
+    // Periodic DB flushes
+    if (m_HasOpenInterval && m_OpenState != IDLE) {
+        deadline = std::min(deadline, m_LastDbFlush + kDbFlushEvery);
+    }
+    if (m_HasOpenMonitoringInterval) {
+        deadline = std::min(deadline, m_LastMonitoringDbFlush + kDbFlushEvery);
+    }
+
+    // Unfocused warning timing
+    if (currentState == UNFOCUSED) {
+        const auto nextWarn = !m_InUnfocusedStreak
+                                  ? (now2 + kUnfocusedWarnEvery)
+                                  : std::max(m_UnfocusedSince + kUnfocusedWarnEvery,
+                                             m_LastUnfocusedWarningAt + kUnfocusedWarnEvery);
+        deadline = std::min(deadline, nextWarn);
+    }
+
+    const auto seq = m_WakeupSeq.load(std::memory_order_relaxed);
+    std::unique_lock<std::mutex> lk(m_SchedulerMutex);
+    m_SchedulerCv.wait_until(lk, deadline, [&] {
+        return m_ShutdownRequested.load() || m_WakeupSeq.load(std::memory_order_relaxed) != seq ||
+               (eventDriven && m_FocusDirty.load());
+    });
+}
+
+// ─────────────────────────────────────
+void Concentrate::RunMainLoop() {
+    bool running = true;
+    while (running) {
+        const auto now = std::chrono::steady_clock::now();
+        const bool eventDriven = m_EventDriven.load();
+
+        RefreshFocusSnapshotIfNeeded(now, eventDriven);
+
+        HandleMonitoringToggleSplit(now);
+        const bool monitoringEnabledNow = m_MonitoringEnabled.load();
+
+        FocusedWindow fw_local = LoadFocusedWindowSnapshot();
+        FocusState currentState = ComputeFocusStateAndPersist(fw_local);
+
+        MaybeNotifyMonitoringDisabled(now, monitoringEnabledNow);
+
+        // IDLE: close any open focus interval AND any open monitoring interval. Idle is never
+        // recorded.
+        if (currentState == IDLE) {
+            CloseOpenFocusInterval(now, "idle");
+            CloseOpenMonitoringInterval(now);
+            ResetOpenFocusIntervalToIdle();
+            ResetOpenMonitoringInterval();
+            ResetLastTrackedSnapshot(IDLE);
+            if (UpdateTray(now, IDLE, eventDriven)) {
+                break;
+            }
+            WaitUntilNextDeadline(currentState, monitoringEnabledNow, eventDriven);
+            continue;
+        }
+
+        // Monitoring sessions are recorded only when NOT idle.
+        UpdateMonitoringSession(now, monitoringEnabledNow);
+        if (!monitoringEnabledNow) {
+            // Reset unfocused streak tracking while monitoring is disabled.
+            m_InUnfocusedStreak = false;
+            m_UnfocusedSince = now;
+            m_LastUnfocusedWarningAt = now;
+
+            // Close any open interval before entering the disabled/idle state.
+            CloseOpenFocusInterval(now, "disabled");
+            ResetOpenFocusIntervalToIdle();
+            m_OpenState = DISABLE;
+            ResetLastTrackedSnapshot(DISABLE);
+
+            if (UpdateTray(now, DISABLE, eventDriven)) {
+                break;
+            }
+
+            WaitUntilNextDeadline(currentState, monitoringEnabledNow, eventDriven);
+            continue;
+        }
+
+        UpdateUnfocusedWarning(now, currentState);
+        EnsureTaskCategory();
+        UpdateClimateIfDue(now);
+        UpdateHydrationIfDue(now);
+
+        UpdateFocusInterval(now, currentState, fw_local);
+        PublishLastTrackedIntervalSnapshot();
+
+        if (UpdateTray(now, currentState, eventDriven)) {
+            break;
+        }
+
+        WaitUntilNextDeadline(currentState, monitoringEnabledNow, eventDriven);
+    }
+}
+
+// ─────────────────────────────────────
+void Concentrate::WakeScheduler() {
+    m_WakeupSeq.fetch_add(1, std::memory_order_relaxed);
+    m_SchedulerCv.notify_one();
+}
+
+// ─────────────────────────────────────
 double Concentrate::ToUnixTime(std::chrono::steady_clock::time_point steady_tp) {
     auto now_steady = std::chrono::steady_clock::now();
     auto now_system = std::chrono::system_clock::now();
@@ -705,15 +734,10 @@ double Concentrate::ToUnixTime(std::chrono::steady_clock::time_point steady_tp) 
 FocusState Concentrate::AmIFocused(FocusedWindow &Fw) {
     // If the focused window is invalid (no app_id and no title), treat as IDLE
     if (Fw.app_id.empty() && Fw.title.empty()) {
-        if (m_CurrentState != IDLE) {
-            spdlog::debug("FOCUSED: IDLE (no app_id or title)");
-        }
+        spdlog::debug("FOCUSED: IDLE (no app_id or title)");
         Fw.category.clear();
         m_CurrentLiveTaskCategory.clear();
-        if (m_CurrentState != IDLE) {
-            spdlog::debug("Live category cleared (idle)");
-        }
-        m_CurrentState = IDLE;
+        spdlog::debug("Live category cleared (idle)");
         return IDLE;
     }
 
@@ -743,40 +767,23 @@ FocusState Concentrate::AmIFocused(FocusedWindow &Fw) {
         }
     }
 
-    FocusState nextState = isFocusedWindow ? FOCUSED : UNFOCUSED;
-
-    // Daily activities can override UNFOCUSED -> FOCUSED.
-    if (!isFocusedWindow && AmIDoingDailyActivities(Fw)) {
-        nextState = FOCUSED;
-        if (m_CurrentState != FOCUSED) {
+    if (!isFocusedWindow) {
+        if (AmIDoingDailyActivities(Fw)) {
             spdlog::debug("FOCUSED: DAILY ACTIVITY");
+            Fw.category = m_CurrentDailyTaskCategory;
+            m_CurrentLiveTaskCategory = Fw.category;
+            spdlog::debug("Daily activity category set: '{}'", Fw.category);
+            return FOCUSED;
         }
     }
 
-    const std::string nextCategory =
-        (nextState == FOCUSED && !isFocusedWindow) ? m_CurrentDailyTaskCategory
-        : (m_CurrentTaskCategory.empty() ? "Uncategorized" : m_CurrentTaskCategory);
+    const std::string taskCategory =
+        m_CurrentTaskCategory.empty() ? "Uncategorized" : m_CurrentTaskCategory;
+    m_CurrentDailyTaskCategory.clear();
+    Fw.category = taskCategory;
+    m_CurrentLiveTaskCategory = Fw.category;
 
-    // Keep the daily category only when it is actively used.
-    if (!(nextState == FOCUSED && !isFocusedWindow)) {
-        m_CurrentDailyTaskCategory.clear();
-    }
-
-    if (Fw.category != nextCategory) {
-        Fw.category = nextCategory;
-        spdlog::debug("Task category set: '{}'", Fw.category);
-    }
-
-    if (m_CurrentLiveTaskCategory != nextCategory) {
-        m_CurrentLiveTaskCategory = nextCategory;
-    }
-
-    if (m_CurrentState != nextState) {
-        spdlog::debug("FOCUSED: {}", isFocusedWindow ? "YES" : "NO");
-        m_CurrentState = nextState;
-    }
-
-    return nextState;
+    return isFocusedWindow ? FOCUSED : UNFOCUSED;
 }
 
 // ─────────────────────────────────────
@@ -1497,24 +1504,23 @@ bool Concentrate::InitServer() {
                 }
             });
 
-        m_Server.Get("/api/v1/monitoring/summary",
-                     [this](const httplib::Request &, httplib::Response &res) {
-                         try {
-                             if (!m_SQLite) {
-                                 res.status = 503;
-                                 res.set_content(R"({"error":"database not ready"})",
-                                                 "application/json");
-                                 return;
-                             }
-                             nlohmann::json j = m_SQLite->GetTodayMonitoringTimeSummary();
-                             res.status = 200;
-                             res.set_content(j.dump(), "application/json");
-                         } catch (const std::exception &e) {
-                             res.status = 500;
-                             res.set_content(std::string(R"({"error":")") + e.what() + R"("})",
-                                             "application/json");
-                         }
-                     });
+        m_Server.Get(
+            "/api/v1/monitoring/summary", [this](const httplib::Request &, httplib::Response &res) {
+                try {
+                    if (!m_SQLite) {
+                        res.status = 503;
+                        res.set_content(R"({"error":"database not ready"})", "application/json");
+                        return;
+                    }
+                    nlohmann::json j = m_SQLite->GetTodayMonitoringTimeSummary();
+                    res.status = 200;
+                    res.set_content(j.dump(), "application/json");
+                } catch (const std::exception &e) {
+                    res.status = 500;
+                    res.set_content(std::string(R"({"error":")") + e.what() + R"("})",
+                                    "application/json");
+                }
+            });
     }
 
     // Settings

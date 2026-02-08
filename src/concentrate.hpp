@@ -42,6 +42,35 @@ class Concentrate {
     double ToUnixTime(std::chrono::steady_clock::time_point steady_tp);
     void WakeScheduler();
 
+    // Main loop (split into small, testable-ish pieces)
+    void InitLoopState();
+    void RunMainLoop();
+    void RefreshFocusSnapshotIfNeeded(std::chrono::steady_clock::time_point now, bool eventDriven);
+    FocusedWindow LoadFocusedWindowSnapshot();
+    FocusState ComputeFocusStateAndPersist(FocusedWindow &fw_local);
+    void HandleMonitoringToggleSplit(std::chrono::steady_clock::time_point now);
+    void MaybeNotifyMonitoringDisabled(std::chrono::steady_clock::time_point now,
+                                       bool monitoringEnabledNow);
+    void UpdateMonitoringSession(std::chrono::steady_clock::time_point now,
+                                 bool monitoringEnabledNow);
+    void CloseOpenMonitoringInterval(std::chrono::steady_clock::time_point now);
+    void CloseOpenFocusInterval(std::chrono::steady_clock::time_point now,
+                                const char *reasonForLog);
+    void ResetOpenFocusIntervalToIdle();
+    void ResetOpenMonitoringInterval();
+    void ResetLastTrackedSnapshot(FocusState state);
+    void UpdateUnfocusedWarning(std::chrono::steady_clock::time_point now, FocusState currentState);
+    void EnsureTaskCategory();
+    void UpdateClimateIfDue(std::chrono::steady_clock::time_point now);
+    void UpdateHydrationIfDue(std::chrono::steady_clock::time_point now);
+    void UpdateFocusInterval(std::chrono::steady_clock::time_point now, FocusState currentState,
+                             const FocusedWindow &fw_local);
+    void PublishLastTrackedIntervalSnapshot();
+    bool UpdateTray(std::chrono::steady_clock::time_point now, FocusState iconState,
+                    bool eventDriven);
+    bool PumpTrayIfDue(std::chrono::steady_clock::time_point now, bool eventDriven);
+    void WaitUntilNextDeadline(FocusState currentState, bool monitoringEnabledNow, bool eventDriven);
+
   private:
     const unsigned m_Port;
     const unsigned m_Ping;
@@ -110,6 +139,49 @@ class Concentrate {
     std::atomic<bool> m_MonitoringEnabled{true};
 
     std::atomic<bool> m_MonitoringTogglePending{false};
+
+    // ---------------------------
+    // Main-loop state (was previously locals in the constructor)
+    // ---------------------------
+
+    // Hydration
+    double m_HydrationIntervalMinutes{10.0};
+    double m_LitersPerReminder{0.0};
+    std::chrono::steady_clock::time_point m_LastHydrationNotification{};
+    std::chrono::steady_clock::time_point m_LastClimateUpdate{};
+
+    // Monitoring disabled reminder
+    std::chrono::steady_clock::time_point m_LastMonitoringNotification{};
+
+    // Tracking: open focus interval
+    bool m_HasOpenInterval{false};
+    FocusState m_OpenState{IDLE};
+    std::chrono::steady_clock::time_point m_IntervalStart{};
+    std::chrono::steady_clock::time_point m_LastDbFlush{};
+    std::string m_OpenAppId;
+    std::string m_OpenTitle;
+    std::string m_OpenCategory;
+
+    // Tracking: open monitoring interval
+    bool m_HasOpenMonitoringInterval{false};
+    MonitoringState m_OpenMonitoringState{MONITORING_ENABLE};
+    std::chrono::steady_clock::time_point m_MonitoringIntervalStart{};
+    std::chrono::steady_clock::time_point m_LastMonitoringDbFlush{};
+
+    // Unfocused warning
+    bool m_InUnfocusedStreak{false};
+    std::chrono::steady_clock::time_point m_UnfocusedSince{};
+    std::chrono::steady_clock::time_point m_LastUnfocusedWarningAt{};
+
+    // Focus refresh timing
+    std::chrono::steady_clock::time_point m_LastFocusQueryAt{};
+
+    // Tray polling schedule
+    std::chrono::steady_clock::time_point m_NextTrayPollAt{};
+
+    static constexpr std::chrono::seconds kSafetyPollEvery{30};
+    static constexpr std::chrono::seconds kUnfocusedWarnEvery{15};
+    static constexpr std::chrono::seconds kDbFlushEvery{15};
 
     // Last tracked interval (for graceful shutdown)
     std::chrono::steady_clock::time_point m_LastRecord;
