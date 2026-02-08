@@ -7,6 +7,10 @@
 #include <chrono>
 #include <unistd.h>
 
+static constexpr const char *kWatcherBusName = "org.kde.StatusNotifierWatcher";
+static constexpr const char *kIfaceDBus = "org.freedesktop.DBus";
+static constexpr const char *kPathDBus = "/org/freedesktop/DBus";
+
 static constexpr const char *kObjPath = "/StatusNotifierItem";
 static constexpr const char *kMenuPath = "/StatusNotifierItem/Menu";
 static constexpr const char *kIfaceSNI = "org.kde.StatusNotifierItem";
@@ -133,12 +137,13 @@ TrayIcon::~TrayIcon() {
         m_DispatchThread.join();
     }
 
-    if (m_Conn) {
-        dbus_connection_unregister_object_path(m_Conn, kMenuPath);
-        dbus_connection_unregister_object_path(m_Conn, kObjPath);
-        dbus_connection_unref(m_Conn);
+    DBusConnection *conn = nullptr;
+    {
+        std::lock_guard<std::mutex> lk(m_ConnMutex);
+        conn = m_Conn;
         m_Conn = nullptr;
     }
+    TeardownConnection(conn);
 }
 
 // ─────────────────────────────────────
@@ -155,77 +160,56 @@ bool TrayIcon::Start(std::string title) {
         spdlog::warn("Tray: dbus_threads_init_default failed; tray may be unstable");
     }
 
-    DBusError err;
-    dbus_error_init(&err);
-
-    m_Conn = dbus_bus_get(DBUS_BUS_SESSION, &err);
-    if (!m_Conn) {
-        if (dbus_error_is_set(&err)) {
-            spdlog::warn("Tray: DBus session connection failed: {}", err.message);
-            dbus_error_free(&err);
-        } else {
-            spdlog::warn("Tray: DBus session connection failed");
-        }
-        return false;
-    }
-
-    // Don't let libdbus terminate the whole process if the bus disconnects.
-    dbus_connection_set_exit_on_disconnect(m_Conn, FALSE);
-
     // Build a well-known name that won't collide (bus name elements can't start with a digit).
+    // Keep it stable across reconnects so the watcher can re-associate us.
     const pid_t pid = getpid();
     m_BusName = "io.Concentrate.Tray.P" + std::to_string(static_cast<int>(pid));
 
-    const int req =
-        dbus_bus_request_name(m_Conn, m_BusName.c_str(), DBUS_NAME_FLAG_REPLACE_EXISTING, &err);
-    if (req != DBUS_REQUEST_NAME_REPLY_PRIMARY_OWNER) {
-        if (dbus_error_is_set(&err)) {
-            spdlog::warn("Tray: request_name failed: {}", err.message);
-            dbus_error_free(&err);
-        } else {
-            spdlog::warn("Tray: request_name failed");
-        }
-        dbus_connection_unref(m_Conn);
-        m_Conn = nullptr;
+    if (!SetupConnection()) {
+        // If we cannot connect at all, behave as before: fail Start().
         return false;
     }
 
-    static DBusObjectPathVTable vtable{};
-    vtable.message_function = &TrayIcon::MessageHandler;
-
-    if (!dbus_connection_register_object_path(m_Conn, kObjPath, &vtable, this)) {
-        spdlog::warn("Tray: failed to register object path {}", kObjPath);
-        dbus_connection_unref(m_Conn);
-        m_Conn = nullptr;
-        return false;
-    }
-
-    if (!dbus_connection_register_object_path(m_Conn, kMenuPath, &vtable, this)) {
-        spdlog::warn("Tray: failed to register menu object path {}", kMenuPath);
-        dbus_connection_unregister_object_path(m_Conn, kObjPath);
-        dbus_connection_unref(m_Conn);
-        m_Conn = nullptr;
-        return false;
-    }
-
+    // Initial registration.
+    // Note: Waybar may restart its StatusNotifierWatcher later (e.g. after resume); we handle
+    // that via NameOwnerChanged + reconnect logic in the dispatcher thread.
     RegisterWithWatcher();
     m_Started = true;
 
     // Dispatch DBus continuously so tray method calls don't time out while the app sleeps.
     m_StopDispatch.store(false);
     m_DispatchThread = std::thread([this]() {
+        // Reconnect backoff: keep the thread alive across suspend/resume.
+        // We don't rely on Waybar polling; we re-export and re-register when needed.
+        auto nextAttempt = std::chrono::steady_clock::now();
         while (!m_StopDispatch.load()) {
-            DBusConnection *conn = m_Conn;
+            DBusConnection *conn = AcquireConnRef();
             if (!conn) {
-                break;
+                // Connection missing (e.g. after teardown). Try to reconnect periodically.
+                const auto now = std::chrono::steady_clock::now();
+                if (now >= nextAttempt) {
+                    (void)Reconnect("no session connection");
+                    nextAttempt = now + std::chrono::seconds(2);
+                }
+                std::this_thread::sleep_for(std::chrono::milliseconds(50));
+                continue;
             }
 
             if (!dbus_connection_get_is_connected(conn)) {
-                break;
+                dbus_connection_unref(conn);
+                const auto now = std::chrono::steady_clock::now();
+                if (now >= nextAttempt) {
+                    (void)Reconnect("dbus disconnected");
+                    nextAttempt = now + std::chrono::seconds(2);
+                }
+                std::this_thread::sleep_for(std::chrono::milliseconds(50));
+                continue;
             }
 
             // Wait a little for IO, then dispatch any pending messages.
+            // This dispatch also delivers NameOwnerChanged to our filter.
             dbus_connection_read_write_dispatch(conn, 250);
+            dbus_connection_unref(conn);
 
             // If nothing is happening, avoid a hot loop.
             std::this_thread::sleep_for(std::chrono::milliseconds(10));
@@ -238,13 +222,15 @@ bool TrayIcon::Start(std::string title) {
 
 // ─────────────────────────────────────
 void TrayIcon::Poll() {
-    if (!m_Conn) {
+    DBusConnection *conn = AcquireConnRef();
+    if (!conn) {
         return;
     }
 
     // Kept for API compatibility: do a quick non-blocking pump.
     // The dedicated dispatcher thread is the primary mechanism.
-    dbus_connection_read_write_dispatch(m_Conn, 0);
+    dbus_connection_read_write_dispatch(conn, 0);
+    dbus_connection_unref(conn);
 }
 
 // ─────────────────────────────────────
@@ -288,6 +274,56 @@ void TrayIcon::SetTrayIcon(FocusState state) {
 
     EmitNewIcon();
     EmitPropertiesChangedIconName();
+}
+
+// ─────────────────────────────────────
+DBusHandlerResult TrayIcon::FilterHandler(DBusConnection *conn, DBusMessage *msg, void *user_data) {
+    auto *self = static_cast<TrayIcon *>(user_data);
+    if (!self) {
+        return DBUS_HANDLER_RESULT_NOT_YET_HANDLED;
+    }
+    return self->HandleFilter(conn, msg);
+}
+
+// ─────────────────────────────────────
+DBusHandlerResult TrayIcon::HandleFilter(DBusConnection *, DBusMessage *msg) {
+    // Watcher lifecycle handling:
+    // Waybar often restarts its StatusNotifierWatcher on resume. When that happens, it forgets
+    // previously registered items. We subscribe to NameOwnerChanged for the watcher name so we
+    // can re-register ourselves immediately.
+    if (!dbus_message_is_signal(msg, kIfaceDBus, "NameOwnerChanged")) {
+        return DBUS_HANDLER_RESULT_NOT_YET_HANDLED;
+    }
+
+    const char *name = nullptr;
+    const char *old_owner = nullptr;
+    const char *new_owner = nullptr;
+
+    DBusError err;
+    dbus_error_init(&err);
+    if (!dbus_message_get_args(msg, &err, DBUS_TYPE_STRING, &name, DBUS_TYPE_STRING, &old_owner,
+                               DBUS_TYPE_STRING, &new_owner, DBUS_TYPE_INVALID)) {
+        if (dbus_error_is_set(&err)) {
+            dbus_error_free(&err);
+        }
+        return DBUS_HANDLER_RESULT_NOT_YET_HANDLED;
+    }
+
+    if (!name || std::strcmp(name, kWatcherBusName) != 0) {
+        return DBUS_HANDLER_RESULT_NOT_YET_HANDLED;
+    }
+
+    // Watcher appears when new_owner becomes non-empty.
+    if (new_owner && *new_owner) {
+        spdlog::info("Tray: StatusNotifierWatcher appeared (re-registering SNI)");
+        RegisterWithWatcher();
+
+        // Some hosts only refresh if NewIcon / PropertiesChanged are emitted after registration.
+        EmitNewIcon();
+        EmitPropertiesChangedIconName();
+    }
+
+    return DBUS_HANDLER_RESULT_NOT_YET_HANDLED;
 }
 
 // ─────────────────────────────────────
@@ -379,7 +415,8 @@ DBusHandlerResult TrayIcon::HandleMessage(DBusConnection *conn, DBusMessage *msg
 
 // ─────────────────────────────────────
 void TrayIcon::RegisterWithWatcher() {
-    if (!m_Conn) {
+    DBusConnection *conn = AcquireConnRef();
+    if (!conn) {
         return;
     }
 
@@ -395,7 +432,7 @@ void TrayIcon::RegisterWithWatcher() {
 
     DBusError err;
     dbus_error_init(&err);
-    DBusMessage *reply = dbus_connection_send_with_reply_and_block(m_Conn, msg, 1000, &err);
+    DBusMessage *reply = dbus_connection_send_with_reply_and_block(conn, msg, 1000, &err);
     if (!reply) {
         // Watcher may not exist; that's fine.
         if (dbus_error_is_set(&err)) {
@@ -407,26 +444,31 @@ void TrayIcon::RegisterWithWatcher() {
     }
 
     dbus_message_unref(msg);
-    dbus_connection_flush(m_Conn);
+    dbus_connection_flush(conn);
+    dbus_connection_unref(conn);
 }
 
 // ─────────────────────────────────────
 void TrayIcon::EmitNewIcon() {
-    if (!m_Conn) {
+    DBusConnection *conn = AcquireConnRef();
+    if (!conn) {
         return;
     }
     DBusMessage *sig = dbus_message_new_signal(kObjPath, kIfaceSNI, "NewIcon");
     if (!sig) {
+        dbus_connection_unref(conn);
         return;
     }
-    dbus_connection_send(m_Conn, sig, nullptr);
+    dbus_connection_send(conn, sig, nullptr);
     dbus_message_unref(sig);
-    dbus_connection_flush(m_Conn);
+    dbus_connection_flush(conn);
+    dbus_connection_unref(conn);
 }
 
 // ─────────────────────────────────────
 void TrayIcon::EmitPropertiesChangedIconName() {
-    if (!m_Conn) {
+    DBusConnection *conn = AcquireConnRef();
+    if (!conn) {
         return;
     }
 
@@ -434,6 +476,7 @@ void TrayIcon::EmitPropertiesChangedIconName() {
     // invalidated)
     DBusMessage *sig = dbus_message_new_signal(kObjPath, kIfaceProps, "PropertiesChanged");
     if (!sig) {
+        dbus_connection_unref(conn);
         return;
     }
 
@@ -452,9 +495,145 @@ void TrayIcon::EmitPropertiesChangedIconName() {
     dbus_message_iter_open_container(&iter, DBUS_TYPE_ARRAY, "s", &invalidated);
     dbus_message_iter_close_container(&iter, &invalidated);
 
-    dbus_connection_send(m_Conn, sig, nullptr);
+    dbus_connection_send(conn, sig, nullptr);
     dbus_message_unref(sig);
-    dbus_connection_flush(m_Conn);
+    dbus_connection_flush(conn);
+    dbus_connection_unref(conn);
+}
+
+// ─────────────────────────────────────
+DBusConnection *TrayIcon::AcquireConnRef() {
+    std::lock_guard<std::mutex> lk(m_ConnMutex);
+    if (!m_Conn) {
+        return nullptr;
+    }
+    dbus_connection_ref(m_Conn);
+    return m_Conn;
+}
+
+// ─────────────────────────────────────
+void TrayIcon::AddWatcherOwnerChangedMatch(DBusConnection *conn) {
+    if (!conn) {
+        return;
+    }
+
+    // Requirement: match org.freedesktop.DBus.NameOwnerChanged filtered to the watcher.
+    // This is the canonical way to detect watcher restarts (e.g. Waybar on resume).
+    const char *rule =
+        "type='signal',sender='org.freedesktop.DBus',interface='org.freedesktop.DBus',member='NameOwnerChanged',arg0='org.kde.StatusNotifierWatcher'";
+
+    DBusError err;
+    dbus_error_init(&err);
+    dbus_bus_add_match(conn, rule, &err);
+    if (dbus_error_is_set(&err)) {
+        spdlog::warn("Tray: failed to add NameOwnerChanged match: {}", err.message);
+        dbus_error_free(&err);
+    }
+
+    dbus_connection_flush(conn);
+}
+
+// ─────────────────────────────────────
+bool TrayIcon::SetupConnection() {
+    DBusError err;
+    dbus_error_init(&err);
+
+    DBusConnection *conn = dbus_bus_get(DBUS_BUS_SESSION, &err);
+    if (!conn) {
+        if (dbus_error_is_set(&err)) {
+            spdlog::warn("Tray: DBus session connection failed: {}", err.message);
+            dbus_error_free(&err);
+        } else {
+            spdlog::warn("Tray: DBus session connection failed");
+        }
+        return false;
+    }
+
+    // Don't let libdbus terminate the whole process if the bus disconnects.
+    dbus_connection_set_exit_on_disconnect(conn, FALSE);
+
+    const int req =
+        dbus_bus_request_name(conn, m_BusName.c_str(), DBUS_NAME_FLAG_REPLACE_EXISTING, &err);
+    if (req != DBUS_REQUEST_NAME_REPLY_PRIMARY_OWNER) {
+        if (dbus_error_is_set(&err)) {
+            spdlog::warn("Tray: request_name failed: {}", err.message);
+            dbus_error_free(&err);
+        } else {
+            spdlog::warn("Tray: request_name failed");
+        }
+        dbus_connection_unref(conn);
+        return false;
+    }
+
+    // Attach a filter before registering so we don't miss NameOwnerChanged during resume storms.
+    if (!dbus_connection_add_filter(conn, &TrayIcon::FilterHandler, this, nullptr)) {
+        spdlog::warn("Tray: failed to add DBus filter; watcher restart handling may be limited");
+    }
+    AddWatcherOwnerChangedMatch(conn);
+
+    static DBusObjectPathVTable vtable{};
+    vtable.message_function = &TrayIcon::MessageHandler;
+
+    if (!dbus_connection_register_object_path(conn, kObjPath, &vtable, this)) {
+        spdlog::warn("Tray: failed to register object path {}", kObjPath);
+        dbus_connection_unref(conn);
+        return false;
+    }
+
+    if (!dbus_connection_register_object_path(conn, kMenuPath, &vtable, this)) {
+        spdlog::warn("Tray: failed to register menu object path {}", kMenuPath);
+        dbus_connection_unregister_object_path(conn, kObjPath);
+        dbus_connection_unref(conn);
+        return false;
+    }
+
+    {
+        std::lock_guard<std::mutex> lk(m_ConnMutex);
+        m_Conn = conn;
+    }
+
+    return true;
+}
+
+// ─────────────────────────────────────
+void TrayIcon::TeardownConnection(DBusConnection *conn) {
+    if (!conn) {
+        return;
+    }
+
+    // Clean teardown required for reconnect robustness.
+    // Suspend/resume may leave the old connection in a half-dead state; explicitly unexport.
+    dbus_connection_unregister_object_path(conn, kMenuPath);
+    dbus_connection_unregister_object_path(conn, kObjPath);
+    dbus_connection_unref(conn);
+}
+
+// ─────────────────────────────────────
+bool TrayIcon::Reconnect(const char *reason) {
+    // Requirement: detect disconnect and recreate the DBus connection, re-request the name,
+    // re-register object paths, and re-register with the watcher.
+    spdlog::warn("Tray: reconnecting DBus session ({})", reason ? reason : "unknown");
+
+    DBusConnection *oldConn = nullptr;
+    {
+        std::lock_guard<std::mutex> lk(m_ConnMutex);
+        oldConn = m_Conn;
+        m_Conn = nullptr;
+    }
+    TeardownConnection(oldConn);
+
+    if (!SetupConnection()) {
+        spdlog::warn("Tray: reconnect failed; will retry");
+        return false;
+    }
+
+    // After reconnect, force a re-register. This is also safe if the watcher is already up.
+    RegisterWithWatcher();
+    EmitNewIcon();
+    EmitPropertiesChangedIconName();
+
+    spdlog::info("Tray: reconnect complete");
+    return true;
 }
 
 // ─────────────────────────────────────
