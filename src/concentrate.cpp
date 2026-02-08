@@ -55,8 +55,11 @@ Concentrate::Concentrate(const unsigned port, const unsigned ping, LogLevel log_
     // Prefer event-driven focus updates via Niri IPC EventStream; fall back to polling when not
     // available.
     if (m_Window && m_Window->StartEventStream([this]() {
-            m_FocusDirty.store(true);
-            WakeScheduler();
+            // Avoid wake storms: if we're already dirty, the main loop will refresh soon anyway.
+            const bool wasDirty = m_FocusDirty.exchange(true, std::memory_order_relaxed);
+            if (!wasDirty) {
+                WakeScheduler();
+            }
         })) {
         m_EventDriven.store(true);
         spdlog::info("Niri IPC event stream enabled (push mode)");
@@ -608,10 +611,15 @@ void Concentrate::WaitUntilNextDeadline(FocusState currentState, bool monitoring
     }
 
     // Hydration/climate
-    deadline =
-        std::min(deadline, m_LastHydrationNotification +
-                               std::chrono::minutes(static_cast<int>(m_HydrationIntervalMinutes)));
-    deadline = std::min(deadline, m_LastClimateUpdate + std::chrono::hours(3));
+    // These tasks are only processed when monitoring is enabled and we're not idle.
+    // In IDLE, their timestamps are not advanced, so including them here can create an
+    // always-expired deadline and cause a tight loop.
+    if (monitoringEnabledNow && currentState != IDLE) {
+        deadline = std::min(
+            deadline, m_LastHydrationNotification +
+                          std::chrono::minutes(static_cast<int>(m_HydrationIntervalMinutes)));
+        deadline = std::min(deadline, m_LastClimateUpdate + std::chrono::hours(3));
+    }
 
     // Monitoring disabled reminder
     if (!monitoringEnabledNow) {
@@ -638,8 +646,16 @@ void Concentrate::WaitUntilNextDeadline(FocusState currentState, bool monitoring
     const auto seq = m_WakeupSeq.load(std::memory_order_relaxed);
     std::unique_lock<std::mutex> lk(m_SchedulerMutex);
     m_SchedulerCv.wait_until(lk, deadline, [&] {
-        return m_ShutdownRequested.load() || m_WakeupSeq.load(std::memory_order_relaxed) != seq ||
-               (eventDriven && m_FocusDirty.load());
+        if (m_ShutdownRequested.load()) {
+            return true;
+        }
+        if (m_WakeupSeq.load(std::memory_order_relaxed) != seq) {
+            return true;
+        }
+
+        // Only check focus dirty ONCE per wakeup sequence
+        // Don't keep checking it on spurious wakeups
+        return false;
     });
 }
 
@@ -649,7 +665,6 @@ void Concentrate::RunMainLoop() {
     while (running) {
         const auto now = std::chrono::steady_clock::now();
         const bool eventDriven = m_EventDriven.load();
-
         RefreshFocusSnapshotIfNeeded(now, eventDriven);
 
         HandleMonitoringToggleSplit(now);
@@ -1245,8 +1260,10 @@ bool Concentrate::InitServer() {
 
                     m_Secrets->SaveSecret("current_task_id", id);
                     UpdateAllowedApps();
-                    m_FocusDirty.store(true);
-                    WakeScheduler();
+                    const bool wasDirty = m_FocusDirty.exchange(true, std::memory_order_relaxed);
+                    if (!wasDirty) {
+                        WakeScheduler();
+                    }
                     res.status = 200;
                     res.set_content("Task updated successfully", "text/plain");
 
@@ -1294,8 +1311,10 @@ bool Concentrate::InitServer() {
                 m_TaskTitle = task_title;
             }
 
-            m_FocusDirty.store(true);
-            WakeScheduler();
+            const bool wasDirty = m_FocusDirty.exchange(true, std::memory_order_relaxed);
+            if (!wasDirty) {
+                WakeScheduler();
+            }
             res.status = 200;
             res.set_content(R"({"status":"ok"})", "application/json");
         });
@@ -1485,8 +1504,11 @@ bool Concentrate::InitServer() {
                     auto j = nlohmann::json::parse(req.body);
                     bool enabled = j.at("enabled").get<bool>();
                     m_MonitoringEnabled.store(enabled);
-                    m_MonitoringTogglePending.store(true);
-                    WakeScheduler();
+                    const bool wasPending =
+                        m_MonitoringTogglePending.exchange(true, std::memory_order_relaxed);
+                    if (!wasPending) {
+                        WakeScheduler();
+                    }
                     if (m_MonitoringEnabled.load()) {
                         m_Notification->SendNotification("dialog-ok", "Monitoring Enable",
                                                          "Monitoring your apps use");
@@ -1687,8 +1709,10 @@ bool Concentrate::InitServer() {
                 m_TaskTitle = task_title;
             }
 
-            m_FocusDirty.store(true);
-            WakeScheduler();
+            const bool wasDirty = m_FocusDirty.exchange(true, std::memory_order_relaxed);
+            if (!wasDirty) {
+                WakeScheduler();
+            }
             res.status = 200;
             res.set_content(R"({"status":"ok"})", "application/json");
         });
@@ -1873,8 +1897,10 @@ bool Concentrate::InitServer() {
                 }
                 m_SpecialProjectTitle = projectName;
                 m_SpecialAppId = appId;
-                m_FocusDirty.store(true);
-                WakeScheduler();
+                const bool wasDirty = m_FocusDirty.exchange(true, std::memory_order_relaxed);
+                if (!wasDirty) {
+                    WakeScheduler();
+                }
                 nlohmann::json response = {{"status", "ok"}, {"project_name", projectName}};
                 res.status = 200;
                 res.set_content(response.dump(), "application/json");
