@@ -978,6 +978,13 @@ bool Concentrate::InitServer() {
     m_Server.set_write_timeout(5, 0);
     m_Server.set_idle_interval(1, 0);
 
+    // Cross-Origin Isolation (COOP/COEP)
+    // Enables features like SharedArrayBuffer for the Web UI.
+    m_Server.set_default_headers({
+        {"Cross-Origin-Opener-Policy", "same-origin"},
+        {"Cross-Origin-Embedder-Policy", "require-corp"},
+    });
+
     // static files
     {
         // index.html
@@ -1870,8 +1877,23 @@ bool Concentrate::InitServer() {
 
     // Special End Points
     {
+        // CORS preflight for browser-based clients (including extensions).
+        m_Server.Options("/api/v1/special_project",
+                         [](const httplib::Request &, httplib::Response &res) {
+                             res.set_header("Access-Control-Allow-Origin", "*");
+                             res.set_header("Access-Control-Allow-Methods", "POST, OPTIONS");
+                             res.set_header("Access-Control-Allow-Headers", "Content-Type");
+                             res.set_header("Access-Control-Max-Age", "86400");
+                             res.status = 204;
+                         });
+
         m_Server.Post("/api/v1/special_project", [this](const httplib::Request &req,
                                                         httplib::Response &res) {
+            // CORS for actual request (also set on error responses).
+            res.set_header("Access-Control-Allow-Origin", "*");
+            res.set_header("Access-Control-Allow-Methods", "POST, OPTIONS");
+            res.set_header("Access-Control-Allow-Headers", "Content-Type");
+
             try {
                 auto j = nlohmann::json::parse(req.body);
 

@@ -1,0 +1,26 @@
+{
+    "manifest_version": 2,
+    "name": "Concentrate",
+    "version": "1.0",
+    "description": "A extension to help you concentrate by sending notifications for distracting websites.",
+    "browser_action": {
+        "default_popup": "static/popup.html",
+        "default_icon": {
+            "32": "icons/32.png",
+            "48": "icons/48.png",
+            "128": "icons/128.png"
+        }
+    },
+    "background": {
+        "scripts": ["background.js"]
+    },
+    "permissions": ["tabs", "storage"],
+    "browser_specific_settings": {
+        "gecko": {
+            "id": "io.concentrate.charlesneimog@github.com",
+            "data_collection_permissions": {
+                "required": ["none"]
+            }
+        }
+    }
+}

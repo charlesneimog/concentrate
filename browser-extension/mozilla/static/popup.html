@@ -1,0 +1,29 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Concentrate</title>
+    <style>
+      :root { color-scheme: light dark; }
+      body { font: 14px/1.4 system-ui, sans-serif; margin: 12px; min-width: 260px; }
+      label { display: block; margin-bottom: 6px; }
+      input { width: 100%; box-sizing: border-box; padding: 6px 8px; }
+      .row { display: flex; gap: 8px; margin-top: 10px; }
+      button { padding: 6px 10px; }
+      .status { margin-top: 10px; font-size: 12px; opacity: 0.85; }
+    </style>
+  </head>
+  <body>
+    <label for="port">Server port</label>
+    <input id="port" type="number" min="1" max="65535" inputmode="numeric" />
+
+    <div class="row">
+      <button id="save" type="button">Save</button>
+    </div>
+
+    <div id="status" class="status"></div>
+
+    <script src="popup.js"></script>
+  </body>
+</html>
