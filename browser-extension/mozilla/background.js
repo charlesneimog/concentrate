@@ -4,6 +4,40 @@ let activeTabId = {
   focus: false,
 };
 
+const ACTION_ICON_DEFAULT = {
+  32: "icons/32.png",
+  48: "icons/48.png",
+  128: "icons/128.png",
+};
+
+const ACTION_ICON_FOCUSED = {
+  128: "icons/focused-128.png",
+};
+
+const ACTION_ICON_UNFOCUSED = {
+  128: "icons/unfocused-128.png",
+};
+
+function setActionFocused(isFocused) {
+  // MV2: browserAction (MV3 would be action)
+  if (!browser?.browserAction) return;
+
+  browser.browserAction.setTitle({
+    title: isFocused ? "Concentrate (focused)" : "Concentrate (unfocused)",
+  });
+
+  // Minimal visual cue without adding new icon assets.
+  browser.browserAction.setBadgeText({ text: isFocused ? "ON" : "" });
+  browser.browserAction.setBadgeBackgroundColor({
+    color: isFocused ? "#2E7D32" : "#666666",
+  });
+
+  // Swap icon based on focus state.
+  // We only ship 128px variants for focused/unfocused; Firefox will scale as needed.
+  const iconPath = isFocused ? ACTION_ICON_FOCUSED : ACTION_ICON_UNFOCUSED;
+  browser.browserAction.setIcon({ path: iconPath || ACTION_ICON_DEFAULT });
+}
+
 var PORT = 7079;
 var serverUrl = `http://localhost:${PORT}/api/v1/special_project`;
 
@@ -97,6 +131,7 @@ browser.tabs.onActivated.addListener(async ({ tabId, windowId }) => {
   if (appid === "null") return; // ignore new tab page
   const title = tab.title;
   activeTabId = { app_id: appid, title: title, focus: true };
+  setActionFocused(true);
   // send to server
   sendToServer(activeTabId);
 });
@@ -109,6 +144,7 @@ browser.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
 
   // valid tab
   const title = tab.title;
+  setActionFocused(true);
   sendToServer({ app_id: appid, title: title, focus: true });
 });
 
@@ -116,6 +152,7 @@ browser.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
 browser.windows.onFocusChanged.addListener(async (windowId) => {
   if (windowId === browser.windows.WINDOW_ID_NONE) {
     activeTabId.focus = false;
+    setActionFocused(false);
     sendToServer(activeTabId);
   } else {
     const window = await browser.windows.get(windowId, { populate: true });
@@ -125,7 +162,11 @@ browser.windows.onFocusChanged.addListener(async (windowId) => {
       if (appid === "null") return; // ignore new tab page
       const title = activeTab.title;
       activeTabId = { app_id: appid, title: title, focus: true };
+      setActionFocused(true);
       sendToServer(activeTabId);
     }
   }  
 });
+
+// Initialize UI on background start.
+setActionFocused(false);

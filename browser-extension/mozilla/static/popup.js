@@ -8,6 +8,31 @@ function setStatus(text) {
   el.textContent = text;
 }
 
+function initHeaderFromManifest() {
+  try {
+    const manifest = browser.runtime.getManifest();
+    const nameEl = document.getElementById("appName");
+    const iconEl = document.getElementById("appIcon");
+
+    if (nameEl && manifest?.name) {
+      nameEl.textContent = manifest.name;
+    }
+
+    if (iconEl && manifest?.icons) {
+      const iconPath =
+        manifest.icons["32"] ||
+        manifest.icons["48"] ||
+        manifest.icons["128"];
+      if (iconPath) {
+        iconEl.src = browser.runtime.getURL(iconPath);
+        iconEl.alt = manifest?.name || "";
+      }
+    }
+  } catch (_) {
+    // ignore
+  }
+}
+
 async function getCurrentPort() {
   try {
     const resp = await browser.runtime.sendMessage({ type: "getPort" });
@@ -34,6 +59,8 @@ async function savePort(port) {
 }
 
 document.addEventListener("DOMContentLoaded", async () => {
+  //initHeaderFromManifest();
+
   const input = document.getElementById("port");
   const saveBtn = document.getElementById("save");
 
@@ -43,7 +70,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   saveBtn.addEventListener("click", async () => {
     const nextPort = Number(input.value);
     if (!isValidPort(nextPort)) {
-      setStatus("Enter a valid port (1-65535).");
+      setStatus("Enter a valid port (1000-9999).");
       return;
     }
 
