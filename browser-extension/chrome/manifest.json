@@ -1,0 +1,17 @@
+{
+  "manifest_version": 3,
+  "name": "Concentrate",
+  "version": "0.0.1",
+  "description": "A extension to help you concentrate by sending notifications for distracting websites.",
+  "action": {
+    "default_popup": "static/popup.html",
+    "default_icon": {
+      "128": "icons/128.png"
+    }
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "permissions": ["tabs", "storage"],
+  "host_permissions": ["http://localhost/*"]
+}
