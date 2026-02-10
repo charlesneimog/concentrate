@@ -5,7 +5,7 @@
     "description": "A extension to help you concentrate by sending notifications for distracting websites.",
     "browser_action": {
         "default_popup": "static/popup.html",
-        "default_icon": {           
+        "default_icon": {
             "128": "icons/128.png"
         }
     },
@@ -22,3 +22,4 @@
         }
     }
 }
+

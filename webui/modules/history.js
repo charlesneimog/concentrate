@@ -211,6 +211,8 @@ export class HistoryManager {
         const list = document.getElementById("history-list");
         if (!list) return;
 
+        const minAppSeconds = 60;
+
         // Prevent blink: keep existing DOM until the new content is ready,
         // then swap while faded out.
         const token = (this._historyListToken ?? 0) + 1;
@@ -298,12 +300,23 @@ export class HistoryManager {
             const goalText = document.getElementById("history-goal-text");
             const goalBar = document.getElementById("history-goal-progress");
 
-            const appEntries = Object.entries(aggregated).sort((a, b) => b[1] - a[1]);
-            const total = appEntries.reduce((s, [, v]) => s + v, 0) || 0;
+            const appEntriesAll = Object.entries(aggregated);
+            const total = appEntriesAll.reduce((s, [, v]) => s + v, 0) || 0;
+
+            let underMinuteSeconds = 0;
+            const appEntries = appEntriesAll
+                .filter(([, secs]) => {
+                    if (Number(secs || 0) < minAppSeconds) {
+                        underMinuteSeconds += Number(secs || 0);
+                        return false;
+                    }
+                    return true;
+                })
+                .sort((a, b) => b[1] - a[1]);
 
             const colors = ["#2563eb", "#a855f7", "#f97316", "#ef4444", "#10b981", "#06b6d4"];
             const slices = [];
-            let others = 0;
+            let others = underMinuteSeconds;
             appEntries.forEach((entry, idx) => {
                 if (idx < 6) slices.push({ app: entry[0], secs: entry[1], color: colors[idx % colors.length] });
                 else others += entry[1];
@@ -414,11 +427,18 @@ export class HistoryManager {
             const grid = document.createElement("div");
             grid.className = "grid grid-cols-1 sm:grid-cols-2 gap-3";
 
+            let dayOthersSeconds = 0;
+
             Object.entries(apps).forEach(([appId, titles]) => {
                 const badgeStyle = this.appIdBadgeStyle(appId);
 
                 let appTotal = 0;
                 Object.values(titles).forEach((sec) => (appTotal += sec));
+
+                if (appTotal < minAppSeconds) {
+                    dayOthersSeconds += appTotal;
+                    return;
+                }
 
                 const appBlock = document.createElement("div");
                 appBlock.className =
@@ -487,6 +507,42 @@ export class HistoryManager {
                 appBlock.appendChild(titleList);
                 grid.appendChild(appBlock);
             });
+
+            if (dayOthersSeconds > 0) {
+                const badgeStyle = this.appIdBadgeStyle("Others");
+
+                const appBlock = document.createElement("div");
+                appBlock.className =
+                    "rounded-lg border border-gray-200 dark:border-gray-600 p-3 bg-gray-50 dark:bg-gray-800";
+
+                appBlock.innerHTML = `
+                <div class="flex items-center justify-between mb-2">
+                    <span class="px-2 py-0.5 rounded text-[11px] font-bold border"
+                        style="background:${badgeStyle.background};
+                               color:${badgeStyle.color};
+                               border-color:${badgeStyle.borderColor}">
+                        Others
+                    </span>
+                    <span class="text-xs font-bold text-primary">
+                        ${this.fmtDuration(dayOthersSeconds)}
+                    </span>
+                </div>
+            `;
+
+                const titleList = document.createElement("div");
+                titleList.className = "flex flex-col gap-1 pl-2";
+
+                const row = document.createElement("div");
+                row.className = "flex justify-between text-sm text-gray-600 dark:text-gray-400 italic";
+                row.innerHTML = `
+                        <span>Apps &lt; 1m</span>
+                        <span class="text-xs font-mono">${this.fmtDuration(dayOthersSeconds)}</span>
+                    `;
+                titleList.appendChild(row);
+
+                appBlock.appendChild(titleList);
+                grid.appendChild(appBlock);
+            }
 
             body.appendChild(grid);
             card.appendChild(header);

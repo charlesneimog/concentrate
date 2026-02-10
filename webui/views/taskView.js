@@ -119,7 +119,6 @@ export class TaskView {
             list.className = "space-y-4 p-2";
 
             items.forEach((task) => {
-                // console.log(task);
                 const done = !!task.done;
                 const isCurrent = this.currentTaskId && String(task.id) === String(this.currentTaskId);
                 if (task.category === null) {

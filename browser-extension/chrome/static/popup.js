@@ -22,7 +22,6 @@ function initHeaderFromManifest() {
       const iconPath = manifest.icons["32"] || manifest.icons["48"] || manifest.icons["128"];
       if (iconPath) {
         iconEl.src = chrome.runtime.getURL(iconPath);
-        iconEl.alt = manifest?.name || "";
       }
     }
   } catch (_) {
@@ -56,7 +55,7 @@ async function savePort(port) {
 }
 
 document.addEventListener("DOMContentLoaded", async () => {
-  //initHeaderFromManifest();
+  initHeaderFromManifest();
 
   const input = document.getElementById("port");
   const saveBtn = document.getElementById("save");
