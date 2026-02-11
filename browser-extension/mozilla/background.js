@@ -26,12 +26,6 @@ function setActionFocused(isFocused) {
     title: isFocused ? "Concentrate (focused)" : "Concentrate (unfocused)",
   });
 
-  // Minimal visual cue without adding new icon assets.
-  browser.browserAction.setBadgeText({ text: isFocused ? "ON" : "" });
-  browser.browserAction.setBadgeBackgroundColor({
-    color: isFocused ? "#2E7D32" : "#666666",
-  });
-
   // Swap icon based on focus state.
   // We only ship 128px variants for focused/unfocused; Firefox will scale as needed.
   const iconPath = isFocused ? ACTION_ICON_FOCUSED : ACTION_ICON_UNFOCUSED;

@@ -153,6 +153,10 @@ class Concentrate {
     // Monitoring disabled reminder
     std::chrono::steady_clock::time_point m_LastMonitoringNotification{};
 
+    // Monitoring auto-enable after long disable
+    bool m_MonitoringDisabledStreak{false};
+    std::chrono::steady_clock::time_point m_MonitoringDisabledSince{};
+
     // Tracking: open focus interval
     bool m_HasOpenInterval{false};
     FocusState m_OpenState{IDLE};

@@ -429,11 +429,21 @@ export class HistoryManager {
 
             let dayOthersSeconds = 0;
 
-            Object.entries(apps).forEach(([appId, titles]) => {
-                const badgeStyle = this.appIdBadgeStyle(appId);
+            const appRows = Object.entries(apps || {})
+                .map(([appId, titles]) => {
+                    let appTotal = 0;
+                    Object.values(titles || {}).forEach((sec) => (appTotal += Number(sec || 0)));
+                    return { appId, titles, appTotal };
+                })
+                .sort((a, b) => {
+                    const aIsOthers = String(a.appId) === "Others";
+                    const bIsOthers = String(b.appId) === "Others";
+                    if (aIsOthers !== bIsOthers) return aIsOthers ? 1 : -1;
+                    return b.appTotal - a.appTotal;
+                });
 
-                let appTotal = 0;
-                Object.values(titles).forEach((sec) => (appTotal += sec));
+            appRows.forEach(({ appId, titles, appTotal }) => {
+                const badgeStyle = this.appIdBadgeStyle(appId);
 
                 if (appTotal < minAppSeconds) {
                     dayOthersSeconds += appTotal;

@@ -172,6 +172,10 @@ void Concentrate::InitLoopState() {
     // Monitoring disabled reminder
     m_LastMonitoringNotification = now - std::chrono::minutes(10);
 
+    // Monitoring auto-enable tracking
+    m_MonitoringDisabledStreak = !m_MonitoringEnabled.load();
+    m_MonitoringDisabledSince = now;
+
     // Tracking model state
     m_HasOpenInterval = false;
     m_OpenState = IDLE;
@@ -668,7 +672,35 @@ void Concentrate::RunMainLoop() {
         RefreshFocusSnapshotIfNeeded(now, eventDriven);
 
         HandleMonitoringToggleSplit(now);
-        const bool monitoringEnabledNow = m_MonitoringEnabled.load();
+        bool monitoringEnabledNow = m_MonitoringEnabled.load();
+
+        // Auto-enable monitoring if it stays disabled for too long.
+        if (!monitoringEnabledNow) {
+            if (!m_MonitoringDisabledStreak) {
+                m_MonitoringDisabledStreak = true;
+                m_MonitoringDisabledSince = now;
+            }
+
+            if ((now - m_MonitoringDisabledSince) >= std::chrono::minutes(15)) {
+                spdlog::warn("Monitoring disabled for >= 15 minutes; auto-enabling");
+                m_MonitoringEnabled.store(true);
+                m_MonitoringTogglePending.store(true, std::memory_order_relaxed);
+                HandleMonitoringToggleSplit(now);
+                if (m_Secrets) {
+                    m_Secrets->SaveSecret("monitoring_enabled", "true");
+                }
+                if (m_Notification) {
+                    m_Notification->SendNotification(
+                        "dialog-warning", "Monitoring Auto-Enabled",
+                        "Monitoring was disabled for a long time (15 minutes). Enabling it automatically.");
+                }
+                m_MonitoringDisabledStreak = false;
+                m_LastMonitoringNotification = now;
+                monitoringEnabledNow = true;
+            }
+        } else {
+            m_MonitoringDisabledStreak = false;
+        }
 
         FocusedWindow fw_local = LoadFocusedWindowSnapshot();
         FocusState currentState = ComputeFocusStateAndPersist(fw_local);
