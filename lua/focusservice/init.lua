@@ -76,6 +76,22 @@ function M.setup(config)
 			M.send_project_status(port, payload)
 		end,
 	})
+
+	vim.api.nvim_create_autocmd("ModeChanged", {
+		callback = function()
+			local project_name = vim.fn.fnamemodify(vim.fn.getcwd(), ":t")
+			local current_mode = vim.api.nvim_get_mode().mode
+
+			local payload = vim.fn.json_encode({
+				title = project_name,
+				app_id = "Neovim",
+				mode = current_mode,
+				focus = true,
+			})
+
+			M.send_project_status(port, payload)
+		end,
+	})
 end
 
 return M
