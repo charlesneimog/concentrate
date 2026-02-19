@@ -43,63 +43,71 @@ HydrationService::Location HydrationService::GetLocation() {
 
 // ─────────────────────────────────────
 void HydrationService::GetHydrationRecommendation(double weightKg) {
-    httplib::Client client("https://api.open-meteo.com");
     HydrationInfo info;
+
+    // HTTPS client
+    httplib::SSLClient client("api.open-meteo.com", 443);
+    client.enable_server_certificate_verification(true);
 
     client.set_connection_timeout(3, 0);
     client.set_read_timeout(10, 0);
 
     std::string url = "/v1/forecast?latitude=" + std::to_string(m_Location.latitude) +
                       "&longitude=" + std::to_string(m_Location.longitude) +
-                      "&current_weather=true&timezone=auto";
+                      "&current_weather=true&hourly=relative_humidity_2m&timezone=auto";
 
     auto res = client.Get(url.c_str());
     if (!res) {
-        spdlog::error("Failed to get temperature info");
-        info.temperatureC = 25;
-        info.humidity = 50;
+        spdlog::error("Failed to get weather info, error code: {}", static_cast<int>(res.error()));
+        info.temperatureC = 25.0;
+        info.humidity = 50.0;
+        info.recommendedLiters = 2.0;
         m_Liters = info.recommendedLiters;
         return;
     }
+
     if (res->status != 200) {
-        spdlog::error("Weather API error");
-        info.temperatureC = 25;
-        info.humidity = 50;
+        spdlog::error("Weather API returned status {}", res->status);
+        info.temperatureC = 25.0;
+        info.humidity = 50.0;
+        info.recommendedLiters = 2.0;
         m_Liters = info.recommendedLiters;
         return;
     }
 
     auto j = nlohmann::json::parse(res->body);
-    double temp = j["current_weather"].value("temperature", 20.0);
-    double humidity = j["current_weather"].value("humidity", 50.0);
+    info.temperatureC = j["current_weather"].value("temperature", 25.0);
 
-    info.temperatureC = temp;
-    info.humidity = humidity;
-
-    // Baseline for sedentary computer work
-    double base = weightKg * 0.035; // 35 mL per kg/day
-
-    if (temp > 20) {
-        base += (temp - 20) * 0.05; // slightly more in warm rooms
+    // Find nearest humidity value
+    std::string currentTime = j["current_weather"].value("time", "");
+    info.humidity = 50.0; // default
+    auto& times = j["hourly"]["time"];
+    auto& humidities = j["hourly"]["relative_humidity_2m"];
+    for (size_t i = 0; i < times.size(); ++i) {
+        if (times[i] == currentTime) {
+            info.humidity = humidities[i].get<double>();
+            break;
+        }
     }
-    if (humidity < 20) {
-        base += 0.2; // small adjustment for very dry air
+
+    // Hydration calculation
+    double base = weightKg * 0.035; // 35 mL per kg/day
+    if (info.temperatureC > 20.0) {
+        base += (info.temperatureC - 20.0) * 0.05;
+    }
+    if (info.humidity < 20.0) {
+        base += 0.2;
     }
 
     info.recommendedLiters = std::clamp(base, 1.5, 5.0);
 
     // Notes
-    std::string notes;
-    if (temp > 30) {
-        notes += "Hot room; ";
-    }
-    if (humidity < 20) {
-        notes += "Dry air; ";
-    }
-    info.notes = notes;
+    if (info.temperatureC > 30.0) info.notes += "Hot room; ";
+    if (info.humidity < 20.0) info.notes += "Dry air; ";
 
     spdlog::info("Hydration recommendation: {:.1f} L (temp={}°C, humidity={}%)",
                  info.recommendedLiters, info.temperatureC, info.humidity);
 
     m_Liters = info.recommendedLiters;
 }
+

@@ -9,6 +9,7 @@ export class HistoryManager {
             "renderHistoryCategoryStats",
             "renderHistory",
             "updateDailyFocus",
+            "updateHydrationSummary",
             "updateMonitoringSummary",
             "updateDailyActivities",
             "excludeDailyActivity",
@@ -940,6 +941,76 @@ export class HistoryManager {
         if (!/\bbg-/.test(bar.className)) {
             bar.className = bar.className.trim() + " bg-white";
         }
+    }
+
+    async updateHydrationSummary() {
+        const res = await API.loadHydrationSummary();
+        const container = document.getElementById("hydration");
+        const bar = document.getElementById("hydration-bar");
+        const content = container?.querySelector(".relative.z-10");
+
+        if (!container || !bar || !content) return;
+
+        content.querySelectorAll("p").forEach((p) => p.remove());
+
+        const gradientByPct = (pct) => {
+            if (pct < 35) return "bg-gradient-to-br from-amber-500 to-orange-600";
+            if (pct < 65) return "bg-gradient-to-br from-sky-500 to-cyan-600";
+            return "bg-gradient-to-br from-sky-500 to-blue-600";
+        };
+
+        if (!res.ok) {
+            const p = document.createElement("p");
+            p.className = "text-xs mb-4 font-medium text-white/90 dark:text-white/90 leading-tight";
+            p.textContent = "Failed to load hydration data.";
+            content.insertBefore(p, content.querySelector(".w-full"));
+            bar.style.width = "0%";
+            bar.className = bar.className.replace(/bg-\S+/g, "").trim() + " bg-white/60";
+            container.className = container.className
+                .replace(/bg-gradient-to-br\s+from-\S+\s+to-\S+/g, "")
+                .replace(/\s+/g, " ")
+                .trim();
+            container.className += " bg-gradient-to-br from-amber-500 to-orange-600";
+            return;
+        }
+
+        const data = res.data || {};
+        const yes = Number(data.yes ?? 0);
+        const no = Number(data.no ?? 0);
+        const unknown = Number(data.unknown ?? 0);
+        const total = Number(data.total ?? yes + no + unknown);
+
+        const knownTotal = yes + no;
+        const inferredDrinkChance = knownTotal > 0 ? yes / knownTotal : 0.5;
+        const estimatedYes = yes + unknown * inferredDrinkChance;
+        const estimatedNo = no + unknown * (1 - inferredDrinkChance);
+        const pct = total > 0 ? Math.max(0, Math.min(100, (estimatedYes / total) * 100)) : 0;
+
+        container.className = container.className
+            .replace(/bg-gradient-to-br\s+from-\S+\s+to-\S+/g, "")
+            .replace(/\s+/g, " ")
+            .trim();
+        container.className += ` ${gradientByPct(pct)}`;
+
+        bar.style.width = `${pct.toFixed(1)}%`;
+        if (!/\bbg-/.test(bar.className)) {
+            bar.className = bar.className.trim() + " bg-white";
+        }
+
+        const pTop = document.createElement("p");
+        pTop.className = "text-xs font-medium text-white/90 dark:text-white/90 leading-tight mb-1";
+        pTop.textContent = total > 0 ? `Estimated: ${pct.toFixed(0)}% (last 24h)` : "No hydration responses yet";
+
+        const pBottom = document.createElement("p");
+        pBottom.className = "text-xs mb-4 font-medium text-white/90 dark:text-white/90 leading-tight";
+        pBottom.textContent =
+            total > 0
+                ? `Drinking: ${((estimatedYes / total) * 100).toFixed(0)}% • Not drinking: ${((estimatedNo / total) * 100).toFixed(0)}%`
+                : "Drinking: 0% • Not drinking: 0%";
+
+        const progressWrapper = content.querySelector(".w-full");
+        content.insertBefore(pTop, progressWrapper);
+        content.insertBefore(pBottom, progressWrapper);
     }
 
     async updateDailyActivities() {

@@ -86,6 +86,31 @@ export async function loadMonitoringSummary() {
 }
 
 // ─────────────────────────────────────
+export async function loadHydrationSummary() {
+    const res = await fetch("/api/v1/hydration/summary", { cache: "no-store" });
+    if (!res.ok) {
+        const text = await readTextSafe(res);
+        return {
+            ok: false,
+            status: res.status,
+            errorText: text || "Failed to load hydration summary.",
+            data: null,
+        };
+    }
+
+    try {
+        return { ok: true, status: res.status, errorText: "", data: await res.json() };
+    } catch {
+        return {
+            ok: false,
+            status: res.status,
+            errorText: "Invalid JSON from hydration summary.",
+            data: null,
+        };
+    }
+}
+
+// ─────────────────────────────────────
 export async function loadEvents() {
     const res = await fetch("/api/v1/events", { cache: "no-store" });
     if (!res.ok) return [];

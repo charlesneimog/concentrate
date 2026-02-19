@@ -180,6 +180,7 @@ export class StateManager {
         if (!this.isPageActive()) return;
         if (this.currentView === "tasks" || this.currentView === "history") {
             await this.updateDailyFocus();
+            await this.updateHydrationSummary();
             await this.updateMonitoringSummary();
             await this.updateTasksCategories();
         }
@@ -192,6 +193,7 @@ export class StateManager {
             const [tasks, current] = await Promise.all([this.loadTasks(), API.loadCurrent()]);
             this.lastTasks = Array.isArray(tasks) ? tasks : [];
             this.lastCurrentFocus = current;
+            await this.updateHydrationSummary();
             this.renderHistory();
             return;
         }
@@ -209,6 +211,7 @@ export class StateManager {
         this.updateFocusWarning(current, tasks);
 
         await this.updateDailyFocus();
+        await this.updateHydrationSummary();
         await this.updateMonitoringSummary();
         await this.updateDailyActivities();
         await this.updateTasksCategories();
@@ -229,6 +232,7 @@ export class StateManager {
         this.updateFocusWarning(current, tasks);
 
         await this.updateDailyFocus();
+        await this.updateHydrationSummary();
         await this.updateMonitoringSummary();
         this.renderHistory();
         this.updateDailyActivities();

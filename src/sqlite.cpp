@@ -162,6 +162,15 @@ void SQLite::Init() {
                        "duration REAL NOT NULL"
                        ")");
 
+    ExecIgnoringErrors("CREATE TABLE IF NOT EXISTS hydration_log ("
+                       "id INTEGER PRIMARY KEY AUTOINCREMENT,"
+                       "prompted_at REAL NOT NULL,"
+                       "answered_at REAL NOT NULL,"
+                       "answer TEXT NOT NULL CHECK(answer IN ('yes','no','unknown'))"
+                       ")");
+    ExecIgnoringErrors(
+        "CREATE INDEX IF NOT EXISTS idx_hydration_log_prompted_at ON hydration_log(prompted_at)");
+
     // Recurring daily tasks config
     ExecIgnoringErrors("CREATE TABLE IF NOT EXISTS recurring_tasks ("
                        "name TEXT NOT NULL UNIQUE,"
@@ -305,6 +314,90 @@ nlohmann::json SQLite::GetTodayMonitoringTimeSummary() {
     return { {"monitoring_enabled_seconds", enabled},
              {"monitoring_disabled_seconds", disabled},
              {"total_seconds", enabled + disabled} };
+}
+
+// ─────────────────────────────────────
+void SQLite::InsertHydrationResponse(const std::string &answer, double prompted_at,
+                                     double answered_at) {
+    const char *sql = R"(
+        INSERT INTO hydration_log (prompted_at, answered_at, answer)
+        VALUES (?, ?, ?)
+    )";
+
+    sqlite3_stmt *stmt = nullptr;
+    if (sqlite3_prepare_v2(m_Db, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+        spdlog::error("db prepare failed for InsertHydrationResponse: {}", sqlite3_errmsg(m_Db));
+        return;
+    }
+
+    sqlite3_bind_double(stmt, 1, prompted_at);
+    sqlite3_bind_double(stmt, 2, answered_at);
+    sqlite3_bind_text(stmt, 3, answer.c_str(), -1, SQLITE_TRANSIENT);
+
+    const int rc = sqlite3_step(stmt);
+    if (rc != SQLITE_DONE) {
+        spdlog::error("InsertHydrationResponse failed: {}", sqlite3_errmsg(m_Db));
+    }
+
+    sqlite3_finalize(stmt);
+}
+
+// ─────────────────────────────────────
+nlohmann::json SQLite::GetHydrationSummaryLast24h() {
+    const double now_epoch = std::chrono::duration<double>(
+                               std::chrono::system_clock::now().time_since_epoch())
+                               .count();
+    const double from_epoch = now_epoch - (24.0 * 60.0 * 60.0);
+
+    const char *sql = R"(
+        SELECT answer, COUNT(*)
+        FROM hydration_log
+        WHERE prompted_at >= ?
+          AND prompted_at <= ?
+        GROUP BY answer
+    )";
+
+    sqlite3_stmt *stmt = nullptr;
+    if (sqlite3_prepare_v2(m_Db, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+        spdlog::error("db prepare failed for GetHydrationSummaryLast24h: {}", sqlite3_errmsg(m_Db));
+        return {{"yes", 0},
+                {"no", 0},
+                {"unknown", 0},
+                {"total", 0},
+                {"hydration_percent", 0.0}};
+    }
+
+    sqlite3_bind_double(stmt, 1, from_epoch);
+    sqlite3_bind_double(stmt, 2, now_epoch);
+
+    int yes_count = 0;
+    int no_count = 0;
+    int unknown_count = 0;
+
+    while (sqlite3_step(stmt) == SQLITE_ROW) {
+        const char *answer_c = reinterpret_cast<const char *>(sqlite3_column_text(stmt, 0));
+        const int count = sqlite3_column_int(stmt, 1);
+        const std::string answer = answer_c ? answer_c : "";
+
+        if (answer == "yes") {
+            yes_count = count;
+        } else if (answer == "no") {
+            no_count = count;
+        } else if (answer == "unknown") {
+            unknown_count = count;
+        }
+    }
+
+    sqlite3_finalize(stmt);
+
+    const int total = yes_count + no_count + unknown_count;
+    const double hydration_percent = total > 0 ? (100.0 * static_cast<double>(yes_count) / total) : 0.0;
+
+    return {{"yes", yes_count},
+            {"no", no_count},
+            {"unknown", unknown_count},
+            {"total", total},
+            {"hydration_percent", hydration_percent}};
 }
 
 // ─────────────────────────────────────

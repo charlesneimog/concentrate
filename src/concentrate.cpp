@@ -461,18 +461,40 @@ void Concentrate::UpdateClimateIfDue(std::chrono::steady_clock::time_point now) 
 }
 
 // ─────────────────────────────────────
-void Concentrate::UpdateHydrationIfDue(std::chrono::steady_clock::time_point now) {
-    if (!m_Notification) {
+void Concentrate::UpdateHydrationIfDue(std::chrono::steady_clock::time_point now,
+                                       FocusState currentState) {
+    if (!m_Notification || !m_SQLite) {
         return;
     }
+    if (currentState == IDLE) {
+        return;
+    }
+    
     if (now - m_LastHydrationNotification <
         std::chrono::minutes(static_cast<int>(m_HydrationIntervalMinutes))) {
         return;
     }
 
-    m_Notification->SendNotification(
-        "dialog-info", "Concentrate",
-        fmt::format("Time to drink water! ~{:.2f} L since last reminder.", m_LitersPerReminder));
+    const double roll = m_HydrationPromptChance(m_Rng);
+    if (roll > 0.2) {
+        spdlog::debug("Hydration prompt skipped by 80% sampling (roll={:.3f})", roll);
+        m_LastHydrationNotification = now;
+        return;
+    }
+
+    const std::string body =
+        fmt::format("Did you drink water? (~{:.2f} L since last reminder)", m_LitersPerReminder);
+
+    m_Notification->SendHydrationPrompt(
+        "dialog-question", "Hydration Check", body,
+        [this](const std::string &answer, double prompted_at, double answered_at) {
+            if (!m_SQLite) {
+                return;
+            }
+            m_SQLite->InsertHydrationResponse(answer, prompted_at, answered_at);
+            spdlog::info("Hydration response saved: {}", answer);
+        });
+
     m_LastHydrationNotification = now;
 }
 
@@ -668,6 +690,9 @@ void Concentrate::RunMainLoop() {
     bool running = true;
     while (running) {
         const auto now = std::chrono::steady_clock::now();
+        if (m_Notification) {
+            m_Notification->Poll();
+        }
         const bool eventDriven = m_EventDriven.load();
         RefreshFocusSnapshotIfNeeded(now, eventDriven);
 
@@ -747,7 +772,7 @@ void Concentrate::RunMainLoop() {
         UpdateUnfocusedWarning(now, currentState);
         EnsureTaskCategory();
         UpdateClimateIfDue(now);
-        UpdateHydrationIfDue(now);
+        UpdateHydrationIfDue(now, currentState);
 
         UpdateFocusInterval(now, currentState, fw_local);
         PublishLastTrackedIntervalSnapshot();
@@ -1574,6 +1599,24 @@ bool Concentrate::InitServer() {
                         return;
                     }
                     nlohmann::json j = m_SQLite->GetTodayMonitoringTimeSummary();
+                    res.status = 200;
+                    res.set_content(j.dump(), "application/json");
+                } catch (const std::exception &e) {
+                    res.status = 500;
+                    res.set_content(std::string(R"({"error":")") + e.what() + R"("})",
+                                    "application/json");
+                }
+            });
+
+        m_Server.Get(
+            "/api/v1/hydration/summary", [this](const httplib::Request &, httplib::Response &res) {
+                try {
+                    if (!m_SQLite) {
+                        res.status = 503;
+                        res.set_content(R"({"error":"database not ready"})", "application/json");
+                        return;
+                    }
+                    nlohmann::json j = m_SQLite->GetHydrationSummaryLast24h();
                     res.status = 200;
                     res.set_content(j.dump(), "application/json");
                 } catch (const std::exception &e) {

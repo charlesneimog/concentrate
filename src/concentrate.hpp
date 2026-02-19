@@ -6,6 +6,7 @@
 #include <atomic>
 #include <condition_variable>
 #include <cstdint>
+#include <random>
 
 // Libs
 #include <httplib.h>
@@ -62,7 +63,7 @@ class Concentrate {
     void UpdateUnfocusedWarning(std::chrono::steady_clock::time_point now, FocusState currentState);
     void EnsureTaskCategory();
     void UpdateClimateIfDue(std::chrono::steady_clock::time_point now);
-    void UpdateHydrationIfDue(std::chrono::steady_clock::time_point now);
+    void UpdateHydrationIfDue(std::chrono::steady_clock::time_point now, FocusState currentState);
     void UpdateFocusInterval(std::chrono::steady_clock::time_point now, FocusState currentState,
                              const FocusedWindow &fw_local);
     void PublishLastTrackedIntervalSnapshot();
@@ -145,10 +146,12 @@ class Concentrate {
     // ---------------------------
 
     // Hydration
-    double m_HydrationIntervalMinutes{10.0};
+    double m_HydrationIntervalMinutes{10};
     double m_LitersPerReminder{0.0};
     std::chrono::steady_clock::time_point m_LastHydrationNotification{};
     std::chrono::steady_clock::time_point m_LastClimateUpdate{};
+    std::mt19937 m_Rng{std::random_device{}()};
+    std::uniform_real_distribution<double> m_HydrationPromptChance{0.0, 1.0};
 
     // Monitoring disabled reminder
     std::chrono::steady_clock::time_point m_LastMonitoringNotification{};

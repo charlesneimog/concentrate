@@ -25,6 +25,10 @@ class SQLite {
     bool UpdateMonitoringSession(double end_time, double duration, int state);
     nlohmann::json GetTodayMonitoringTimeSummary();
 
+    void InsertHydrationResponse(const std::string &answer, double prompted_at,
+                   double answered_at);
+    nlohmann::json GetHydrationSummaryLast24h();
+
     bool CreateTask(const nlohmann::json &data, std::string &error);
     bool UpdateTask(const nlohmann::json &data, std::string &error);
 

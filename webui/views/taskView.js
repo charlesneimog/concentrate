@@ -337,6 +337,72 @@ export class TaskView {
             return `<pre class="bg-gray-50 dark:bg-gray-800 p-3 rounded-lg overflow-x-auto my-2"><code class="text-sm font-mono">${escapedCode}</code></pre>`;
         });
 
+        // Markdown links: [label](href)
+        // We tokenize links now (outside <pre>/<code>) and replace tokens with safe <a> tags at the end.
+        // This keeps the existing escaping/parsing pipeline intact and avoids linking inside code blocks.
+        const linkTokens = [];
+        // Use private-use unicode sentinels to avoid collisions and to avoid being parsed by the emphasis regexes.
+        const linkToken = (i) => `\uE000MDLINK${i}\uE001`;
+
+        const unescapeInline = (value) =>
+            String(value || "").replace(/\\([\\`*_{}\[\]()#+\-.!])/g, "$1");
+
+        const sanitizeHref = (rawHref) => {
+            const raw = unescapeInline(String(rawHref || "").trim());
+            if (!raw) return null;
+
+            // Support optional angle-bracket form: [x](<https://example.com>)
+            const href = raw.replace(/^<|>$/g, "").trim();
+            const url = href.split(/\s+/)[0];
+            const lower = url.toLowerCase();
+
+            // Disallow dangerous schemes
+            if (lower.startsWith("javascript:") || lower.startsWith("data:") || lower.startsWith("vbscript:")) {
+                return null;
+            }
+
+            // Allowlist: typical web links, in-app anytype links, anchors, and relative paths
+            if (
+                lower.startsWith("http://") ||
+                lower.startsWith("https://") ||
+                lower.startsWith("anytype://") ||
+                lower.startsWith("mailto:") ||
+                lower.startsWith("#") ||
+                lower.startsWith("/") ||
+                lower.startsWith("./") ||
+                lower.startsWith("../")
+            ) {
+                return url;
+            }
+
+            return null;
+        };
+
+        const renderLinkHtml = (label, href) => {
+            const safeLabel = this.escapeHtml(unescapeInline(label));
+            const safeHref = this.escapeHtml(href);
+            // Open in a new tab to avoid navigating the web UI away.
+            return `<a class="underline text-emerald-700 dark:text-emerald-300 hover:text-emerald-800 dark:hover:text-emerald-200" href="${safeHref}" target="_blank" rel="noopener noreferrer">${safeLabel}</a>`;
+        };
+
+        const linkPattern = /\[([^\]\n]+?)\]\(([^)\n]+?)\)/g;
+        const parts = html.split(/(<pre[\s\S]*?<\/pre>|<code[^>]*>[\s\S]*?<\/code>)/g);
+        html = parts
+            .map((part) => {
+                if (!part) return part;
+                if (part.startsWith("<pre") || part.startsWith("<code")) return part;
+
+                return part.replace(linkPattern, (full, label, hrefRaw) => {
+                    const href = sanitizeHref(hrefRaw);
+                    if (!href) return full;
+
+                    const token = linkToken(linkTokens.length);
+                    linkTokens.push(renderLinkHtml(label, href));
+                    return token;
+                });
+            })
+            .join("");
+
         html = html.replace(/^### (.*$)/gm, (_, content) => {
             const processedContent = content.replace(
                 /(?<!<\/?code[^>]*>)(?<!<\/?strong[^>]*>)(?<!<\/?em[^>]*>)[^<>]+/g,
@@ -497,6 +563,11 @@ export class TaskView {
         </div>
     `;
 
-        return finalHtml;
+        let linkedHtml = finalHtml;
+        for (let i = 0; i < linkTokens.length; i += 1) {
+            linkedHtml = linkedHtml.replaceAll(linkToken(i), linkTokens[i]);
+        }
+
+        return linkedHtml;
     }
 }
