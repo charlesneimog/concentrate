@@ -4,7 +4,7 @@ from datetime import datetime
 
 # SQLite path
 home = os.path.expanduser("~")
-db_path = os.path.join(home, ".local", "Concentrate", "data.sqlite")
+db_path = os.path.join(home, ".local", "share", "concentrate", "data.sqlite")
 
 # Connect to database
 conn = sqlite3.connect(db_path)
