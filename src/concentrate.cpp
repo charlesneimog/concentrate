@@ -475,12 +475,12 @@ void Concentrate::UpdateHydrationIfDue(std::chrono::steady_clock::time_point now
         return;
     }
 
-    const double roll = m_HydrationPromptChance(m_Rng);
-    if (roll > 0.2) {
-        spdlog::debug("Hydration prompt skipped by 80% sampling (roll={:.3f})", roll);
-        m_LastHydrationNotification = now;
-        return;
-    }
+    // const double roll = m_HydrationPromptChance(m_Rng);
+    // if (roll > 0.2) {
+    //     spdlog::debug("Hydration prompt skipped by 80% sampling (roll={:.3f})", roll);
+    //     m_LastHydrationNotification = now;
+    //     return;
+    // }
 
     const std::string body =
         fmt::format("Did you drink water? (~{:.2f} L since last reminder)", m_LitersPerReminder);
@@ -732,17 +732,22 @@ void Concentrate::RunMainLoop() {
 
         MaybeNotifyMonitoringDisabled(now, monitoringEnabledNow);
 
-        // IDLE: close any open focus interval AND any open monitoring interval. Idle is never
-        // recorded.
+
+        // IDLE: Always close any open focus interval AND any open monitoring interval.
+        // Monitoring time is NOT counted while idle.
         if (currentState == IDLE) {
+            // Close any open focus interval (focus_log)
             CloseOpenFocusInterval(now, "idle");
+            // Close any open monitoring interval (monitoring_log)
             CloseOpenMonitoringInterval(now);
+            // Reset interval state
             ResetOpenFocusIntervalToIdle();
             ResetOpenMonitoringInterval();
             ResetLastTrackedSnapshot(IDLE);
             if (UpdateTray(now, IDLE, eventDriven)) {
                 break;
             }
+            // Do NOT start a new monitoring session while idle
             WaitUntilNextDeadline(currentState, monitoringEnabledNow, eventDriven);
             continue;
         }

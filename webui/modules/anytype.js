@@ -42,7 +42,22 @@ export class AnytypeManager {
                 this.anytypeError = errorText || "Failed to load Anytype tasks.";
                 return [];
             }
-            return Array.isArray(tasks) ? tasks : [];
+            if (!Array.isArray(tasks)) return [];
+
+            const seen = new Set();
+            const deduped = [];
+            tasks.forEach((task, index) => {
+                const rawId = task?.id;
+                const key = rawId === undefined || rawId === null || String(rawId).trim() === ""
+                    ? `fallback-${index}`
+                    : String(rawId);
+
+                if (seen.has(key)) return;
+                seen.add(key);
+                deduped.push(task);
+            });
+
+            return deduped;
         } catch (err) {
             console.error("Failed to load Anytype tasks", err);
             this.anytypeError = "Failed to load Anytype tasks.";

@@ -1,5 +1,7 @@
 #include "anytype.hpp"
 
+#include <unordered_set>
+
 // ─────────────────────────────────────
 Anytype::Anytype() {
     m_Secrets = Secrets();
@@ -223,6 +225,7 @@ nlohmann::json Anytype::GetTasks() {
 
     spdlog::info("Anytype: Starting task retrieval from space: {}", space_id);
     nlohmann::json tasks = nlohmann::json::array();
+    std::unordered_set<std::string> seen_task_ids;
     int offset = 0;
     constexpr int kMaxTasks = 2000;
     while (true) {
@@ -253,14 +256,22 @@ nlohmann::json Anytype::GetTasks() {
                 nlohmann::json task = NormalizeTask(obj, offset + idx);
                 spdlog::debug("Anytype: Processing task ID: {}", task["id"].get<std::string>());
 
+                const std::string task_id = task["id"].get<std::string>();
+                if (seen_task_ids.find(task_id) != seen_task_ids.end()) {
+                    spdlog::debug("Anytype: Skipping duplicate task ID: {}", task_id);
+                    idx += 1;
+                    continue;
+                }
+
                 bool done = task.contains("done") && task["done"].is_boolean()
                                 ? task["done"].get<bool>()
                                 : false;
                 if (!done) {
                     // get markdown
-                    nlohmann::json page = GetPage(task["id"].get<std::string>());
+                    nlohmann::json page = GetPage(task_id);
                     task["markdown"] = page["object"]["markdown"].get<std::string>();
                     tasks.push_back(task);
+                    seen_task_ids.insert(task_id);
                 }
                 idx += 1;
             }
